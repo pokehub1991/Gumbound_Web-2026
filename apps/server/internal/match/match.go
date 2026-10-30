@@ -204,3 +204,4 @@ func (m *Match) checkWinCondition() bool {
 
 	return false
 }
+

@@ -33,3 +33,4 @@ type ProjectileResult struct {
 	Damages      map[string]int   `json:"damages"`
 	TerrainDelta *TerrainDelta    `json:"terrain_delta,omitempty"`
 }
+

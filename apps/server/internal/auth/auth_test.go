@@ -47,3 +47,4 @@ func TestJWTIssueAndValidate(t *testing.T) {
 		t.Errorf("expected username 'player1', got '%s'", claims.Username)
 	}
 }
+

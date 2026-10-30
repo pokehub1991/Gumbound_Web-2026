@@ -235,3 +235,4 @@ func (m *LobbyManager) broadcastRoomState(room *Room) {
 		}
 	}
 }
+

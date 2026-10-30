@@ -86,3 +86,4 @@ func (g *Gateway) ActiveConnectionCount() int {
 	defer g.mu.RUnlock()
 	return len(g.conns)
 }
+

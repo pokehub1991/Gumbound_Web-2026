@@ -21,3 +21,4 @@ func NewChatMessage(senderID, senderNick, text, scope string) ChatMessage {
 		Timestamp:  time.Now(),
 	}
 }
+

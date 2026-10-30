@@ -34,3 +34,4 @@ func TestMatchLifecycle(t *testing.T) {
 		t.Fatal("expected next active player to be non-nil")
 	}
 }
+

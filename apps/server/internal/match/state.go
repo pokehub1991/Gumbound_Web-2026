@@ -23,3 +23,4 @@ type MatchPlayer struct {
 	Delay    int           `json:"delay"`
 	Alive    bool          `json:"alive"`
 }
+

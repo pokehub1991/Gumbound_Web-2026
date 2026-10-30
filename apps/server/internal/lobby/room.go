@@ -176,3 +176,4 @@ func (r *Room) Snapshot() *Room {
 		Players:    playersCopy,
 	}
 }
+

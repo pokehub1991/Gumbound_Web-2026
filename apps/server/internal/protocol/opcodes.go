@@ -21,3 +21,4 @@ const (
 	OpcodeTurnEnd          uint16 = 0x3004
 	OpcodeMatchEnd         uint16 = 0x3005
 )
+

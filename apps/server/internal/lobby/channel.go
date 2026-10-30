@@ -63,3 +63,4 @@ func (c *Channel) ListRooms() []*Room {
 	}
 	return list
 }
+

@@ -1,23 +1,15 @@
-import { Application } from "pixi.js";
-import { Opcode } from "@gumbound/shared";
+import { Game } from "./game/Game.js";
 
-console.log("Gumbound Web 2026 initializing... Initial opcode test:", Opcode.AUTH_REQUEST);
-
-async function init() {
+async function bootstrap() {
   const container = document.getElementById("game-canvas-container");
   if (!container) return;
 
-  const app = new Application();
-  await app.init({
-    width: 800,
-    height: 600,
-    backgroundColor: 0x1a2b3c,
-    resolution: window.devicePixelRatio || 1,
-    autoDensity: true
-  });
+  const game = new Game();
+  await game.init(container);
 
-  container.appendChild(app.canvas);
-  console.log("PixiJS Application ready!");
+  // Expose for debugging/inspection in dev
+  (window as unknown as { __game: Game }).__game = game;
+  console.log("Gumbound Web 2026 Game Engine initialized successfully!");
 }
 
-init().catch(console.error);
+bootstrap().catch(console.error);

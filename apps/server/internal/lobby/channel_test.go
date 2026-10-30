@@ -32,3 +32,4 @@ func TestChannelRoomManagement(t *testing.T) {
 		t.Errorf("expected 0 rooms after removal, got %d", len(ch.ListRooms()))
 	}
 }
+

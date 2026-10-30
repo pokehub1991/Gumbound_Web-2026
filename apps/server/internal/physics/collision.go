@@ -35,3 +35,4 @@ func CalculateRadialDamage(impactPos Vec2, mobiles []MobileTarget, baseDamage in
 	}
 	return damages
 }
+

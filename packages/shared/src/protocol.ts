@@ -35,3 +35,4 @@ export enum ShotType {
   SHOT2 = 1,
   SS = 2
 }
+

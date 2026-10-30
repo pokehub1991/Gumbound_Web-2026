@@ -87,3 +87,4 @@ func TestGatewayWebSocketDispatch(t *testing.T) {
 		t.Errorf("expected response payload 'ACK', got '%s'", string(respMsg.Payload))
 	}
 }
+

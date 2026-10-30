@@ -74,3 +74,4 @@ func GetMobileStats(id int) MobileStats {
 	}
 	return Mobiles[MobileArmor]
 }
+

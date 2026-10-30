@@ -48,3 +48,4 @@ func DecodeMessage(data []byte) (Message, error) {
 		Payload: payload,
 	}, nil
 }
+

@@ -124,3 +124,4 @@ func (h *Handlers) RegisterWebSocketHandler(gw *gateway.Gateway) {
 		})
 	})
 }
+

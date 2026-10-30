@@ -25,3 +25,4 @@ func TestTerrainClearCircle(t *testing.T) {
 		t.Errorf("expected ground at (100, 140) outside crater")
 	}
 }
+

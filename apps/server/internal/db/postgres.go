@@ -73,3 +73,4 @@ func (r *PostgresUserRepo) FindByID(id string) (*auth.User, error) {
 	}
 	return &u, nil
 }
+

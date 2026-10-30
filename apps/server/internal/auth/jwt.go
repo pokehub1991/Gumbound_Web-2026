@@ -131,3 +131,4 @@ func ParseToken(tokenStr, secretKey string) (*Claims, error) {
 
 	return nil, errors.New("invalid token")
 }
+

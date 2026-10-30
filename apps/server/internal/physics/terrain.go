@@ -95,3 +95,4 @@ func (t *TerrainMask) FindGroundY(x, startY int) int {
 	}
 	return t.Height
 }
+

@@ -20,3 +20,4 @@ Task 2: complete (commit 1a1e9de, tests: go test ./internal/gateway/ ./internal/
 Task 3: complete (commit cb20d28, tests: go test ./internal/auth/ -> pass)
 Task 4: complete (commit 2e3f3c0, tests: go test ./internal/lobby/ -> pass)
 Task 5: complete (commit 7e73066, tests: go test ./internal/physics/ -> pass)
+Task 6: complete (commit ab1d5e1, tests: go test ./internal/match/ -> pass)

@@ -142,3 +142,4 @@ func (s *AuthService) Login(username, password string) (string, error) {
 func (s *AuthService) ValidateToken(token string) (*Claims, error) {
 	return ParseToken(token, s.jwtSecret)
 }
+

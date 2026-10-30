@@ -36,3 +36,4 @@ func TestDecodeShortMessage(t *testing.T) {
 		t.Error("expected error for truncated message header, got nil")
 	}
 }
+
