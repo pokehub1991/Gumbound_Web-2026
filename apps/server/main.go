@@ -9,6 +9,7 @@ import (
 	"gumbound-web/server/internal/auth"
 	"gumbound-web/server/internal/db"
 	"gumbound-web/server/internal/gateway"
+	"gumbound-web/server/internal/lobby"
 )
 
 func main() {
@@ -37,6 +38,9 @@ func main() {
 
 	gw := gateway.NewGateway()
 	authHandlers.RegisterWebSocketHandler(gw)
+
+	lobbyManager := lobby.NewLobbyManager()
+	lobbyManager.RegisterHandlers(gw)
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
