@@ -1,0 +1,19 @@
+{
+  "id": "plains",
+  "name": "Miramo Plains",
+  "width": 2400,
+  "height": 800,
+  "groundBaseY": 560,
+  "roughness": 0.008,
+  "amplitude": 65,
+  "skyColor": "#4a90e2",
+  "groundColor": "#593a1d",
+  "grassColor": "#4da333",
+  "gravity": 0.25,
+  "spawnPoints": [
+    { "x": 350, "y": 500 },
+    { "x": 750, "y": 500 },
+    { "x": 1250, "y": 500 },
+    { "x": 1750, "y": 500 }
+  ]
+}

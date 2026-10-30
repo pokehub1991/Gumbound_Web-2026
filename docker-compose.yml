@@ -23,7 +23,33 @@ services:
     volumes:
       - redisdata:/data
 
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: gumbound_server
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "postgres://gumbound:dev@postgres:5432/gumbound_dev?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET: "gumbound_production_jwt_secret_2026_super_secure"
+    depends_on:
+      - postgres
+      - redis
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: gumbound_client
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - server
+
 volumes:
   pgdata:
   redisdata:
-

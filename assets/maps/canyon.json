@@ -1,0 +1,19 @@
+{
+  "id": "canyon",
+  "name": "Nirvana Canyon",
+  "width": 2400,
+  "height": 800,
+  "groundBaseY": 510,
+  "roughness": 0.015,
+  "amplitude": 120,
+  "skyColor": "#c26d36",
+  "groundColor": "#8a421d",
+  "grassColor": "#d48b3b",
+  "gravity": 0.28,
+  "spawnPoints": [
+    { "x": 300, "y": 420 },
+    { "x": 800, "y": 420 },
+    { "x": 1500, "y": 420 },
+    { "x": 2000, "y": 420 }
+  ]
+}

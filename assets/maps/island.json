@@ -1,0 +1,19 @@
+{
+  "id": "island",
+  "name": "Sky Island",
+  "width": 2400,
+  "height": 800,
+  "groundBaseY": 480,
+  "roughness": 0.02,
+  "amplitude": 90,
+  "skyColor": "#1e3a5f",
+  "groundColor": "#3d4852",
+  "grassColor": "#38bdf8",
+  "gravity": 0.22,
+  "spawnPoints": [
+    { "x": 400, "y": 420 },
+    { "x": 900, "y": 420 },
+    { "x": 1400, "y": 420 },
+    { "x": 1900, "y": 420 }
+  ]
+}
