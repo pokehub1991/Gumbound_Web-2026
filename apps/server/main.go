@@ -10,6 +10,7 @@ import (
 	"gumbound-web/server/internal/db"
 	"gumbound-web/server/internal/gateway"
 	"gumbound-web/server/internal/lobby"
+	"gumbound-web/server/internal/match"
 )
 
 func main() {
@@ -41,6 +42,9 @@ func main() {
 
 	lobbyManager := lobby.NewLobbyManager()
 	lobbyManager.RegisterHandlers(gw)
+
+	matchManager := match.NewMatchManager(lobbyManager)
+	matchManager.RegisterHandlers(gw)
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

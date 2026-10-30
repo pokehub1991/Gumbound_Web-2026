@@ -24,6 +24,10 @@ func NewLobbyManager() *LobbyManager {
 	}
 }
 
+func (m *LobbyManager) GetRoom(roomID string) (*Room, bool) {
+	return m.defaultChannel.GetRoom(roomID)
+}
+
 func (m *LobbyManager) RegisterHandlers(gw *gateway.Gateway) {
 	// Channel State / List Rooms
 	gw.RegisterHandler(protocol.OpcodeChannelJoin, func(c *gateway.Connection, msg protocol.Message) {
