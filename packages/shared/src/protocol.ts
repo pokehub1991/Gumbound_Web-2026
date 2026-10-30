@@ -1,0 +1,37 @@
+export enum Opcode {
+  AUTH_REQUEST = 0x0001,
+  AUTH_RESPONSE = 0x0002,
+  CHANNEL_JOIN = 0x1000,
+  CHANNEL_STATE = 0x1001,
+  ROOM_CREATE = 0x2000,
+  ROOM_JOIN = 0x2001,
+  ROOM_LEAVE = 0x2002,
+  ROOM_STATE = 0x2003,
+  SELECT_MOBILE = 0x2004,
+  TOGGLE_READY = 0x2005,
+  CHAT_MESSAGE = 0x2006,
+  CHAT_BROADCAST = 0x2007,
+  MATCH_START = 0x3000,
+  TURN_START = 0x3001,
+  FIRE_SHOT = 0x3002,
+  PROJECTILE_RESULT = 0x3003,
+  TURN_END = 0x3004,
+  MATCH_END = 0x3005
+}
+
+export enum MobileType {
+  ARMOR = 0,
+  MAGE = 1,
+  NAK = 2,
+  TRICO = 3,
+  BIG_FOOT = 4,
+  BOOMER = 5,
+  RAON = 6,
+  TURTLE = 7
+}
+
+export enum ShotType {
+  SHOT1 = 0,
+  SHOT2 = 1,
+  SS = 2
+}
