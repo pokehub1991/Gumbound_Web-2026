@@ -14,3 +14,5 @@ Pre-flight scan:
 - Task 11: Match Flow E2E (consumes all above, produces playable loop)
 - Task 12: Maps & Polish (consumes Match & Renderer, produces maps & deployment)
 Pre-flight: interfaces aligned.
+
+Task 1: complete (commit b123d8d, build: pnpm -r build & go build -> pass)
