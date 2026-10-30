@@ -16,3 +16,4 @@ Pre-flight scan:
 Pre-flight: interfaces aligned.
 
 Task 1: complete (commit b123d8d, build: pnpm -r build & go build -> pass)
+Task 2: complete (commit 1a1e9de, tests: go test ./internal/gateway/ ./internal/protocol/ -> pass)
