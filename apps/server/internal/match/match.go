@@ -218,3 +218,31 @@ func (m *Match) checkWinCondition() bool {
 	return false
 }
 
+func (m *Match) HandleMove(playerID string, x, y float64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.State != StateInProgress {
+		return ErrMatchNotLive
+	}
+	if m.ActiveID != playerID {
+		return ErrNotYourTurn
+	}
+
+	p, ok := m.Players[playerID]
+	if !ok || !p.Alive {
+		return errors.New("player not active or dead")
+	}
+
+	if x < 40 {
+		x = 40
+	} else if x > 2360 {
+		x = 2360
+	}
+
+	p.Pos.X = x
+	p.Pos.Y = y
+	return nil
+}
+
+

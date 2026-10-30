@@ -16,7 +16,8 @@ export enum Opcode {
   FIRE_SHOT = 0x3002,
   PROJECTILE_RESULT = 0x3003,
   TURN_END = 0x3004,
-  MATCH_END = 0x3005
+  MATCH_END = 0x3005,
+  PLAYER_MOVE = 0x3006
 }
 
 export enum MobileType {

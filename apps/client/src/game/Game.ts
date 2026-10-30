@@ -37,7 +37,7 @@ export class Game {
 
     this.powerBar = new PowerBar(360, 22);
     this.windIndicator = new WindIndicator();
-    this.aimController = new AimController(this.powerBar);
+    this.aimController = new AimController(this.powerBar, this.terrain);
   }
 
   public async init(containerElement: HTMLElement) {

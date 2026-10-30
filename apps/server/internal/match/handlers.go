@@ -145,6 +145,43 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 			})
 		}
 	})
+
+	// Handle PlayerMove
+	gw.RegisterHandler(protocol.OpcodePlayerMove, func(c *gateway.Connection, msg protocol.Message) {
+		var req struct {
+			X      float64 `json:"x"`
+			Y      float64 `json:"y"`
+			Facing int     `json:"facing"`
+		}
+		if err := json.Unmarshal(msg.Payload, &req); err != nil {
+			return
+		}
+
+		mm.mu.RLock()
+		m := mm.connMatches[c.ID]
+		mm.mu.RUnlock()
+
+		if m == nil {
+			return
+		}
+
+		if err := m.HandleMove(c.UserID, req.X, req.Y); err != nil {
+			return
+		}
+
+		// Broadcast movement to all match players
+		payload, _ := json.Marshal(map[string]interface{}{
+			"player_id": c.UserID,
+			"x":         req.X,
+			"y":         req.Y,
+			"facing":    req.Facing,
+		})
+
+		mm.broadcastToMatch(m, protocol.Message{
+			Opcode:  protocol.OpcodePlayerMove,
+			Payload: payload,
+		})
+	})
 }
 
 func (mm *MatchManager) broadcastTurnStart(m *Match) {

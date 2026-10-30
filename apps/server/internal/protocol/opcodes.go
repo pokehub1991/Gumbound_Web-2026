@@ -20,5 +20,6 @@ const (
 	OpcodeProjectileResult uint16 = 0x3003
 	OpcodeTurnEnd          uint16 = 0x3004
 	OpcodeMatchEnd         uint16 = 0x3005
+	OpcodePlayerMove       uint16 = 0x3006
 )
 

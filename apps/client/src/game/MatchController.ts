@@ -24,6 +24,11 @@ export class MatchController {
     this.game.aimController.onFireCallback = (angle, power, shotType) => {
       this.handleLocalFire(angle, power, shotType);
     };
+
+    // When player moves along terrain
+    this.game.aimController.onMoveCallback = (x, y, facing) => {
+      this.handleLocalMove(x, y, facing);
+    };
   }
 
   private setupNetworkHandlers() {
@@ -40,6 +45,18 @@ export class MatchController {
     this.connection.handler.on(Opcode.PROJECTILE_RESULT, (msg) => {
       const result = msg.json<ProjectileResultState>();
       this.handleProjectileResult(result);
+    });
+
+    this.connection.handler.on(Opcode.PLAYER_MOVE, (msg) => {
+      const p = msg.json<{ player_id: string; x: number; y: number; facing: number }>();
+      if (p.player_id !== this.localUserId) {
+        const mob = this.game.mobiles.get(p.player_id);
+        if (mob) {
+          mob.x = p.x;
+          mob.y = p.y;
+          mob.setFacing(p.facing);
+        }
+      }
     });
 
     this.connection.handler.on(Opcode.MATCH_END, (msg) => {
@@ -116,6 +133,14 @@ export class MatchController {
       angle,
       power,
       shot_type: shotType,
+    });
+  }
+
+  private handleLocalMove(x: number, y: number, facing: number) {
+    this.connection.send(Opcode.PLAYER_MOVE, {
+      x,
+      y,
+      facing,
     });
   }
 

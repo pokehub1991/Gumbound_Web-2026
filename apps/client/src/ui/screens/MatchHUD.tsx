@@ -90,66 +90,86 @@ export const MatchHUD: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Bottom Center: Shot Type Selection */}
+      {/* Bottom Center: Shot Type Selection & Controls Hint */}
       {isMyTurn && (
         <div style={{
           alignSelf: "center",
           display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
           gap: "8px",
-          background: "rgba(15, 23, 42, 0.9)",
-          padding: "8px 14px",
-          borderRadius: "8px",
-          border: "1px solid #334155",
-          pointerEvents: "auto",
           marginBottom: "50px",
+          pointerEvents: "auto",
         }}>
-          <button
-            onClick={() => onSelectShotType(0)}
-            style={{
-              padding: "8px 14px",
-              background: selectedShotType === 0 ? "#0284c7" : "#1e293b",
-              border: selectedShotType === 0 ? "2px solid #38bdf8" : "1px solid #334155",
-              color: "#fff",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: "bold",
-              fontSize: "12px",
-            }}
-          >
-            [1] DISPARO 1
-          </button>
+          <div style={{
+            background: "rgba(15, 23, 42, 0.8)",
+            padding: "4px 12px",
+            borderRadius: "20px",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            color: "#94a3b8",
+            fontSize: "11px",
+            fontWeight: "500",
+            letterSpacing: "0.5px",
+          }}>
+            <span style={{ color: "#38bdf8" }}>◄ ►</span> Moverse &nbsp;|&nbsp; <span style={{ color: "#38bdf8" }}>▲ ▼</span> Ángulo &nbsp;|&nbsp; <span style={{ color: "#fbbf24" }}>Espacio</span> Mantener disparo
+          </div>
 
-          <button
-            onClick={() => onSelectShotType(1)}
-            style={{
-              padding: "8px 14px",
-              background: selectedShotType === 1 ? "#0284c7" : "#1e293b",
-              border: selectedShotType === 1 ? "2px solid #38bdf8" : "1px solid #334155",
-              color: "#fff",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: "bold",
-              fontSize: "12px",
-            }}
-          >
-            [2] DISPARO 2
-          </button>
+          <div style={{
+            display: "flex",
+            gap: "8px",
+            background: "rgba(15, 23, 42, 0.9)",
+            padding: "8px 14px",
+            borderRadius: "8px",
+            border: "1px solid #334155",
+          }}>
+            <button
+              onClick={() => onSelectShotType(0)}
+              style={{
+                padding: "8px 14px",
+                background: selectedShotType === 0 ? "#0284c7" : "#1e293b",
+                border: selectedShotType === 0 ? "2px solid #38bdf8" : "1px solid #334155",
+                color: "#fff",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "12px",
+              }}
+            >
+              [1] DISPARO 1
+            </button>
 
-          <button
-            onClick={() => onSelectShotType(2)}
-            style={{
-              padding: "8px 14px",
-              background: selectedShotType === 2 ? "#7c3aed" : "#1e293b",
-              border: selectedShotType === 2 ? "2px solid #c084fc" : "1px solid #334155",
-              color: "#fff",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontWeight: "bold",
-              fontSize: "12px",
-            }}
-          >
-            [3] SUPER SHOT (SS)
-          </button>
+            <button
+              onClick={() => onSelectShotType(1)}
+              style={{
+                padding: "8px 14px",
+                background: selectedShotType === 1 ? "#0284c7" : "#1e293b",
+                border: selectedShotType === 1 ? "2px solid #38bdf8" : "1px solid #334155",
+                color: "#fff",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "12px",
+              }}
+            >
+              [2] DISPARO 2
+            </button>
+
+            <button
+              onClick={() => onSelectShotType(2)}
+              style={{
+                padding: "8px 14px",
+                background: selectedShotType === 2 ? "#7c3aed" : "#1e293b",
+                border: selectedShotType === 2 ? "2px solid #c084fc" : "1px solid #334155",
+                color: "#fff",
+                borderRadius: "4px",
+                cursor: "pointer",
+                fontWeight: "bold",
+                fontSize: "12px",
+              }}
+            >
+              [3] SUPER SHOT (SS)
+            </button>
+          </div>
         </div>
       )}
 

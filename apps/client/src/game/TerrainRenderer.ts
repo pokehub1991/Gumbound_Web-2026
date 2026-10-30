@@ -84,5 +84,25 @@ export class TerrainRenderer extends Container {
     const pixel = this.ctx.getImageData(x, y, 1, 1).data;
     return pixel[3] > 32; // Alpha threshold
   }
+
+  public findSurfaceY(x: number, startY: number): number {
+    const minScanY = Math.max(10, Math.floor(startY - 35));
+    const maxScanY = Math.min(this.mapHeight - 1, Math.floor(startY + 60));
+
+    for (let y = minScanY; y <= maxScanY; y++) {
+      if (this.isGround(Math.floor(x), y)) {
+        return y;
+      }
+    }
+    for (let y = maxScanY + 1; y < this.mapHeight; y += 4) {
+      if (this.isGround(Math.floor(x), y)) {
+        for (let r = y - 4; r <= y; r++) {
+          if (this.isGround(Math.floor(x), r)) return r;
+        }
+        return y;
+      }
+    }
+    return startY;
+  }
 }
 
