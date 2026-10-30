@@ -76,6 +76,14 @@ func main() {
 	http.HandleFunc("/api/login", withCORS(authHandlers.HandleLogin))
 	http.HandleFunc("/ws", gw.HandleWebSocket)
 
+	// Serve static client build if present
+	distDir := "../client/dist"
+	if _, err := os.Stat(distDir); err == nil {
+		fs := http.FileServer(http.Dir(distDir))
+		http.Handle("/", fs)
+		log.Printf("Serving client UI from %s\n", distDir)
+	}
+
 	port := ":8080"
 	log.Printf("Gumbound Web 2026 Server running on http://localhost%s (WS: /ws)\n", port)
 	if err := http.ListenAndServe(port, nil); err != nil {

@@ -26,7 +26,7 @@ export class Mobile extends Container {
   private spriteContainer: Container;
   private animSprite?: AnimatedSprite;
   private animTextures?: MobileAnimationTextures;
-  private currentAnimName: "normal" | "move" = "normal";
+  private currentAnimName: string = "normal";
 
   private fallbackBody: Graphics;
   private aimPointer: Graphics;
@@ -98,7 +98,8 @@ export class Mobile extends Container {
       // Remove fallback graphics
       this.fallbackBody.visible = false;
 
-      this.animSprite = new AnimatedSprite(textures.normal);
+      const initialFrames = textures.animations["normal"] || Object.values(textures.animations)[0];
+      this.animSprite = new AnimatedSprite(initialFrames);
       this.animSprite.animationSpeed = 0.25; // ~15 FPS
       this.animSprite.anchor.set(textures.primaryAnchor.x, textures.primaryAnchor.y);
       this.animSprite.play();
@@ -110,14 +111,29 @@ export class Mobile extends Container {
     }
   }
 
-  public playAnimation(name: "normal" | "move") {
-    if (this.currentAnimName === name || !this.animSprite || !this.animTextures) return;
-    this.currentAnimName = name;
+  public playAnimation(name: string, loop: boolean = true, onComplete?: () => void) {
+    if (!this.animSprite || !this.animTextures) return;
+    if (this.currentAnimName === name && this.animSprite.playing) return;
 
-    const frames = name === "move" ? this.animTextures.move : this.animTextures.normal;
+    const frames = this.animTextures.animations[name] || this.animTextures.animations["normal"];
+    if (!frames || frames.length === 0) return;
+
+    this.currentAnimName = name;
     this.animSprite.textures = frames;
-    this.animSprite.animationSpeed = name === "move" ? 0.35 : 0.2;
-    this.animSprite.play();
+    this.animSprite.loop = loop;
+    this.animSprite.animationSpeed = name === "move" ? 0.35 : name.startsWith("fire") ? 0.4 : 0.22;
+    this.animSprite.gotoAndPlay(0);
+
+    if (!loop) {
+      this.animSprite.onComplete = () => {
+        if (onComplete) onComplete();
+        else if (name !== "dead") {
+          this.playAnimation("normal");
+        }
+      };
+    } else {
+      this.animSprite.onComplete = undefined;
+    }
   }
 
   public setAngle(deg: number) {
@@ -135,10 +151,14 @@ export class Mobile extends Container {
   }
 
   public setHp(hp: number) {
+    const prevHp = this.hp;
     this.hp = Math.max(0, Math.min(this.maxHp, hp));
     this.updateHpBar();
     if (this.hp === 0) {
-      this.alpha = 0.4;
+      this.playAnimation("dead", false);
+      this.alpha = 0.6;
+    } else if (this.hp < prevHp) {
+      this.playAnimation("fdamage", false);
     }
   }
 

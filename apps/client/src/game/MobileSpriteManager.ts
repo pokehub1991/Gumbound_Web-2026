@@ -13,8 +13,7 @@ export interface FrameData {
 }
 
 export interface MobileAnimationTextures {
-  normal: Texture[];
-  move: Texture[];
+  animations: Record<string, Texture[]>;
   primaryAnchor: { x: number; y: number };
 }
 
@@ -83,9 +82,6 @@ export class MobileSpriteManager {
 
       const baseTexture: Texture = await Assets.load(spritePath);
 
-      const normalFrames = this.decompressFrames(def.normal);
-      const moveFrames = this.decompressFrames(def.move);
-
       const sliceTextures = (frames: FrameData[]): Texture[] => {
         return frames.map((f) => {
           return new Texture({
@@ -95,18 +91,49 @@ export class MobileSpriteManager {
         });
       };
 
-      const normalTextures = sliceTextures(normalFrames);
-      const moveTextures = sliceTextures(moveFrames);
+      const animations: Record<string, Texture[]> = {};
+      const knownStates = [
+        "normal",
+        "move",
+        "wnormal",
+        "wmove",
+        "unmove",
+        "fire1",
+        "fire2",
+        "sfire",
+        "fdamage",
+        "bdamage",
+        "drop",
+        "dead",
+        "emotion1",
+      ];
 
-      const first = normalFrames[0] || { w: 40, h: 40, cx: 20, cy: 35 };
+      for (const state of knownStates) {
+        if (def && def[state]) {
+          const frames = this.decompressFrames(def[state]);
+          if (frames.length > 0) {
+            animations[state] = sliceTextures(frames);
+          }
+        }
+      }
+
+      // Default normal state
+      if (!animations["normal"] || animations["normal"].length === 0) {
+        animations["normal"] = [baseTexture];
+      }
+      if (!animations["move"]) {
+        animations["move"] = animations["normal"];
+      }
+
+      const firstNormal = def?.normal ? this.decompressFrames(def.normal)[0] : undefined;
+      const first = firstNormal || { w: 40, h: 40, cx: 20, cy: 35 };
       const primaryAnchor = {
         x: first.cx / first.w,
         y: first.cy / first.h,
       };
 
       const result: MobileAnimationTextures = {
-        normal: normalTextures.length > 0 ? normalTextures : [baseTexture],
-        move: moveTextures.length > 0 ? moveTextures : normalTextures,
+        animations,
         primaryAnchor,
       };
 

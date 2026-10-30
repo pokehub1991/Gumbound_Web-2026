@@ -156,6 +156,11 @@ export class AimController extends Container {
     if (e.code === "Space" && this.charging) {
       this.charging = false;
       e.preventDefault();
+
+      // Trigger authentic firing animation
+      const fireAnim = this.shotType === 2 ? "sfire" : this.shotType === 1 ? "fire2" : "fire1";
+      this.activeMobile.playAnimation(fireAnim, false);
+
       if (this.onFireCallback) {
         this.onFireCallback(this.currentAngle, this.power, this.shotType);
       }
