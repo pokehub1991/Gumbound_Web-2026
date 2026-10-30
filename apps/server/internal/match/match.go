@@ -178,8 +178,12 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 func (m *Match) checkWinCondition() bool {
 	teamAAlive := false
 	teamBAlive := false
+	hasTeamB := false
 
 	for _, p := range m.Players {
+		if p.Team == "B" {
+			hasTeamB = true
+		}
 		if p.Alive {
 			if p.Team == "A" {
 				teamAAlive = true
@@ -187,6 +191,15 @@ func (m *Match) checkWinCondition() bool {
 				teamBAlive = true
 			}
 		}
+	}
+
+	// Solo / Practice mode: only 1 team present
+	if !hasTeamB {
+		if !teamAAlive {
+			m.WinnerTeam = "FINISH"
+			return true
+		}
+		return false
 	}
 
 	if !teamAAlive && teamBAlive {

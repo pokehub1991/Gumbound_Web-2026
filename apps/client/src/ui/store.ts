@@ -40,3 +40,4 @@ export const useStore = create<UIState>((set) => ({
       chatMessages: [...state.chatMessages.slice(-80), msg],
     })),
 }));
+

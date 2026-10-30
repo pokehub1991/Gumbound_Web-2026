@@ -56,3 +56,4 @@ func GenerateMapTerrain(mapID string) (*physics.TerrainMask, MapConfig) {
 
 	return terrain, cfg
 }
+

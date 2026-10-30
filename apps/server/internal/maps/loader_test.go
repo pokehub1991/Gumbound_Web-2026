@@ -24,3 +24,4 @@ func TestGenerateMapTerrain(t *testing.T) {
 		t.Errorf("expected air at (500, 100)")
 	}
 }
+

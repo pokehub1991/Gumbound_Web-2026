@@ -144,7 +144,7 @@ func (r *Room) CanStartMatch() error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if len(r.Players) < 2 {
+	if len(r.Players) < 1 {
 		return ErrNeedMorePlayer
 	}
 

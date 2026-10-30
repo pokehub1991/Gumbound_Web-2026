@@ -16,3 +16,4 @@ COPY --from=builder /gumbound-server ./server
 
 EXPOSE 8080
 CMD ["./server"]
+

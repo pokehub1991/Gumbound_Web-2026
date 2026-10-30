@@ -145,3 +145,4 @@ export class MatchController {
     this.game.aimController.shotType = type;
   }
 }
+

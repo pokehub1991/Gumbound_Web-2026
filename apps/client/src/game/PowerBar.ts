@@ -57,3 +57,4 @@ export class PowerBar extends Container {
     }
   }
 }
+

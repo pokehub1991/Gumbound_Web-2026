@@ -47,3 +47,4 @@ export function decodeMessage(data: ArrayBuffer): DecodedMessage {
     },
   };
 }
+

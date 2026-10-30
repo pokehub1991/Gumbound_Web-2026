@@ -83,3 +83,4 @@ export interface ProjectileResultState {
 export interface MatchEndState {
   winner_team: string;
 }
+
