@@ -104,5 +104,19 @@ export class TerrainRenderer extends Container {
     }
     return startY;
   }
+
+  public getSlopeAngle(x: number, currentY: number): { angle: number; groundY: number; dy: number } {
+    const probeDist = 14;
+    const yLeft = this.findSurfaceY(x - probeDist, currentY);
+    const yRight = this.findSurfaceY(x + probeDist, currentY);
+    const groundY = (yLeft + yRight) / 2;
+    const dx = probeDist * 2;
+    const dy = yRight - yLeft;
+    const rawAngle = Math.atan2(dy, dx);
+    // Clamp slope to max ±55 degrees (~0.96 rad)
+    const maxSlope = 0.96;
+    const angle = Math.max(-maxSlope, Math.min(maxSlope, rawAngle));
+    return { angle, groundY, dy };
+  }
 }
 

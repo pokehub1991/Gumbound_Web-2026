@@ -22,6 +22,7 @@ export class Mobile extends Container {
   public hp: number;
   public facing: number = 1; // 1 = right, -1 = left
   public angleDeg: number = 45;
+  public slopeAngle: number = 0;
 
   private spriteContainer: Container;
   private animSprite?: AnimatedSprite;
@@ -52,7 +53,7 @@ export class Mobile extends Container {
 
     const teamColor = this.team === "A" ? 0x2196f3 : 0xf44336;
 
-    // Temporary fallback vector tank while sprite texture loads
+    // Fallback vector tank while sprite texture loads
     this.fallbackBody.roundRect(-20, -12, 40, 20, 4);
     this.fallbackBody.fill(0x37474f);
     this.fallbackBody.stroke({ width: 2, color: teamColor });
@@ -65,7 +66,7 @@ export class Mobile extends Container {
     this.aimPointer.x = 0;
     this.aimPointer.y = -10;
 
-    // Player Nickname label
+    // Player Nickname label (remains horizontal upright above tank)
     const style = new TextStyle({
       fontFamily: "Arial",
       fontSize: 12,
@@ -100,15 +101,22 @@ export class Mobile extends Container {
 
       const initialFrames = textures.animations["normal"] || Object.values(textures.animations)[0];
       this.animSprite = new AnimatedSprite(initialFrames);
-      this.animSprite.animationSpeed = 0.25; // ~15 FPS
+      this.animSprite.animationSpeed = 0.45;
       this.animSprite.anchor.set(textures.primaryAnchor.x, textures.primaryAnchor.y);
       this.animSprite.play();
 
       this.spriteContainer.addChild(this.animSprite);
       this.setFacing(this.facing);
+      this.setTilt(this.slopeAngle);
     } catch (err) {
       console.warn(`[Mobile] Could not load sprite for mobile ${this.mobileType}, using fallback:`, err);
     }
+  }
+
+  public setTilt(rad: number) {
+    this.slopeAngle = rad;
+    this.spriteContainer.rotation = rad;
+    this.fallbackBody.rotation = rad;
   }
 
   public playAnimation(name: string, loop: boolean = true, onComplete?: () => void) {
@@ -121,7 +129,22 @@ export class Mobile extends Container {
     this.currentAnimName = name;
     this.animSprite.textures = frames;
     this.animSprite.loop = loop;
-    this.animSprite.animationSpeed = name === "move" ? 0.35 : name.startsWith("fire") ? 0.4 : 0.22;
+
+    // Authentic fluid pacing matching GunBound Windows client (~27-36 FPS)
+    if (name.startsWith("bfire") || name.startsWith("bifire") || name.startsWith("bsfire")) {
+      this.animSprite.animationSpeed = 0.50; // charge animation
+    } else if (name === "move" || name === "wmove") {
+      this.animSprite.animationSpeed = 0.55; // fluid movement
+    } else if (name.startsWith("fire") || name === "sfire" || name === "ifire") {
+      this.animSprite.animationSpeed = 0.60; // crisp weapon fire recoil
+    } else if (name.includes("damage")) {
+      this.animSprite.animationSpeed = 0.55; // hit reaction
+    } else if (name === "dead") {
+      this.animSprite.animationSpeed = 0.35;
+    } else {
+      this.animSprite.animationSpeed = 0.45; // fluid idle
+    }
+
     this.animSprite.gotoAndPlay(0);
 
     if (!loop) {
@@ -144,7 +167,9 @@ export class Mobile extends Container {
 
   public setFacing(dir: number) {
     this.facing = dir >= 0 ? 1 : -1;
-    this.spriteContainer.scale.x = this.facing;
+    // Authentic GunBound spritesheet natively faces LEFT by default.
+    // To face RIGHT (+1), invert scale.x (-1). To face LEFT (-1), keep scale.x (+1).
+    this.spriteContainer.scale.x = -this.facing;
     this.fallbackBody.scale.x = this.facing;
     this.aimPointer.scale.x = this.facing;
     this.setAngle(this.angleDeg);
@@ -158,8 +183,36 @@ export class Mobile extends Container {
       this.playAnimation("dead", false);
       this.alpha = 0.6;
     } else if (this.hp < prevHp) {
+      this.showDamagePopup(prevHp - this.hp);
       this.playAnimation("fdamage", false);
     }
+  }
+
+  public showDamagePopup(damage: number) {
+    if (damage <= 0) return;
+    const style = new TextStyle({
+      fontFamily: "Impact, Arial Black, sans-serif",
+      fontSize: 20,
+      fontWeight: "bold",
+      fill: damage >= 300 ? "#ff1744" : "#ffeb3b",
+      stroke: { color: "#000000", width: 4 },
+    });
+    const popupText = new Text({ text: `-${damage}`, style });
+    popupText.anchor.set(0.5, 0.5);
+    popupText.x = 0;
+    popupText.y = -52;
+    this.addChild(popupText);
+
+    let elapsed = 0;
+    const animInterval = setInterval(() => {
+      elapsed += 16;
+      popupText.y -= 1.0;
+      popupText.alpha = Math.max(0, 1.0 - elapsed / 1100);
+      if (elapsed >= 1100) {
+        clearInterval(animInterval);
+        this.removeChild(popupText);
+      }
+    }, 16);
   }
 
   private updateHpBar() {

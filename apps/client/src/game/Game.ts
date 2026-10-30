@@ -118,26 +118,47 @@ export class Game {
     return mobile;
   }
 
-  public fireProjectile(points: { x: number; y: number }[], onImpact?: () => void) {
+  public fireProjectile(
+    points: { x: number; y: number }[],
+    mobileType: number = 0,
+    shotType: number = 0,
+    onImpact?: () => void,
+    onFinished?: () => void
+  ) {
     if (this.activeProjectile) {
       this.projectilesContainer.removeChild(this.activeProjectile);
     }
 
-    const proj = new Projectile(points, () => {
-      if (onImpact) onImpact();
-      this.projectilesContainer.removeChild(proj);
-      this.activeProjectile = undefined;
-    });
+    const proj = new Projectile(
+      points,
+      mobileType,
+      shotType,
+      () => {
+        if (onImpact) onImpact();
+      },
+      () => {
+        this.projectilesContainer.removeChild(proj);
+        this.activeProjectile = undefined;
+        if (onFinished) onFinished();
+      }
+    );
 
     this.activeProjectile = proj;
     this.projectilesContainer.addChild(proj);
   }
 
   public update(dt: number) {
+    if (this.activeProjectile) {
+      const pos = this.activeProjectile.currentPosition;
+      this.camera.panTo(pos.x, pos.y);
+      this.activeProjectile.update(dt);
+    } else {
+      const activeMob = this.aimController.activeMobile;
+      if (activeMob) {
+        this.camera.panTo(activeMob.x, activeMob.y - 30);
+      }
+    }
     this.camera.update(dt);
     this.aimController.update(dt);
-    if (this.activeProjectile) {
-      this.activeProjectile.update(dt);
-    }
   }
 }

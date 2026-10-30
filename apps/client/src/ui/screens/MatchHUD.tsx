@@ -9,6 +9,7 @@ interface Props {
   winnerTeam?: string;
   myTeam?: string;
   onReturnToRoom: () => void;
+  onExitToLobby: () => void;
 }
 
 export const MatchHUD: React.FC<Props> = ({
@@ -20,6 +21,7 @@ export const MatchHUD: React.FC<Props> = ({
   winnerTeam,
   myTeam,
   onReturnToRoom,
+  onExitToLobby,
 }) => {
   const [timeLeft, setTimeLeft] = useState(30);
 
@@ -75,18 +77,44 @@ export const MatchHUD: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 30s Countdown Timer */}
-        <div style={{
-          background: timeLeft <= 5 ? "rgba(239, 68, 68, 0.9)" : "rgba(15, 23, 42, 0.85)",
-          color: "#fff",
-          fontSize: "20px",
-          fontWeight: "bold",
-          padding: "8px 18px",
-          borderRadius: "8px",
-          border: "1px solid #334155",
-          fontFamily: "monospace",
-        }}>
-          {timeLeft}s
+        {/* Right Controls: Exit to Lobby & 30s Countdown Timer */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            onClick={onExitToLobby}
+            title="Salir de la partida y regresar al Lobby para cambiar de móvil"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              background: "rgba(220, 38, 38, 0.85)",
+              color: "#ffffff",
+              border: "1px solid #ef4444",
+              borderRadius: "8px",
+              padding: "8px 14px",
+              fontWeight: "bold",
+              fontSize: "12px",
+              cursor: "pointer",
+              transition: "background 0.2s, transform 0.1s",
+              boxShadow: "0 2px 8px rgba(0, 0, 0, 0.3)",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = "#b91c1c")}
+            onMouseOut={(e) => (e.currentTarget.style.background = "rgba(220, 38, 38, 0.85)")}
+          >
+            <span>🚪</span> Salir al Lobby
+          </button>
+
+          <div style={{
+            background: timeLeft <= 5 ? "rgba(239, 68, 68, 0.9)" : "rgba(15, 23, 42, 0.85)",
+            color: "#fff",
+            fontSize: "20px",
+            fontWeight: "bold",
+            padding: "8px 18px",
+            borderRadius: "8px",
+            border: "1px solid #334155",
+            fontFamily: "monospace",
+          }}>
+            {timeLeft}s
+          </div>
         </div>
       </div>
 

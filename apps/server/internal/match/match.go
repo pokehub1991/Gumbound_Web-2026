@@ -94,7 +94,7 @@ func (m *Match) ActivePlayer() *MatchPlayer {
 	return m.Players[m.ActiveID]
 }
 
-func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType int) (*physics.ProjectileResult, error) {
+func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType int, facing ...int) (*physics.ProjectileResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -125,24 +125,45 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		}
 	}
 
-	// Run authoritative physics simulation
-	result := physics.SimulateProjectile(
-		activePlayer.Pos,
-		angle,
-		power,
-		m.Wind.Vector,
-		0.25, // Standard gravity
-		m.Terrain,
-		targets,
-	)
+	f := 1
+	if len(facing) > 0 && facing[0] < 0 {
+		f = -1
+	}
+
+	baseDamage := stats.Shot1Damage
+	if shotType == 1 {
+		baseDamage = stats.Shot2Damage
+	} else if shotType == 2 {
+		baseDamage = stats.SSDamage
+	}
+
+	// Run authoritative physics simulation with authentic GunBound mobile ballistics
+	cfg := physics.ProjectileConfig{
+		Origin:      activePlayer.Pos,
+		AngleDeg:    angle,
+		Power:       power,
+		Wind:        m.Wind.Vector,
+		Gravity:     stats.Gravity,
+		WindFactor:  stats.WindFactor,
+		BaseDamage:  baseDamage,
+		BlastRadius: stats.BlastRadius,
+		Facing:      f,
+	}
+	result := physics.SimulateProjectileAdv(cfg, m.Terrain, targets)
 
 	// Apply damages
 	for victimID, dmg := range result.Damages {
 		if victim, exists := m.Players[victimID]; exists && victim.Alive {
 			victim.HP -= dmg
 			if victim.HP <= 0 {
-				victim.HP = 0
-				victim.Alive = false
+				if len(m.Players) <= 1 {
+					// In solo practice testing mode, keep player alive infinitely!
+					victim.HP = stats.MaxHP
+					victim.Alive = true
+				} else {
+					victim.HP = 0
+					victim.Alive = false
+				}
 			}
 		}
 	}
@@ -168,6 +189,14 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		m.ActiveID = next.ID
 		m.TurnNumber++
 		m.RandomizeWind()
+	} else if len(m.Players) <= 1 {
+		for _, p := range m.Players {
+			p.Alive = true
+			m.ActiveID = p.ID
+			m.TurnNumber++
+			m.RandomizeWind()
+			break
+		}
 	} else {
 		m.State = StateFinished
 	}
@@ -193,8 +222,11 @@ func (m *Match) checkWinCondition() bool {
 		}
 	}
 
-	// Solo / Practice mode: only 1 team present
-	if !hasTeamB {
+	// Solo / Practice mode: only 1 team or 1 player present
+	if len(m.Players) <= 1 || !hasTeamB {
+		if len(m.Players) <= 1 {
+			return false // Never finish in solo test mode, allow infinite shots
+		}
 		if !teamAAlive {
 			m.WinnerTeam = "FINISH"
 			return true

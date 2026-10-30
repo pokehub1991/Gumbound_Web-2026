@@ -82,7 +82,24 @@ export const App: React.FC = () => {
 
   const handleReturnToRoom = () => {
     setWinnerTeam(undefined);
+    const game = (window as unknown as { __game?: Game }).__game;
+    if (game) {
+      game.aimController.enabled = false;
+      game.aimController.setActiveMobile(undefined);
+    }
     setScreen("room");
+  };
+
+  const handleExitToLobby = () => {
+    setWinnerTeam(undefined);
+    const game = (window as unknown as { __game?: Game }).__game;
+    if (game) {
+      game.aimController.enabled = false;
+      game.aimController.setActiveMobile(undefined);
+    }
+    connection.send(Opcode.ROOM_LEAVE, {});
+    setCurrentRoom(undefined);
+    setScreen("lobby");
   };
 
   return (
@@ -100,6 +117,7 @@ export const App: React.FC = () => {
           winnerTeam={winnerTeam}
           myTeam={matchCtrlRef.current?.myTeam}
           onReturnToRoom={handleReturnToRoom}
+          onExitToLobby={handleExitToLobby}
         />
       )}
     </div>

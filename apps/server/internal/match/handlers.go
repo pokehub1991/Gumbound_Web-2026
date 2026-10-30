@@ -102,6 +102,7 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 			Angle    float64 `json:"angle"`
 			Power    float64 `json:"power"`
 			ShotType int     `json:"shot_type"`
+			Facing   int     `json:"facing"`
 		}
 		if err := json.Unmarshal(msg.Payload, &req); err != nil {
 			return
@@ -116,7 +117,11 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 			return
 		}
 
-		result, err := m.HandleFireShot(c.UserID, req.Angle, req.Power, req.ShotType)
+		f := req.Facing
+		if f == 0 {
+			f = 1
+		}
+		result, err := m.HandleFireShot(c.UserID, req.Angle, req.Power, req.ShotType, f)
 		if err != nil {
 			log.Printf("FireShot rejected: %v\n", err)
 			return
@@ -139,8 +144,12 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 				Payload: endData,
 			})
 		} else {
-			// Small delay before announcing next turn
-			time.AfterFunc(1500*time.Millisecond, func() {
+			// Delay before announcing next turn to allow projectile flight and explosion animation
+			turnDelay := 2200 * time.Millisecond
+			if len(result.Trajectory) > 50 {
+				turnDelay = time.Duration(len(result.Trajectory)*20+600) * time.Millisecond
+			}
+			time.AfterFunc(turnDelay, func() {
 				mm.broadcastTurnStart(m)
 			})
 		}

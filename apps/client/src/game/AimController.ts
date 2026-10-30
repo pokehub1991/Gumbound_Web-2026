@@ -12,7 +12,7 @@ export class AimController extends Container {
   private chargeDirection: number = 1;
 
   private trajectoryPreview: Graphics;
-  private activeMobile?: Mobile;
+  public activeMobile?: Mobile;
   private powerBar: PowerBar;
   private terrain: TerrainRenderer;
 
@@ -38,6 +38,9 @@ export class AimController extends Container {
     this.activeKeys.clear();
     if (mobile) {
       this.currentAngle = mobile.angleDeg;
+      const slope = this.terrain.getSlopeAngle(mobile.x, mobile.y);
+      mobile.y = slope.groundY;
+      mobile.setTilt(slope.angle);
       mobile.playAnimation("normal");
       this.updatePreview();
     } else {
@@ -49,8 +52,8 @@ export class AimController extends Container {
     if (!this.enabled || !this.activeMobile) return;
 
     if (this.charging) {
-      // Charge power bar continuously
-      this.power += 1.2 * dt * this.chargeDirection;
+      // Charge power bar smoothly (approx 3.7 seconds to fill 0 to 100%, authentic GunBound pacing)
+      this.power += 0.45 * dt * this.chargeDirection;
       if (this.power >= 100) {
         this.power = 100;
         this.chargeDirection = -1; // Bounce back
@@ -86,11 +89,18 @@ export class AimController extends Container {
     const deltaX = dir * moveSpeed * (dt / 60);
     const newX = Math.max(50, Math.min(this.terrain.mapWidth - 50, this.activeMobile.x + deltaX));
 
-    // Dynamic terrain height snapping
-    const newY = this.terrain.findSurfaceY(newX, this.activeMobile.y);
+    // Dynamic terrain height and slope angle
+    const slope = this.terrain.getSlopeAngle(newX, this.activeMobile.y);
+
+    // Block climbing excessively steep walls (> 60 deg)
+    const isUphill = (dir > 0 && slope.dy < 0) || (dir < 0 && slope.dy > 0);
+    if (Math.abs(slope.angle) > 1.05 && isUphill) {
+      return;
+    }
 
     this.activeMobile.x = newX;
-    this.activeMobile.y = newY;
+    this.activeMobile.y = slope.groundY;
+    this.activeMobile.setTilt(slope.angle);
     this.updatePreview();
 
     // Throttled position sync
@@ -98,7 +108,7 @@ export class AimController extends Container {
     if (now - this.lastMoveSendTime > 120) {
       this.lastMoveSendTime = now;
       if (this.onMoveCallback) {
-        this.onMoveCallback(newX, newY, dir);
+        this.onMoveCallback(newX, slope.groundY, dir);
       }
     }
   }
@@ -122,7 +132,8 @@ export class AimController extends Container {
       this.charging = true;
       this.power = 0;
       this.chargeDirection = 1;
-      this.activeMobile.playAnimation("normal");
+      const chargeAnim = this.shotType === 2 ? "bsfire" : this.shotType === 1 ? "bfire2" : "bfire1";
+      this.activeMobile.playAnimation(chargeAnim, true);
       e.preventDefault();
     } else if (e.code === "Digit1") {
       this.shotType = 0;
@@ -145,6 +156,8 @@ export class AimController extends Container {
 
       if (!remainingMove && this.activeMobile) {
         this.activeMobile.playAnimation("normal");
+        const slope = this.terrain.getSlopeAngle(this.activeMobile.x, this.activeMobile.y);
+        this.activeMobile.setTilt(slope.angle);
         if (this.onMoveCallback) {
           this.onMoveCallback(this.activeMobile.x, this.activeMobile.y, this.activeMobile.facing);
         }

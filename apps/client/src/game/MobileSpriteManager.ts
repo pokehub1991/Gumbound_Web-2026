@@ -32,37 +32,74 @@ export class MobileSpriteManager {
   private static cache: Map<number, MobileAnimationTextures> = new Map();
   private static loadingPromises: Map<number, Promise<MobileAnimationTextures>> = new Map();
 
+  /**
+   * Authentic DragonBound / GunBound EPA frame decompression algorithm.
+   * Expands run-length counts while keeping duplicate frames pointing
+   * to their exact texture coordinates on the spritesheet.
+   */
   public static decompressFrames(anim: { g: (number | number[])[]; x?: number; y?: number }): FrameData[] {
-    if (!anim || !anim.g) return [];
-    const raw: number[][] = [];
+    if (!anim || !anim.g || !Array.isArray(anim.g)) return [];
+
+    // Step 1: Expand RLE counts into frame reference array
+    const decompressed: number[][] = [];
+    let currentFrame: number[] | null = null;
+
     for (let i = 0; i < anim.g.length; i++) {
       const item = anim.g[i];
       if (typeof item === "number") {
-        const prev = raw[raw.length - 1];
-        if (prev) {
-          for (let k = 0; k < item; k++) raw.push(prev);
+        if (currentFrame) {
+          for (let k = 0; k < item; k++) {
+            decompressed.push(currentFrame);
+          }
         }
-      } else {
-        raw.push(item as number[]);
+      } else if (Array.isArray(item)) {
+        currentFrame = item.slice();
+        decompressed.push(currentFrame);
       }
     }
 
-    let c = anim.x || 0;
-    const d = anim.y || 0;
-    return raw.map((f) => {
-      const frame: FrameData = {
+    // Step 2: Assign sprite sheet coordinates (curX, curY)
+    // Only unique frames advance curX (x position on spritesheet)
+    let curX = anim.x || 0;
+    const curY = anim.y || 0;
+    const result: FrameData[] = [];
+
+    for (let i = 0; i < decompressed.length; i++) {
+      const f = decompressed[i];
+      if (f.length < 8) {
+        f.push(curX, curY);
+        curX += f[0] + 1;
+      }
+      result.push({
         w: f[0],
         h: f[1],
         cx: f[2],
         cy: f[3],
         ox: f[4],
         oy: f[5],
-        x: c,
-        y: d,
-      };
-      c += f[0] + 1;
-      return frame;
-    });
+        x: f[6],
+        y: f[7],
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * Resolves an animation state including alias pointers (e.g. { d: "bfire1" })
+   */
+  public static resolveAnimDef(def: any, state: string, visited: Set<string> = new Set()): any {
+    if (!def || !state || visited.has(state)) return null;
+    visited.add(state);
+    const target = def[state];
+    if (!target) return null;
+    if (target.g && Array.isArray(target.g)) {
+      return target;
+    }
+    if (target.d && typeof target.d === "string") {
+      return this.resolveAnimDef(def, target.d, visited);
+    }
+    return null;
   }
 
   public static async loadMobileTextures(mobileType: number): Promise<MobileAnimationTextures> {
@@ -98,34 +135,53 @@ export class MobileSpriteManager {
         "wnormal",
         "wmove",
         "unmove",
+        "bfire1",
+        "bfire2",
+        "bifire",
+        "bsfire",
         "fire1",
         "fire2",
+        "ifire",
         "sfire",
         "fdamage",
         "bdamage",
         "drop",
         "dead",
+        "item",
+        "shock",
+        "ice",
         "emotion1",
       ];
 
       for (const state of knownStates) {
-        if (def && def[state]) {
-          const frames = this.decompressFrames(def[state]);
+        const animDef = this.resolveAnimDef(def, state);
+        if (animDef) {
+          const frames = this.decompressFrames(animDef);
           if (frames.length > 0) {
             animations[state] = sliceTextures(frames);
           }
         }
       }
 
-      // Default normal state
+      // Authentic fallbacks
       if (!animations["normal"] || animations["normal"].length === 0) {
         animations["normal"] = [baseTexture];
       }
       if (!animations["move"]) {
         animations["move"] = animations["normal"];
       }
+      if (!animations["bfire1"]) {
+        animations["bfire1"] = animations["normal"];
+      }
+      if (!animations["bfire2"]) {
+        animations["bfire2"] = animations["bfire1"];
+      }
+      if (!animations["bsfire"]) {
+        animations["bsfire"] = animations["bfire1"];
+      }
 
-      const firstNormal = def?.normal ? this.decompressFrames(def.normal)[0] : undefined;
+      const normalDef = this.resolveAnimDef(def, "normal");
+      const firstNormal = normalDef ? this.decompressFrames(normalDef)[0] : undefined;
       const first = firstNormal || { w: 40, h: 40, cx: 20, cy: 35 };
       const primaryAnchor = {
         x: first.cx / first.w,
