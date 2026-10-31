@@ -102,7 +102,7 @@ export class Mobile extends Container {
 
       const initialFrames = textures.animations["normal"] || Object.values(textures.animations)[0];
       this.animSprite = new AnimatedSprite(initialFrames);
-      this.animSprite.animationSpeed = 0.45;
+      this.animSprite.animationSpeed = 0.35;
       this.animSprite.anchor.set(textures.primaryAnchor.x, textures.primaryAnchor.y);
       this.animSprite.play();
 
@@ -139,19 +139,19 @@ export class Mobile extends Container {
       this.animSprite.anchor.set(this.animTextures.primaryAnchor.x, this.animTextures.primaryAnchor.y);
     }
 
-    // Authentic fluid pacing matching GunBound Windows client (~30-40 FPS)
+    // Authentic GunBound framerate (MOBILE_FPS = 20, at 60 FPS ticker = 0.35)
     if (name.startsWith("bfire") || name.startsWith("bifire") || name.startsWith("bsfire")) {
-      this.animSprite.animationSpeed = 0.55; // charge animation
+      this.animSprite.animationSpeed = 0.40; // charge animation
     } else if (name === "move" || name === "wmove") {
-      this.animSprite.animationSpeed = 0.65; // fluid, rapid tread movement
+      this.animSprite.animationSpeed = 0.45; // fluid, rapid tread movement
     } else if (name.startsWith("fire") || name === "sfire" || name === "ifire") {
-      this.animSprite.animationSpeed = 0.70; // crisp weapon fire recoil
+      this.animSprite.animationSpeed = 0.60; // crisp weapon fire recoil
     } else if (name.includes("damage")) {
-      this.animSprite.animationSpeed = 0.60; // hit reaction
+      this.animSprite.animationSpeed = 0.50; // hit reaction
     } else if (name === "dead") {
-      this.animSprite.animationSpeed = 0.35;
+      this.animSprite.animationSpeed = 0.30;
     } else {
-      this.animSprite.animationSpeed = 0.45; // fluid idle
+      this.animSprite.animationSpeed = 0.35; // fluid breathing idle (~20 FPS)
     }
 
     this.animSprite.gotoAndPlay(0);

@@ -27,6 +27,19 @@ const MOBILE_KEYS: Record<number, string> = {
   5: "boomer",
   6: "raon",
   7: "turtle",
+  8: "lightning",
+  9: "jd",
+  10: "asate",
+  11: "phoenix",
+  12: "maya",
+  13: "ice",
+  14: "grub",
+  15: "dragon",
+  16: "knight",
+  17: "aduka",
+  18: "frog",
+  19: "kalsiddon",
+  20: "copyloid",
 };
 
 export class MobileSpriteManager {
@@ -35,51 +48,58 @@ export class MobileSpriteManager {
 
   /**
    * Authentic DragonBound / GunBound EPA frame decompression algorithm.
-   * Expands run-length counts while keeping duplicate frames pointing
-   * to their exact texture coordinates on the spritesheet.
+   * Decompresses repeat counts while accurately advancing the spritesheet coordinates (c, d)
+   * for each distinct frame along the row.
    */
   public static decompressFrames(anim: { g: (number | number[])[]; x?: number; y?: number }): FrameData[] {
     if (!anim || !anim.g || !Array.isArray(anim.g)) return [];
 
-    // Step 1: Expand RLE counts into frame reference array
-    const decompressed: number[][] = [];
-    let currentFrame: number[] | null = null;
+    // Step 1: Decompress repeat counts (clone template so each frame independently holds coordinates)
+    const rawList: number[][] = [];
+    let template: number[] | null = null;
 
     for (let i = 0; i < anim.g.length; i++) {
-      const item = anim.g[i];
+      let item = anim.g[i];
       if (typeof item === "number") {
-        if (currentFrame) {
-          for (let k = 0; k < item; k++) {
-            decompressed.push(currentFrame);
+        if (template) {
+          for (; 0 < item; item--) {
+            rawList.push(template.slice());
           }
         }
       } else if (Array.isArray(item)) {
-        currentFrame = item.slice();
-        decompressed.push(currentFrame);
+        template = item;
+        rawList.push(item.slice());
       }
     }
 
-    // Step 2: Assign sprite sheet coordinates (curX, curY)
-    // Only unique frames advance curX (x position on spritesheet)
-    let curX = anim.x || 0;
-    const curY = anim.y || 0;
+    // Step 2: Assign spritesheet coordinates (c, d) sequentially along the row
+    let c = anim.x || 0;
+    const d = anim.y || 0;
     const result: FrameData[] = [];
 
-    for (let i = 0; i < decompressed.length; i++) {
-      const f = decompressed[i];
-      if (f.length < 8) {
-        f.push(curX, curY);
-        curX += f[0] + 1;
+    for (let i = 0; i < rawList.length; i++) {
+      const f = rawList[i];
+      let frameX: number;
+      let frameY: number;
+
+      if (f.length < 7) {
+        frameX = c;
+        frameY = d;
+        c += f[0] + 1;
+      } else {
+        frameX = f[6];
+        frameY = f[7];
       }
+
       result.push({
         w: f[0],
         h: f[1],
         cx: f[2],
         cy: f[3],
-        ox: f[4],
-        oy: f[5],
-        x: f[6],
-        y: f[7],
+        ox: f[4] ?? 0,
+        oy: f[5] ?? 0,
+        x: frameX,
+        y: frameY,
       });
     }
 
@@ -131,6 +151,10 @@ export class MobileSpriteManager {
           return new Texture({
             source: baseTexture.source,
             frame: new Rectangle(sliceX, sliceY, sliceW, sliceH),
+            defaultAnchor: {
+              x: (f.cx || sliceW / 2) / (sliceW || 1),
+              y: (f.cy || sliceH) / (sliceH || 1),
+            },
           });
         });
       };
