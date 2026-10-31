@@ -4,6 +4,11 @@ import projDefs from "./projectileDefs.json";
 export interface ProjectileTextures {
   textures: Texture[];
   anchor: { x: number; y: number };
+  isStream?: boolean;
+  trace?: number;
+  traceH?: number;
+  traceY?: number;
+  baseTexture?: Texture;
 }
 
 const MOBILE_BULLET_MAP: Record<number, string[]> = {
@@ -184,7 +189,21 @@ export class ProjectileSpriteManager {
       const baseTexture: Texture = await Assets.load(path);
       baseTexture.source.scaleMode = "nearest";
       baseTexture.source.autoGenerateMipmaps = false;
-      const result = this.decompressGraphics(baseTexture, def?.graphics || []);
+
+      let result: ProjectileTextures;
+      if (def?.isStream) {
+        result = {
+          textures: [baseTexture],
+          anchor: { x: 0, y: 0.5 },
+          isStream: true,
+          trace: def.trace || 8,
+          traceH: def.traceH || baseTexture.height,
+          traceY: def.traceY || 0,
+          baseTexture: baseTexture,
+        };
+      } else {
+        result = this.decompressGraphics(baseTexture, def?.graphics || []);
+      }
       this.bulletCache.set(key, result);
       return result;
     } catch (e) {

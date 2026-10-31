@@ -61,6 +61,11 @@ func SimulateProjectileAdv(
 	muzzleOffset := 24.0
 	muzzleX := cfg.Origin.X + muzzleOffset*math.Cos(rad)*facingMult
 	muzzleY := cfg.Origin.Y - 14.0 - muzzleOffset*math.Sin(rad)
+
+	// Ensure muzzle origin is strictly in the open air, elevating if slope rises immediately
+	for iter := 0; iter < 40 && terrain.IsGround(int(muzzleX), int(muzzleY)); iter++ {
+		muzzleY -= 2.0
+	}
 	currentPos := Vec2{X: muzzleX, Y: muzzleY}
 
 	// GunBound calibrated speed: 100 power (4 full bars) = 24.0 px/tick initial velocity
@@ -96,11 +101,11 @@ func SimulateProjectileAdv(
 		currentPos.X += vx * stepDt
 		currentPos.Y += vy * stepDt
 
-		// Continuous collision detection: check along trajectory step every 2.0 pixels
+		// Continuous collision detection: check along trajectory step every 1.5 pixels
 		dx := currentPos.X - prevPos.X
 		dy := currentPos.Y - prevPos.Y
 		dist := math.Hypot(dx, dy)
-		steps := int(math.Ceil(dist / 2.0))
+		steps := int(math.Ceil(dist / 1.5))
 		if steps < 1 {
 			steps = 1
 		}
@@ -124,12 +129,12 @@ func SimulateProjectileAdv(
 				}
 			}
 
-			// 2. Check Terrain collision with binary search for exact surface contact
+			// 2. Check Terrain collision (skip first tick to clear immediate muzzle release)
 			px, py := int(checkPos.X), int(checkPos.Y)
-			if terrain.IsGround(px, py) {
+			if tick >= 1 && terrain.IsGround(px, py) {
 				lowT := float64(s-1) / float64(steps)
 				highT := t
-				for iter := 0; iter < 6; iter++ {
+				for iter := 0; iter < 8; iter++ {
 					midT := (lowT + highT) * 0.5
 					midX := int(prevPos.X + dx*midT)
 					midY := int(prevPos.Y + dy*midT)
@@ -139,11 +144,19 @@ func SimulateProjectileAdv(
 						lowT = midT
 					}
 				}
-				hitType = HitTerrain
-				impactPos = Vec2{
-					X: prevPos.X + dx*highT,
-					Y: prevPos.Y + dy*highT,
+
+				hitX := prevPos.X + dx*highT
+				hitY := prevPos.Y + dy*highT
+
+				// Exact surface alignment: ensure impact coordinates are on the top ground boundary
+				ix, iy := int(hitX), int(hitY)
+				for iy > 0 && terrain.IsGround(ix, iy-1) {
+					iy--
 				}
+				hitY = float64(iy)
+
+				hitType = HitTerrain
+				impactPos = Vec2{X: hitX, Y: hitY}
 				collided = true
 				break
 			}

@@ -1,15 +1,25 @@
-import { AnimatedSprite, Container, Graphics, Texture } from "pixi.js";
-import { ProjectileSpriteManager } from "./ProjectileSpriteManager.js";
+import { AnimatedSprite, Container, Graphics, Rectangle, Sprite, Texture } from "pixi.js";
+import { ProjectileSpriteManager, ProjectileTextures } from "./ProjectileSpriteManager.js";
 
 export interface Point2D {
   x: number;
   y: number;
 }
 
+interface StreamSegment {
+  sprite: Sprite;
+  sliceW: number;
+  sliceH: number;
+}
+
 export class Projectile extends Container {
   private bulletContainer: Container;
   private bulletSprite?: AnimatedSprite;
   private fallbackBullet: Graphics;
+
+  private streamContainer?: Container;
+  private streamSegments: StreamSegment[] = [];
+  private isStream: boolean = false;
 
   private explodeSprite?: AnimatedSprite;
   private fallbackExplosion: Graphics;
@@ -62,13 +72,17 @@ export class Projectile extends Container {
 
     // Try synchronous cache first
     const cachedBullet = ProjectileSpriteManager.getCachedBullet(mobileType, shotType);
-    if (cachedBullet && cachedBullet.textures.length > 0) {
-      this.fallbackBullet.visible = false;
-      this.bulletSprite = new AnimatedSprite(cachedBullet.textures);
-      this.bulletSprite.anchor.set(cachedBullet.anchor.x, cachedBullet.anchor.y);
-      this.bulletSprite.animationSpeed = 0.35;
-      this.bulletSprite.play();
-      this.bulletContainer.addChild(this.bulletSprite);
+    if (cachedBullet) {
+      if (cachedBullet.isStream) {
+        this.setupStream(cachedBullet);
+      } else if (cachedBullet.textures.length > 0) {
+        this.fallbackBullet.visible = false;
+        this.bulletSprite = new AnimatedSprite(cachedBullet.textures);
+        this.bulletSprite.anchor.set(cachedBullet.anchor.x, cachedBullet.anchor.y);
+        this.bulletSprite.animationSpeed = 0.35;
+        this.bulletSprite.play();
+        this.bulletContainer.addChild(this.bulletSprite);
+      }
     }
 
     const cachedExplosion = ProjectileSpriteManager.getCachedExplosion(mobileType, shotType);
@@ -84,6 +98,47 @@ export class Projectile extends Container {
 
   public get currentPosition(): Point2D {
     return { x: this.currentX, y: this.currentY };
+  }
+
+  private setupStream(bulletData: ProjectileTextures) {
+    if (!bulletData.baseTexture) return;
+    this.isStream = true;
+    this.fallbackBullet.visible = false;
+
+    if (this.streamContainer) {
+      this.removeChild(this.streamContainer);
+      this.streamContainer.destroy();
+    }
+
+    this.streamContainer = new Container();
+    this.streamSegments = [];
+
+    const trace = bulletData.trace || 8;
+    const baseTex = bulletData.baseTexture;
+    const sliceW = Math.max(1, Math.floor(baseTex.width / trace));
+    const sliceH = bulletData.traceH || baseTex.height;
+    const traceY = bulletData.traceY || 0;
+
+    for (let m = 0; m < trace; m++) {
+      const clampedX = Math.min(baseTex.width - 1, m * sliceW);
+      const clampedW = Math.min(sliceW, baseTex.width - clampedX);
+      const frame = new Rectangle(clampedX, traceY, clampedW, sliceH);
+      const segTex = new Texture({
+        source: baseTex.source,
+        frame,
+      });
+      const segSprite = new Sprite(segTex);
+      segSprite.anchor.set(0, 0.5);
+      segSprite.visible = false;
+      this.streamSegments.push({
+        sprite: segSprite,
+        sliceW: clampedW,
+        sliceH,
+      });
+      this.streamContainer.addChild(segSprite);
+    }
+
+    this.addChildAt(this.streamContainer, 0);
   }
 
   private setupExplodeSprite(textures: Texture[], anchor: { x: number; y: number }) {
@@ -108,9 +163,11 @@ export class Projectile extends Container {
 
   private async loadSprites() {
     try {
-      if (!this.bulletSprite) {
+      if (!this.bulletSprite && !this.isStream) {
         const bulletData = await ProjectileSpriteManager.loadBullet(this.mobileType, this.shotType);
-        if (bulletData.textures.length > 0) {
+        if (bulletData.isStream) {
+          this.setupStream(bulletData);
+        } else if (bulletData.textures.length > 0) {
           this.fallbackBullet.visible = false;
           this.bulletSprite = new AnimatedSprite(bulletData.textures);
           this.bulletSprite.anchor.set(bulletData.anchor.x, bulletData.anchor.y);
@@ -129,6 +186,24 @@ export class Projectile extends Container {
     } catch (e) {
       console.warn("[Projectile] Error loading authentic sprites:", e);
     }
+  }
+
+  private getPointAtProgress(prog: number): Point2D {
+    if (this.points.length === 0) return { x: 0, y: 0 };
+    if (prog <= 0) return this.points[0];
+    if (prog >= this.points.length - 1) return this.points[this.points.length - 1];
+
+    const idx0 = Math.floor(prog);
+    const idx1 = Math.min(this.points.length - 1, idx0 + 1);
+    const frac = prog - idx0;
+
+    const p0 = this.points[idx0];
+    const p1 = this.points[idx1];
+
+    return {
+      x: p0.x + (p1.x - p0.x) * frac,
+      y: p0.y + (p1.y - p0.y) * frac,
+    };
   }
 
   public update(dt: number = 1): boolean {
@@ -172,24 +247,52 @@ export class Projectile extends Container {
     }
 
     // Continuous linear interpolation between adjacent trajectory points
-    const idx0 = Math.floor(this.progress);
-    const idx1 = Math.min(this.points.length - 1, idx0 + 1);
-    const frac = this.progress - idx0;
-
-    const p0 = this.points[idx0];
-    const p1 = this.points[idx1];
-
-    this.currentX = p0.x + (p1.x - p0.x) * frac;
-    this.currentY = p0.y + (p1.y - p0.y) * frac;
+    const currentPt = this.getPointAtProgress(this.progress);
+    this.currentX = currentPt.x;
+    this.currentY = currentPt.y;
 
     this.bulletContainer.x = this.currentX;
     this.bulletContainer.y = this.currentY;
 
     // Angle of flight direction (rotates authentic sprite naturally)
-    const dx = p1.x - p0.x;
-    const dy = p1.y - p0.y;
+    const nextProg = Math.min(this.points.length - 1, this.progress + 0.2);
+    const nextPt = this.getPointAtProgress(nextProg);
+    const dx = nextPt.x - currentPt.x;
+    const dy = nextPt.y - currentPt.y;
     if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
       this.bulletContainer.rotation = Math.atan2(dy, dx);
+    }
+
+    // Authentic stream / trace rendering for laser and water jets (Mage & Turtle)
+    if (this.isStream && this.streamSegments.length > 0) {
+      const numSegs = this.streamSegments.length;
+      // Trail length connects smoothly behind projectile head
+      const trailSpan = Math.min(this.progress, numSegs * 0.95);
+      const step = trailSpan / numSegs;
+
+      for (let m = 0; m < numSegs; m++) {
+        const seg = this.streamSegments[m];
+        const progHead = Math.max(0, this.progress - m * step);
+        const progTail = Math.max(0, this.progress - (m + 1) * step);
+
+        const ptHead = this.getPointAtProgress(progHead);
+        const ptTail = this.getPointAtProgress(progTail);
+
+        const segDx = ptHead.x - ptTail.x;
+        const segDy = ptHead.y - ptTail.y;
+        const segDist = Math.hypot(segDx, segDy);
+
+        if (this.progress > 0.1 && segDist > 0.1) {
+          seg.sprite.visible = true;
+          seg.sprite.x = ptTail.x;
+          seg.sprite.y = ptTail.y;
+          seg.sprite.rotation = Math.atan2(segDy, segDx);
+          seg.sprite.scale.x = Math.max(0.01, segDist / seg.sliceW);
+          seg.sprite.scale.y = 1.0;
+        } else {
+          seg.sprite.visible = false;
+        }
+      }
     }
 
     return false;
@@ -198,6 +301,9 @@ export class Projectile extends Container {
   private triggerImpact() {
     this.isExploding = true;
     this.bulletContainer.visible = false;
+    if (this.streamContainer) {
+      this.streamContainer.visible = false;
+    }
 
     const lastPt = this.points[this.points.length - 1];
     this.currentX = lastPt.x;
@@ -221,6 +327,9 @@ export class Projectile extends Container {
   }
 
   private finish() {
+    if (this.streamContainer) {
+      this.streamContainer.visible = false;
+    }
     if (this.onCompleteCallback) {
       this.onCompleteCallback();
       this.onCompleteCallback = undefined;
