@@ -7,25 +7,41 @@ export interface ProjectileTextures {
 }
 
 const MOBILE_BULLET_MAP: Record<number, string[]> = {
-  0: ["armor2", "armor1", "armorss"],
-  1: ["mage2a", "mage1", "magess"],
-  2: ["nak2", "nak1", "nakss"],
+  // MobileType.ARMOR = 0 -> Tiro 1: armor1.png, Tiro 2: armor2.png, SS: armorSS.png
+  0: ["armor1", "armor2", "armorss"],
+  // MobileType.MAGE = 1 -> Tiro 1: mage1.png, Tiro 2: mage2a.png, SS: mageSS.png
+  1: ["mage1", "mage2a", "magess"],
+  // MobileType.NAK = 2 -> Tiro 1: nak1b.png, Tiro 2: nak2b.png, SS: nakss.png
+  2: ["nak1", "nak2", "nakss"],
+  // MobileType.TRICO = 3 -> Tiro 1: trico.png, Tiro 2: trico.png (3 cabbage), SS: tricoSS.png
   3: ["trico1", "trico1", "trico2"],
-  4: ["bigfoot2", "bigfoot1", "bigfootss"],
+  // MobileType.BIG_FOOT = 4 -> Tiro 1: bigfoot1b.png, Tiro 2: bigfoot2.png, SS: bigfootSSb.png
+  4: ["bigfoot1", "bigfoot2", "bigfootss"],
+  // MobileType.BOOMER = 5 -> Tiro 1: boomer12.png, Tiro 2: boomer12.png, SS: boomerSS.png
   5: ["boomer12", "boomer12", "boomerss"],
-  6: ["raon2", "raon1", "raonss"],
-  7: ["turtle2a", "turtle1", "turtless"],
+  // MobileType.RAON = 6 -> Tiro 1: raon1.png, Tiro 2: raon2.png, SS: raonSS.png
+  6: ["raon1", "raon2", "raonss"],
+  // MobileType.TURTLE = 7 -> Tiro 1: turtle12a.png, Tiro 2: turtle12a.png, SS: turtleSSclose.png
+  7: ["turtle1", "turtle2a", "turtless"],
 };
 
 const MOBILE_EXPLODE_MAP: Record<number, string[]> = {
-  0: ["armor2", "armor1", "armorss"],
-  1: ["asate2", "mage1", "magess"],
-  2: ["nak2", "nak1", "nakss"],
-  3: ["trico2", "trico1", "tricoss"],
-  4: ["bigfoot2", "bigfoot1ss", "bigfoot1ss"],
+  // MobileType.ARMOR = 0
+  0: ["armor1", "armor2", "armorss"],
+  // MobileType.MAGE = 1
+  1: ["mage1", "asate2", "magess"],
+  // MobileType.NAK = 2
+  2: ["nak1", "nak2", "nakss"],
+  // MobileType.TRICO = 3
+  3: ["armor1", "armor1", "armorss"],
+  // MobileType.BIG_FOOT = 4
+  4: ["bigfoot1ss", "bigfoot2", "bigfoot1ss"],
+  // MobileType.BOOMER = 5
   5: ["boomer12", "boomer12", "boomerss"],
-  6: ["raon2", "raon1", "raonss"],
-  7: ["turtle2", "turtle1", "turtless"],
+  // MobileType.RAON = 6
+  6: ["raon1", "raon2", "raonss"],
+  // MobileType.TURTLE = 7
+  7: ["turtle1", "turtle2", "turtless"],
 };
 
 export class ProjectileSpriteManager {
@@ -39,8 +55,15 @@ export class ProjectileSpriteManager {
     if (!graphics || graphics.length === 0) {
       if (baseTexture.width > baseTexture.height) {
         const frameH = baseTexture.height;
-        const frameW = frameH;
-        const numFrames = Math.floor(baseTexture.width / frameH);
+        let frameW = frameH;
+        let numFrames = Math.floor(baseTexture.width / frameH);
+
+        // Special handling for nak1b.png (207x20 -> 9 frames of 23x20)
+        if (baseTexture.width === 207 && baseTexture.height === 20) {
+          frameW = 23;
+          numFrames = 9;
+        }
+
         if (numFrames > 1) {
           const textures: Texture[] = [];
           for (let i = 0; i < numFrames; i++) {
@@ -48,6 +71,7 @@ export class ProjectileSpriteManager {
               new Texture({
                 source: baseTexture.source,
                 frame: new Rectangle(i * frameW, 0, frameW, frameH),
+                defaultAnchor: { x: 0.5, y: 0.5 },
               })
             );
           }
@@ -64,59 +88,71 @@ export class ProjectileSpriteManager {
     }
 
     // Step 1: Expand repeat counts
-    const expanded: number[][] = [];
-    let currentFrame: number[] | null = null;
+    const rawList: number[][] = [];
+    let template: number[] | null = null;
 
     for (let i = 0; i < graphics.length; i++) {
-      const item = graphics[i];
+      let item = graphics[i];
       if (typeof item === "number") {
-        if (currentFrame) {
-          for (let k = 0; k < item; k++) {
-            expanded.push(currentFrame);
+        if (template) {
+          for (; 0 < item; item--) {
+            rawList.push(template.slice());
           }
         }
       } else if (Array.isArray(item)) {
-        currentFrame = item.slice();
-        expanded.push(currentFrame);
+        template = item;
+        rawList.push(item.slice());
       }
     }
 
-    // Step 2: Slice textures along x axis
+    // Step 2: Slice textures along x axis with frame-accurate anchors
     let curX = 0;
+    const curY = 0;
     const textures: Texture[] = [];
-    let anchor = { x: 0.5, y: 0.5 };
+    let firstAnchor = { x: 0.5, y: 0.5 };
 
-    for (let i = 0; i < expanded.length; i++) {
-      const f = expanded[i];
-      if (f.length < 5) {
-        // [w, h, cx, cy] -> append x
-        f.push(curX);
-        curX += f[0] + 1;
+    for (let i = 0; i < rawList.length; i++) {
+      const f = rawList[i];
+      const w = f[0];
+      const h = f[1];
+      const cx = f.length > 2 ? f[2] : Math.floor(w / 2);
+      const cy = f.length > 3 ? f[3] : Math.floor(h / 2);
+
+      let sliceX = curX;
+      let sliceY = curY;
+      if (f.length >= 8) {
+        sliceX = f[6];
+        sliceY = f[7];
+      } else {
+        curX += w + 1;
       }
-      const sliceX = Math.max(0, Math.min(f[4], baseTexture.width - 1));
-      const w = Math.max(1, Math.min(f[0], baseTexture.width - sliceX));
-      const h = Math.max(1, Math.min(f[1], baseTexture.height));
-      const cx = f[2];
-      const cy = f[3];
+
+      const clampedX = Math.max(0, Math.min(sliceX, baseTexture.width - 1));
+      const clampedY = Math.max(0, Math.min(sliceY, baseTexture.height - 1));
+      const clampedW = Math.max(1, Math.min(w, baseTexture.width - clampedX));
+      const clampedH = Math.max(1, Math.min(h, baseTexture.height - clampedY));
+
+      const frameAnchor = {
+        x: Math.max(0, Math.min(1, cx / (clampedW || 1))),
+        y: Math.max(0, Math.min(1, cy / (clampedH || 1))),
+      };
 
       if (i === 0) {
-        anchor = {
-          x: cx / (w || 1),
-          y: cy / (h || 1),
-        };
+        firstAnchor = frameAnchor;
       }
 
       textures.push(
         new Texture({
           source: baseTexture.source,
-          frame: new Rectangle(sliceX, 0, w, h),
+          frame: new Rectangle(clampedX, clampedY, clampedW, clampedH),
+          defaultAnchor: frameAnchor,
         })
       );
     }
 
     return {
       textures: textures.length > 0 ? textures : [baseTexture],
-      anchor,
+      anchor: firstAnchor,
     };
   }
 

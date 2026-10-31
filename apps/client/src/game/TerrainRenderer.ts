@@ -27,34 +27,44 @@ export class TerrainRenderer extends Container {
     this.addChild(this.sprite);
   }
 
-  public generateDefaultTerrain(groundBaseY: number = 550) {
+  public generateDefaultTerrain(
+    groundBaseY: number = 560,
+    roughness: number = 0.008,
+    amplitude: number = 65,
+    groundColor: string = "#593a1d",
+    grassColor: string = "#4da333"
+  ) {
     this.ctx.clearRect(0, 0, this.mapWidth, this.mapHeight);
 
-    // Draw terrain body
+    // Draw terrain body matching exact server mathematical formula
     this.ctx.beginPath();
     this.ctx.moveTo(0, this.mapHeight);
 
-    for (let x = 0; x <= this.mapWidth; x += 10) {
-      const y = groundBaseY + Math.sin(x * 0.008) * 60 + Math.sin(x * 0.02) * 20;
-      if (x === 0) this.ctx.lineTo(x, y);
-      else this.ctx.lineTo(x, y);
+    for (let x = 0; x <= this.mapWidth; x++) {
+      const elevation = Math.sin(x * roughness) * amplitude + Math.sin(x * roughness * 2.5) * (amplitude * 0.3);
+      const y = Math.round(groundBaseY + elevation);
+      this.ctx.lineTo(x, y);
     }
 
     this.ctx.lineTo(this.mapWidth, this.mapHeight);
     this.ctx.closePath();
 
     // Fill with soil gradient
-    const gradient = this.ctx.createLinearGradient(0, groundBaseY - 80, 0, this.mapHeight);
+    const gradient = this.ctx.createLinearGradient(0, groundBaseY - amplitude - 50, 0, this.mapHeight);
     gradient.addColorStop(0, "#734d26");
-    gradient.addColorStop(0.3, "#593a1d");
+    gradient.addColorStop(0.3, groundColor);
     gradient.addColorStop(1.0, "#261a0d");
     this.ctx.fillStyle = gradient;
     this.ctx.fill();
 
     // Draw grass top border
-    this.ctx.lineWidth = 6;
-    this.ctx.strokeStyle = "#4da333";
+    this.ctx.lineWidth = 4;
+    this.ctx.strokeStyle = grassColor;
     this.ctx.stroke();
+
+    if (this.texture) {
+      this.texture.source.update();
+    }
   }
 
   public clearCircle(cx: number, cy: number, radius: number) {

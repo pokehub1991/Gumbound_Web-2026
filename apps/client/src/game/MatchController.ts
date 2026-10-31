@@ -2,6 +2,7 @@ import { Opcode, MatchStartState, TurnStartState, ProjectileResultState, MatchEn
 import { Game } from "./Game.js";
 import { Connection } from "../network/Connection.js";
 import { ProjectileSpriteManager } from "./ProjectileSpriteManager.js";
+import { applyMapTerrain } from "./MapLoader.js";
 
 export class MatchController {
   private game: Game;
@@ -76,6 +77,11 @@ export class MatchController {
   }
 
   private handleMatchStart(state: MatchStartState) {
+    // Generate authentic terrain matching the map
+    if (state.map_id) {
+      applyMapTerrain(this.game.terrain, state.map_id);
+    }
+
     // Clear existing mobiles
     this.game.mobiles.forEach((m) => {
       this.game.mobilesContainer.removeChild(m);
@@ -169,9 +175,9 @@ export class MatchController {
   }
 
   private handleProjectileResult(result: ProjectileResultState) {
-    const shooter = this.game.mobiles.get(this.activeUserId);
-    const mobileType = shooter ? shooter.mobileType : 0;
-    const shotType = this.game.aimController.shotType;
+    const shooter = this.game.mobiles.get(result.shooter_id || this.activeUserId);
+    const mobileType = result.mobile_type !== undefined ? result.mobile_type : (shooter ? shooter.mobileType : 0);
+    const shotType = result.shot_type !== undefined ? result.shot_type : this.game.aimController.shotType;
 
     // Trigger authentic recoil/fire animation on shooter mobile
     if (shooter) {

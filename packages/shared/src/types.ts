@@ -69,6 +69,9 @@ export interface TurnStartState {
 }
 
 export interface ProjectileResultState {
+  shooter_id?: string;
+  mobile_type?: number;
+  shot_type?: number;
   trajectory: Point2D[];
   hit_type: string;
   impact_pos: Point2D;

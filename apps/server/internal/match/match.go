@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"gumbound-web/server/internal/maps"
 	"gumbound-web/server/internal/physics"
 )
 
@@ -40,7 +41,7 @@ type Match struct {
 
 func NewMatch(id string, players []*MatchPlayer, mapID string) *Match {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	terrain := physics.NewFlatTerrain(2400, 800, 600)
+	terrain, _ := maps.GenerateMapTerrain(mapID)
 
 	playerMap := make(map[string]*MatchPlayer)
 	for i, p := range players {
@@ -52,9 +53,9 @@ func NewMatch(id string, players []*MatchPlayer, mapID string) *Match {
 		p.Alive = true
 		p.Delay = 0
 
-		// Spread spawn positions across map
+		// Spread spawn positions across map, scanning downwards from sky
 		spawnX := 300 + (i * 400)
-		groundY := terrain.FindGroundY(spawnX, 400)
+		groundY := terrain.FindGroundY(spawnX, 50)
 		p.Pos = physics.Vec2{X: float64(spawnX), Y: float64(groundY - 15)}
 		playerMap[p.ID] = p
 	}
@@ -150,6 +151,9 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		Facing:      f,
 	}
 	result := physics.SimulateProjectileAdv(cfg, m.Terrain, targets)
+	result.ShooterID = playerID
+	result.MobileType = activePlayer.MobileID
+	result.ShotType = shotType
 
 	// Apply damages
 	for victimID, dmg := range result.Damages {

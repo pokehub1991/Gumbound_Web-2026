@@ -42,6 +42,12 @@ export const ClientMaps: Record<string, ClientMapConfig> = {
 
 export function applyMapTerrain(terrain: TerrainRenderer, mapId: string) {
   const cfg = ClientMaps[mapId] || ClientMaps.plains;
-  terrain.generateDefaultTerrain(cfg.groundBaseY);
+  terrain.generateDefaultTerrain(
+    cfg.groundBaseY,
+    cfg.roughness,
+    cfg.amplitude,
+    cfg.groundColor,
+    cfg.grassColor
+  );
 }
 
