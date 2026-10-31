@@ -14,6 +14,7 @@ export class Projectile extends Container {
 
   private explodeSprite?: AnimatedSprite;
   private fallbackExplosion: Graphics;
+  private ssAura?: Graphics;
 
   private points: Point2D[];
   private mobileType: number;
@@ -56,6 +57,12 @@ export class Projectile extends Container {
       -8, 5,
     ]).fill(0xf59e0b).stroke({ width: 1.5, color: 0xffffff });
     this.fallbackBullet.circle(0, 0, 3.5).fill(0xffffff);
+
+    // Epic SS radiant energy aura
+    if (this.shotType === 2) {
+      this.ssAura = new Graphics();
+      this.bulletContainer.addChild(this.ssAura);
+    }
 
     this.bulletContainer.addChild(this.fallbackBullet);
     this.addChild(this.trailGraphics);
@@ -192,32 +199,41 @@ export class Projectile extends Container {
       this.bulletContainer.rotation = Math.atan2(dy, dx);
     }
 
+    // Pulsating radiant energy aura for Super Shot (SS)
+    if (this.ssAura && this.shotType === 2) {
+      this.ssAura.clear();
+      const pulse = Math.sin(Date.now() * 0.02) * 4;
+      this.ssAura.circle(0, 0, 24 + pulse).fill({ color: 0x7c3aed, alpha: 0.35 });
+      this.ssAura.circle(0, 0, 14 + pulse * 0.5).fill({ color: 0xc084fc, alpha: 0.65 });
+      this.ssAura.circle(0, 0, 6).fill({ color: 0xffffff, alpha: 0.95 });
+    }
+
     // Draw glowing curved particle trail behind missile
     this.trailGraphics.clear();
-    const trailSpan = 12;
+    const trailSpan = this.shotType === 2 ? 18 : 12;
     const startIdx = Math.max(0, idx0 - trailSpan);
     if (idx0 > startIdx) {
       for (let i = startIdx; i < idx0; i++) {
         const ptA = this.points[i];
         const ptB = this.points[i + 1];
         const alpha = (i - startIdx + 1) / trailSpan;
-        const width = 1.5 + alpha * 3.5;
+        const width = (this.shotType === 2 ? 3.0 : 1.5) + alpha * (this.shotType === 2 ? 5.5 : 3.5);
 
         this.trailGraphics.moveTo(ptA.x, ptA.y);
         this.trailGraphics.lineTo(ptB.x, ptB.y);
         this.trailGraphics.stroke({
           width,
-          color: this.shotType === 2 ? 0xc084fc : 0xf97316,
-          alpha: alpha * 0.85,
+          color: this.shotType === 2 ? 0xa855f7 : 0xf97316,
+          alpha: alpha * (this.shotType === 2 ? 0.95 : 0.85),
         });
       }
       // Connect to current interpolated position
       this.trailGraphics.moveTo(p0.x, p0.y);
       this.trailGraphics.lineTo(this.currentX, this.currentY);
       this.trailGraphics.stroke({
-        width: 4.5,
-        color: this.shotType === 2 ? 0xc084fc : 0xf97316,
-        alpha: 0.9,
+        width: this.shotType === 2 ? 7.0 : 4.5,
+        color: this.shotType === 2 ? 0xe879f9 : 0xf97316,
+        alpha: 0.95,
       });
     }
 

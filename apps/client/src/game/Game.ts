@@ -1,4 +1,4 @@
-import { Application, Container } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { Background } from "./Background.js";
 import { TerrainRenderer } from "./TerrainRenderer.js";
 import { Camera } from "./Camera.js";
@@ -25,12 +25,19 @@ export class Game {
   public mobiles: Map<string, Mobile> = new Map();
   public activeProjectile?: Projectile;
 
+  private ssOverlay: Graphics;
+  private ssTargetAlpha: number = 0;
+  private shakeIntensity: number = 0;
+  private shakeDuration: number = 0;
+  private shakeTimer: number = 0;
+
   constructor() {
     this.app = new Application();
     this.worldContainer = new Container();
     this.uiContainer = new Container();
     this.mobilesContainer = new Container();
     this.projectilesContainer = new Container();
+    this.ssOverlay = new Graphics();
     this.background = new Background(2400, 800);
     this.terrain = new TerrainRenderer(2400, 800);
     this.camera = new Camera(this.worldContainer, 800, 600);
@@ -56,6 +63,12 @@ export class Game {
     this.worldContainer.addChild(this.terrain);
     this.worldContainer.addChild(this.aimController);
     this.worldContainer.addChild(this.mobilesContainer);
+
+    // Dramatic SS darkening filter: covers world while SS projectile & aura fly on top
+    this.ssOverlay.rect(-1000, -1000, 5000, 4000).fill({ color: 0x030712, alpha: 0.70 });
+    this.ssOverlay.alpha = 0;
+    this.worldContainer.addChild(this.ssOverlay);
+
     this.worldContainer.addChild(this.projectilesContainer);
 
     this.app.stage.addChild(this.worldContainer);
@@ -147,6 +160,16 @@ export class Game {
     this.projectilesContainer.addChild(proj);
   }
 
+  public setSSMode(active: boolean) {
+    this.ssTargetAlpha = active ? 0.70 : 0;
+  }
+
+  public shakeScreen(intensity: number = 7, durationMs: number = 400) {
+    this.shakeIntensity = intensity;
+    this.shakeDuration = Math.max(1, durationMs);
+    this.shakeTimer = durationMs;
+  }
+
   public update(dt: number) {
     if (this.activeProjectile) {
       const pos = this.activeProjectile.currentPosition;
@@ -160,5 +183,18 @@ export class Game {
     }
     this.camera.update(dt);
     this.aimController.update(dt);
+
+    // Smooth transition for battlefield darkening
+    this.ssOverlay.alpha += (this.ssTargetAlpha - this.ssOverlay.alpha) * Math.min(1.0, 0.12 * dt);
+
+    // Screen rumble / earthquake effect on detonations
+    if (this.shakeTimer > 0) {
+      this.shakeTimer -= dt * 16.66;
+      const factor = Math.max(0, this.shakeTimer / this.shakeDuration);
+      const ox = (Math.random() - 0.5) * 2 * this.shakeIntensity * factor;
+      const oy = (Math.random() - 0.5) * 2 * this.shakeIntensity * factor;
+      this.worldContainer.x += ox;
+      this.worldContainer.y += oy;
+    }
   }
 }

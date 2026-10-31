@@ -179,12 +179,24 @@ export class MatchController {
       shooter.playAnimation(fireAnim, false);
     }
 
+    // Activate dramatic battlefield darkening for SS
+    if (shotType === 2) {
+      this.game.setSSMode(true);
+    }
+
     // Fire authentic projectile animation with bullet & explosion sprites (camera tracks projectile)
     this.game.fireProjectile(
       result.trajectory,
       mobileType,
       shotType,
       () => {
+        // Detonation screen rumble (epic magnitude for SS)
+        if (shotType === 2) {
+          this.game.shakeScreen(9, 500);
+        } else {
+          this.game.shakeScreen(3, 220);
+        }
+
         // On impact: carve crater into terrain
         if (result.terrain_delta) {
           this.game.terrain.clearCircle(
@@ -210,6 +222,9 @@ export class MatchController {
         }
       },
       () => {
+        // Return lighting to normal after SS
+        this.game.setSSMode(false);
+
         // Explosion finished: return camera and idle animation to active mobile
         const activeMob = this.game.mobiles.get(this.activeUserId) || Array.from(this.game.mobiles.values())[0];
         if (activeMob) {

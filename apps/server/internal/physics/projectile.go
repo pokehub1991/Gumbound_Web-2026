@@ -92,43 +92,85 @@ func SimulateProjectileAdv(
 		vx += cfg.Wind.X * windAccelCoeff * stepDt
 		vy += (gravity + cfg.Wind.Y*windAccelCoeff) * stepDt
 
+		prevPos := currentPos
 		currentPos.X += vx * stepDt
 		currentPos.Y += vy * stepDt
 
-		// Record sample points every tick for completely smooth trajectory
-		trajectory = append(trajectory, currentPos)
+		// Continuous collision detection: check along trajectory step every 2.0 pixels
+		dx := currentPos.X - prevPos.X
+		dy := currentPos.Y - prevPos.Y
+		dist := math.Hypot(dx, dy)
+		steps := int(math.Ceil(dist / 2.0))
+		if steps < 1 {
+			steps = 1
+		}
 
-		// 1. Check Mobile collision (ignore shooter during first 4 ticks to prevent self-collision at muzzle)
-		if tick >= 4 {
-			if mobID, hit := CheckMobileCollision(currentPos, mobiles); hit {
-				hitType = HitMobile
-				impactPos = currentPos
-				hitMobileID = mobID
+		collided := false
+		for s := 1; s <= steps; s++ {
+			t := float64(s) / float64(steps)
+			checkPos := Vec2{
+				X: prevPos.X + dx*t,
+				Y: prevPos.Y + dy*t,
+			}
+
+			// 1. Check Mobile collision (ignore shooter during first 4 ticks to prevent self-collision at muzzle)
+			if tick >= 4 {
+				if mobID, hit := CheckMobileCollision(checkPos, mobiles); hit {
+					hitType = HitMobile
+					impactPos = checkPos
+					hitMobileID = mobID
+					collided = true
+					break
+				}
+			}
+
+			// 2. Check Terrain collision with binary search for exact surface contact
+			px, py := int(checkPos.X), int(checkPos.Y)
+			if terrain.IsGround(px, py) {
+				lowT := float64(s-1) / float64(steps)
+				highT := t
+				for iter := 0; iter < 6; iter++ {
+					midT := (lowT + highT) * 0.5
+					midX := int(prevPos.X + dx*midT)
+					midY := int(prevPos.Y + dy*midT)
+					if terrain.IsGround(midX, midY) {
+						highT = midT
+					} else {
+						lowT = midT
+					}
+				}
+				hitType = HitTerrain
+				impactPos = Vec2{
+					X: prevPos.X + dx*highT,
+					Y: prevPos.Y + dy*highT,
+				}
+				collided = true
+				break
+			}
+
+			// 3. Check Water / Bottom boundary
+			if py >= terrain.Height {
+				hitType = HitWater
+				impactPos = checkPos
+				collided = true
 				break
 			}
 		}
 
-		// 2. Check Terrain collision
-		px, py := int(currentPos.X), int(currentPos.Y)
-		if terrain.IsGround(px, py) {
-			hitType = HitTerrain
-			impactPos = currentPos
-			break
-		}
-
-		// 3. Check Water / Bottom boundary
-		if py >= terrain.Height {
-			hitType = HitWater
-			impactPos = currentPos
+		if collided {
 			break
 		}
 
 		// 4. Out of bounds check
+		px, py := int(currentPos.X), int(currentPos.Y)
 		if px < -300 || px > terrain.Width+300 || py < -1200 {
 			hitType = HitOOB
 			impactPos = currentPos
 			break
 		}
+
+		// Record sample points every tick for completely smooth trajectory
+		trajectory = append(trajectory, currentPos)
 	}
 
 	// Always ensure impact position is recorded in trajectory

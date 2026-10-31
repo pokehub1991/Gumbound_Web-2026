@@ -45,7 +45,7 @@ export class WindIndicator extends Container {
       const rad = (angleDeg * Math.PI) / 180;
       const arrowLength = 22;
       const tipX = Math.cos(rad) * arrowLength;
-      const tipY = Math.sin(rad) * arrowLength;
+      const tipY = -Math.sin(rad) * arrowLength; // Point upwards for positive degrees (-Y in screen space)
 
       this.arrowGraphics.moveTo(0, 0);
       this.arrowGraphics.lineTo(tipX, tipY);
@@ -54,14 +54,15 @@ export class WindIndicator extends Container {
       // Arrowhead
       const headAngle = Math.PI / 6;
       const headLen = 7;
+      const drawRad = Math.atan2(tipY, tipX);
       this.arrowGraphics.lineTo(
-        tipX - headLen * Math.cos(rad - headAngle),
-        tipY - headLen * Math.sin(rad - headAngle)
+        tipX - headLen * Math.cos(drawRad - headAngle),
+        tipY - headLen * Math.sin(drawRad - headAngle)
       );
       this.arrowGraphics.moveTo(tipX, tipY);
       this.arrowGraphics.lineTo(
-        tipX - headLen * Math.cos(rad + headAngle),
-        tipY - headLen * Math.sin(rad + headAngle)
+        tipX - headLen * Math.cos(drawRad + headAngle),
+        tipY - headLen * Math.sin(drawRad + headAngle)
       );
       this.arrowGraphics.stroke({ width: 3, color: 0xffeb3b });
     }

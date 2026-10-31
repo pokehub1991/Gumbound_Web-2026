@@ -66,17 +66,17 @@ export class Mobile extends Container {
     this.aimPointer.x = 0;
     this.aimPointer.y = -10;
 
-    // Player Nickname label (remains horizontal upright above tank)
+    // Player Nickname label (remains horizontal upright below mobile HP bar)
     const style = new TextStyle({
       fontFamily: "Arial",
-      fontSize: 12,
+      fontSize: 11,
       fontWeight: "bold",
       fill: "#ffffff",
       stroke: { color: "#000000", width: 3 },
     });
     this.nameText = new Text({ text: this.nickname, style });
-    this.nameText.anchor.set(0.5, 1);
-    this.nameText.y = -36;
+    this.nameText.anchor.set(0.5, 0);
+    this.nameText.y = 21;
 
     this.addChild(this.fallbackBody);
     this.addChild(this.spriteContainer);
@@ -96,8 +96,9 @@ export class Mobile extends Container {
       const textures = await MobileSpriteManager.loadMobileTextures(this.mobileType);
       this.animTextures = textures;
 
-      // Remove fallback graphics
+      // Remove fallback graphics and barrel vector line when authentic sprite is active
       this.fallbackBody.visible = false;
+      this.aimPointer.visible = false;
 
       const initialFrames = textures.animations["normal"] || Object.values(textures.animations)[0];
       this.animSprite = new AnimatedSprite(initialFrames);
@@ -130,15 +131,23 @@ export class Mobile extends Container {
     this.animSprite.textures = frames;
     this.animSprite.loop = loop;
 
-    // Authentic fluid pacing matching GunBound Windows client (~27-36 FPS)
+    // Center anchor accurately per animation bounding box
+    if (this.animTextures.anchors && this.animTextures.anchors[name]) {
+      const a = this.animTextures.anchors[name];
+      this.animSprite.anchor.set(a.x, a.y);
+    } else {
+      this.animSprite.anchor.set(this.animTextures.primaryAnchor.x, this.animTextures.primaryAnchor.y);
+    }
+
+    // Authentic fluid pacing matching GunBound Windows client (~30-40 FPS)
     if (name.startsWith("bfire") || name.startsWith("bifire") || name.startsWith("bsfire")) {
-      this.animSprite.animationSpeed = 0.50; // charge animation
+      this.animSprite.animationSpeed = 0.55; // charge animation
     } else if (name === "move" || name === "wmove") {
-      this.animSprite.animationSpeed = 0.55; // fluid movement
+      this.animSprite.animationSpeed = 0.65; // fluid, rapid tread movement
     } else if (name.startsWith("fire") || name === "sfire" || name === "ifire") {
-      this.animSprite.animationSpeed = 0.60; // crisp weapon fire recoil
+      this.animSprite.animationSpeed = 0.70; // crisp weapon fire recoil
     } else if (name.includes("damage")) {
-      this.animSprite.animationSpeed = 0.55; // hit reaction
+      this.animSprite.animationSpeed = 0.60; // hit reaction
     } else if (name === "dead") {
       this.animSprite.animationSpeed = 0.35;
     } else {
@@ -220,7 +229,7 @@ export class Mobile extends Container {
     const width = 44;
     const height = 5;
     const x = -width / 2;
-    const y = -28;
+    const y = 12; // Positioned cleanly below the tank tread base
 
     // Background bar
     this.hpBarGraphics.rect(x, y, width, height).fill(0x000000);

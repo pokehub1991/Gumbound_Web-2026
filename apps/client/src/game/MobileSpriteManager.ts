@@ -14,6 +14,7 @@ export interface FrameData {
 
 export interface MobileAnimationTextures {
   animations: Record<string, Texture[]>;
+  anchors: Record<string, { x: number; y: number }>;
   primaryAnchor: { x: number; y: number };
 }
 
@@ -118,17 +119,24 @@ export class MobileSpriteManager {
       const spritePath = `/sprites/mobiles/${filename}`;
 
       const baseTexture: Texture = await Assets.load(spritePath);
+      baseTexture.source.scaleMode = "nearest";
+      baseTexture.source.autoGenerateMipmaps = false;
 
       const sliceTextures = (frames: FrameData[]): Texture[] => {
         return frames.map((f) => {
+          const sliceX = Math.max(0, Math.min(f.x, baseTexture.width - 1));
+          const sliceY = Math.max(0, Math.min(f.y, baseTexture.height - 1));
+          const sliceW = Math.max(1, Math.min(f.w, baseTexture.width - sliceX));
+          const sliceH = Math.max(1, Math.min(f.h, baseTexture.height - sliceY));
           return new Texture({
             source: baseTexture.source,
-            frame: new Rectangle(f.x, f.y, f.w, f.h),
+            frame: new Rectangle(sliceX, sliceY, sliceW, sliceH),
           });
         });
       };
 
       const animations: Record<string, Texture[]> = {};
+      const anchors: Record<string, { x: number; y: number }> = {};
       const knownStates = [
         "normal",
         "move",
@@ -159,6 +167,11 @@ export class MobileSpriteManager {
           const frames = this.decompressFrames(animDef);
           if (frames.length > 0) {
             animations[state] = sliceTextures(frames);
+            const f0 = frames[0];
+            anchors[state] = {
+              x: (f0.cx || f0.w / 2) / (f0.w || 1),
+              y: (f0.cy || f0.h) / (f0.h || 1),
+            };
           }
         }
       }
@@ -190,6 +203,7 @@ export class MobileSpriteManager {
 
       const result: MobileAnimationTextures = {
         animations,
+        anchors,
         primaryAnchor,
       };
 

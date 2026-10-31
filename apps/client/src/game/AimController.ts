@@ -49,7 +49,10 @@ export class AimController extends Container {
   }
 
   public update(dt: number) {
-    if (!this.enabled || !this.activeMobile) return;
+    if (!this.enabled || !this.activeMobile) {
+      this.trajectoryPreview.clear();
+      return;
+    }
 
     if (this.charging) {
       // Charge power bar smoothly (approx 3.7 seconds to fill 0 to 100%, authentic GunBound pacing)
@@ -85,7 +88,7 @@ export class AimController extends Container {
     this.activeMobile.setFacing(dir);
     this.activeMobile.playAnimation("move");
 
-    const moveSpeed = 90; // Pixels per second
+    const moveSpeed = 48; // GunBound authentic deliberate movement speed
     const deltaX = dir * moveSpeed * (dt / 60);
     const newX = Math.max(50, Math.min(this.terrain.mapWidth - 50, this.activeMobile.x + deltaX));
 
@@ -186,7 +189,7 @@ export class AimController extends Container {
 
   private updatePreview() {
     this.trajectoryPreview.clear();
-    if (!this.activeMobile) return;
+    if (!this.enabled || !this.activeMobile) return;
 
     const muzzle = this.activeMobile.getMuzzlePosition();
     const rad = (this.currentAngle * Math.PI) / 180;

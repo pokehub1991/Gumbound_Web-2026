@@ -3,6 +3,7 @@ package match
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"sync"
 	"time"
@@ -79,13 +80,12 @@ func NewMatch(id string, players []*MatchPlayer, mapID string) *Match {
 
 func (m *Match) RandomizeWind() {
 	m.Wind.AngleDeg = float64(m.rng.Intn(360))
-	m.Wind.Magnitude = float64(m.rng.Intn(26)) // 0 to 25
-	rad := m.Wind.AngleDeg * (3.141592653589793 / 180.0)
+	m.Wind.Magnitude = float64(m.rng.Intn(25) + 1) // 1 to 25
+	rad := m.Wind.AngleDeg * (math.Pi / 180.0)
 	m.Wind.Vector = physics.Vec2{
-		X: m.Wind.Magnitude * 0.1 * (m.Wind.AngleDeg - 180.0) / 180.0,
-		Y: 0,
+		X: m.Wind.Magnitude * math.Cos(rad),
+		Y: -m.Wind.Magnitude * math.Sin(rad), // -Y is up in screen coordinates
 	}
-	_ = rad
 }
 
 func (m *Match) ActivePlayer() *MatchPlayer {

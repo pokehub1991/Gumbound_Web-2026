@@ -7,25 +7,25 @@ export interface ProjectileTextures {
 }
 
 const MOBILE_BULLET_MAP: Record<number, string[]> = {
-  0: ["armor1", "armor2", "armorss"],
-  1: ["mage1", "mage2a", "magess"],
-  2: ["nak1", "nak2", "nakss"],
+  0: ["armor2", "armor1", "armorss"],
+  1: ["mage2a", "mage1", "magess"],
+  2: ["nak2", "nak1", "nakss"],
   3: ["trico1", "trico1", "trico2"],
-  4: ["bigfoot1", "bigfoot2", "bigfootss"],
+  4: ["bigfoot2", "bigfoot1", "bigfootss"],
   5: ["boomer12", "boomer12", "boomerss"],
-  6: ["raon1", "raon2", "raonss"],
-  7: ["turtle1", "turtle2a", "turtless"],
+  6: ["raon2", "raon1", "raonss"],
+  7: ["turtle2a", "turtle1", "turtless"],
 };
 
 const MOBILE_EXPLODE_MAP: Record<number, string[]> = {
-  0: ["armor1", "armor2", "armorss"],
-  1: ["mage1", "asate2", "magess"],
-  2: ["nak1", "nak2", "nakss"],
-  3: ["trico1", "trico2", "tricoss"],
-  4: ["bigfoot1ss", "bigfoot2", "bigfoot1ss"],
+  0: ["armor2", "armor1", "armorss"],
+  1: ["asate2", "mage1", "magess"],
+  2: ["nak2", "nak1", "nakss"],
+  3: ["trico2", "trico1", "tricoss"],
+  4: ["bigfoot2", "bigfoot1ss", "bigfoot1ss"],
   5: ["boomer12", "boomer12", "boomerss"],
-  6: ["raon1", "raon2", "raonss"],
-  7: ["turtle1", "turtle2", "turtless"],
+  6: ["raon2", "raon1", "raonss"],
+  7: ["turtle2", "turtle1", "turtless"],
 };
 
 export class ProjectileSpriteManager {
@@ -37,6 +37,26 @@ export class ProjectileSpriteManager {
     graphics: (number | number[])[]
   ): ProjectileTextures {
     if (!graphics || graphics.length === 0) {
+      if (baseTexture.width > baseTexture.height) {
+        const frameH = baseTexture.height;
+        const frameW = frameH;
+        const numFrames = Math.floor(baseTexture.width / frameH);
+        if (numFrames > 1) {
+          const textures: Texture[] = [];
+          for (let i = 0; i < numFrames; i++) {
+            textures.push(
+              new Texture({
+                source: baseTexture.source,
+                frame: new Rectangle(i * frameW, 0, frameW, frameH),
+              })
+            );
+          }
+          return {
+            textures,
+            anchor: { x: 0.5, y: 0.5 },
+          };
+        }
+      }
       return {
         textures: [baseTexture],
         anchor: { x: 0.5, y: 0.5 },
@@ -73,9 +93,9 @@ export class ProjectileSpriteManager {
         f.push(curX);
         curX += f[0] + 1;
       }
-      const sliceX = f[4];
-      const w = f[0];
-      const h = f[1];
+      const sliceX = Math.max(0, Math.min(f[4], baseTexture.width - 1));
+      const w = Math.max(1, Math.min(f[0], baseTexture.width - sliceX));
+      const h = Math.max(1, Math.min(f[1], baseTexture.height));
       const cx = f[2];
       const cy = f[3];
 
@@ -89,7 +109,7 @@ export class ProjectileSpriteManager {
       textures.push(
         new Texture({
           source: baseTexture.source,
-          frame: new Rectangle(sliceX, 0, Math.min(w, baseTexture.width - sliceX), Math.min(h, baseTexture.height)),
+          frame: new Rectangle(sliceX, 0, w, h),
         })
       );
     }
@@ -126,6 +146,8 @@ export class ProjectileSpriteManager {
 
     try {
       const baseTexture: Texture = await Assets.load(path);
+      baseTexture.source.scaleMode = "nearest";
+      baseTexture.source.autoGenerateMipmaps = false;
       const result = this.decompressGraphics(baseTexture, def?.graphics || []);
       this.bulletCache.set(key, result);
       return result;
@@ -149,6 +171,8 @@ export class ProjectileSpriteManager {
 
     try {
       const baseTexture: Texture = await Assets.load(path);
+      baseTexture.source.scaleMode = "nearest";
+      baseTexture.source.autoGenerateMipmaps = false;
       const result = this.decompressGraphics(baseTexture, def?.graphics || []);
       this.explodeCache.set(key, result);
       return result;
