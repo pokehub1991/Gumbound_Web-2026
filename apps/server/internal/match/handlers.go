@@ -144,17 +144,44 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 				Payload: endData,
 			})
 		} else {
-			// Delay before announcing next turn to allow projectile flight and explosion animation
-			turnDelay := 2200 * time.Millisecond
+			// Delay before announcing next turn to allow projectile flight, ground walking, and explosion animation
+			turnDelay := 2600 * time.Millisecond
 			if len(result.Trajectory) > 50 {
-				turnDelay = time.Duration(len(result.Trajectory)*20+600) * time.Millisecond
+				turnDelay = time.Duration(len(result.Trajectory)*28+900) * time.Millisecond
 			}
 			if len(result.SubShots) > 1 {
-				turnDelay += time.Duration(len(result.SubShots)*65) * time.Millisecond
+				stagger := 60
+				if len(result.SubShots) > 5 {
+					stagger = 35
+				}
+				turnDelay += time.Duration(len(result.SubShots)*stagger) * time.Millisecond
 			}
 			time.AfterFunc(turnDelay, func() {
 				mm.broadcastTurnStart(m)
 			})
+		}
+	})
+
+	// In-match mobile quick hot-swap handler
+	gw.RegisterHandler(protocol.OpcodeSelectMobile, func(c *gateway.Connection, msg protocol.Message) {
+		var req struct {
+			MobileID int `json:"mobile_id"`
+		}
+		if err := json.Unmarshal(msg.Payload, &req); err != nil {
+			return
+		}
+
+		mm.mu.RLock()
+		m := mm.connMatches[c.ID]
+		mm.mu.RUnlock()
+
+		if m != nil {
+			m.mu.Lock()
+			if p, ok := m.Players[c.UserID]; ok {
+				p.MobileID = req.MobileID
+				log.Printf("[Match] Player %s (%s) hot-swapped to mobile %d\n", c.UserID, p.Nickname, req.MobileID)
+			}
+			m.mu.Unlock()
 		}
 	})
 

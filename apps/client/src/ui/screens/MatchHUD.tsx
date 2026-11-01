@@ -10,7 +10,20 @@ interface Props {
   myTeam?: string;
   onReturnToRoom: () => void;
   onExitToLobby: () => void;
+  currentMobileId?: number;
+  onChangeMobile?: (mobileId: number) => void;
 }
+
+const IN_MATCH_MOBILES = [
+  { id: 0, name: "Armor", color: "#38bdf8" },
+  { id: 1, name: "Mage", color: "#818cf8" },
+  { id: 2, name: "Nak", color: "#f472b6" },
+  { id: 3, name: "Trico", color: "#4ade80" },
+  { id: 4, name: "BigFoot", color: "#fb923c" },
+  { id: 5, name: "Boomer", color: "#facc15" },
+  { id: 6, name: "Raon", color: "#a78bfa" },
+  { id: 7, name: "Turtle", color: "#2dd4bf" },
+];
 
 export const MatchHUD: React.FC<Props> = ({
   activeNickname,
@@ -22,6 +35,8 @@ export const MatchHUD: React.FC<Props> = ({
   myTeam,
   onReturnToRoom,
   onExitToLobby,
+  currentMobileId = 0,
+  onChangeMobile,
 }) => {
   const [timeLeft, setTimeLeft] = useState(30);
 
@@ -76,6 +91,54 @@ export const MatchHUD: React.FC<Props> = ({
             (Ronda #{turnNumber})
           </div>
         </div>
+
+        {/* Quick In-Match Mobile Selector (Temporary dev/testing hot-swap) */}
+        {onChangeMobile && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            background: "rgba(15, 23, 42, 0.90)",
+            padding: "5px 10px",
+            borderRadius: "8px",
+            border: "1px solid #334155",
+            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
+          }}>
+            <span style={{ color: "#94a3b8", fontSize: "11px", fontWeight: "bold", marginRight: "4px" }}>
+              Móvil:
+            </span>
+            {IN_MATCH_MOBILES.map((m) => {
+              const active = m.id === currentMobileId;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => onChangeMobile(m.id)}
+                  title={`Cambiar instantáneamente a ${m.name}`}
+                  style={{
+                    background: active ? m.color : "#1e293b",
+                    color: active ? "#000" : "#cbd5e1",
+                    border: active ? `2px solid #ffffff` : "1px solid #475569",
+                    borderRadius: "5px",
+                    padding: "4px 8px",
+                    fontSize: "11px",
+                    fontWeight: "bold",
+                    cursor: "pointer",
+                    transition: "transform 0.1s, background 0.15s",
+                    transform: active ? "scale(1.08)" : "none",
+                  }}
+                  onMouseOver={(e) => {
+                    if (!active) e.currentTarget.style.background = "#334155";
+                  }}
+                  onMouseOut={(e) => {
+                    if (!active) e.currentTarget.style.background = "#1e293b";
+                  }}
+                >
+                  {m.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Right Controls: Exit to Lobby & 30s Countdown Timer */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>

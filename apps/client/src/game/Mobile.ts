@@ -120,6 +120,19 @@ export class Mobile extends Container {
     this.fallbackBody.rotation = rad;
   }
 
+  public setMobileType(newType: number) {
+    if (this.mobileType === newType) return;
+    this.mobileType = newType;
+    if (this.animSprite) {
+      this.spriteContainer.removeChild(this.animSprite);
+      this.animSprite.destroy();
+      this.animSprite = undefined;
+    }
+    this.animTextures = undefined;
+    this.fallbackBody.visible = true;
+    this.loadSprite();
+  }
+
   public playAnimation(name: string, loop: boolean = true, onComplete?: () => void) {
     if (!this.animSprite || !this.animTextures) return;
     if (this.currentAnimName === name && this.animSprite.playing) return;

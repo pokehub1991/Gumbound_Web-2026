@@ -15,6 +15,7 @@ export const App: React.FC = () => {
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [turnNumber, setTurnNumber] = useState(1);
   const [selectedShotType, setSelectedShotType] = useState(0);
+  const [currentMobileId, setCurrentMobileId] = useState(0);
   const [winnerTeam, setWinnerTeam] = useState<string | undefined>(undefined);
 
   const matchCtrlRef = useRef<MatchController | null>(null);
@@ -80,6 +81,14 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleChangeMobile = (mobileId: number) => {
+    setCurrentMobileId(mobileId);
+    connection.send(Opcode.SELECT_MOBILE, { mobile_id: mobileId });
+    if (matchCtrlRef.current) {
+      matchCtrlRef.current.changeActiveMobile(mobileId);
+    }
+  };
+
   const handleReturnToRoom = () => {
     setWinnerTeam(undefined);
     const game = (window as unknown as { __game?: Game }).__game;
@@ -118,6 +127,8 @@ export const App: React.FC = () => {
           myTeam={matchCtrlRef.current?.myTeam}
           onReturnToRoom={handleReturnToRoom}
           onExitToLobby={handleExitToLobby}
+          currentMobileId={currentMobileId}
+          onChangeMobile={handleChangeMobile}
         />
       )}
     </div>

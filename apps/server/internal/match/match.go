@@ -141,10 +141,20 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 	var result physics.ProjectileResult
 
 	numProjectiles := 1
-	if activePlayer.MobileID == MobileBigFoot && shotType == 0 {
-		numProjectiles = 4
+	if activePlayer.MobileID == MobileBigFoot {
+		if shotType == 0 {
+			numProjectiles = 4
+		} else if shotType == 1 {
+			numProjectiles = 3
+		} else if shotType == 2 {
+			numProjectiles = 20
+		}
 	} else if activePlayer.MobileID == MobileBoomer && shotType == 1 {
 		numProjectiles = 10
+	} else if activePlayer.MobileID == MobileTrico && shotType == 1 {
+		numProjectiles = 3
+	} else if activePlayer.MobileID == MobileRaon && shotType == 1 {
+		numProjectiles = 2
 	}
 
 	if numProjectiles > 1 {
@@ -156,14 +166,37 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 			var blastRadiusMult float64 = 0.70
 
 			if activePlayer.MobileID == MobileBigFoot {
-				// Bigfoot Shot 1: Salvo of 4 rockets with slight angle & power spread
-				angleOffset = (float64(i) - 1.5) * 0.40
-				powerMult = 1.0 - float64(i)*0.012
-			} else {
+				if shotType == 0 {
+					// Bigfoot Shot 1: Salvo of 4 rockets
+					angleOffset = (float64(i) - 1.5) * 0.40
+					powerMult = 1.0 - float64(i)*0.012
+					blastRadiusMult = 0.70
+				} else if shotType == 1 {
+					// Bigfoot Shot 2: Triple missile shotgun (3 rockets)
+					angleOffset = (float64(i) - 1.0) * 0.75
+					powerMult = 1.0 + (float64(i)-1.0)*0.010
+					blastRadiusMult = 0.80
+				} else {
+					// Bigfoot SS: 20-missile barrage raining hellfire!
+					angleOffset = (float64(i) - 9.5) * 0.32
+					powerMult = 1.0 + (float64(i)-9.5)*0.005
+					blastRadiusMult = 0.55
+				}
+			} else if activePlayer.MobileID == MobileBoomer {
 				// Boomer Shot 2: Barrage of 10 boomerangs curving with authentic aerodynamics
 				angleOffset = (float64(i) - 4.5) * 0.50
 				powerMult = 1.0 + (float64(i)-4.5)*0.008
 				blastRadiusMult = 0.65
+			} else if activePlayer.MobileID == MobileTrico {
+				// Trico Shot 2: 3 cabbages revolving in flight
+				angleOffset = (float64(i) - 1.0) * 1.25
+				powerMult = 1.0 + (float64(i)-1.0)*0.015
+				blastRadiusMult = 0.85
+			} else if activePlayer.MobileID == MobileRaon {
+				// Raon Shot 2: 2 walking mine capsules
+				angleOffset = (float64(i) - 0.5) * 0.75
+				powerMult = 1.0 + (float64(i)-0.5)*0.025
+				blastRadiusMult = 0.85
 			}
 
 			subCfg := physics.ProjectileConfig{
@@ -178,7 +211,19 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 				Facing:      f,
 			}
 
+			// For Raon walking mines, disable instant crater during flight so terrain is carved at final walk position
+			if activePlayer.MobileID == MobileRaon && shotType >= 1 {
+				subCfg.BlastRadius = 0
+			}
+
 			subRes := physics.SimulateProjectileAdv(subCfg, m.Terrain, targets)
+
+			// Execute ground-walking AI logic for Raon mines
+			if activePlayer.MobileID == MobileRaon && shotType >= 1 {
+				subCfg.BlastRadius = stats.BlastRadius * blastRadiusMult
+				m.simulateRaonWalkingMine(&subRes, subCfg, targets, playerID, 260.0, 130.0)
+			}
+
 			subRes.ShooterID = playerID
 			subRes.MobileType = activePlayer.MobileID
 			subRes.ShotType = shotType
@@ -205,7 +250,17 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 			BlastRadius: stats.BlastRadius,
 			Facing:      f,
 		}
+
+		if activePlayer.MobileID == MobileRaon && shotType == 2 {
+			cfg.BlastRadius = 0
+		}
+
 		result = physics.SimulateProjectileAdv(cfg, m.Terrain, targets)
+
+		if activePlayer.MobileID == MobileRaon && shotType == 2 {
+			cfg.BlastRadius = stats.BlastRadius
+			m.simulateRaonWalkingMine(&result, cfg, targets, playerID, 320.0, 160.0)
+		}
 	}
 	result.ShooterID = playerID
 	result.MobileType = activePlayer.MobileID
@@ -336,5 +391,87 @@ func (m *Match) HandleMove(playerID string, x, y float64) error {
 	p.Pos.Y = y
 	return nil
 }
+
+// simulateRaonWalkingMine implements authentic GunBound walking mine AI
+func (m *Match) simulateRaonWalkingMine(
+	res *physics.ProjectileResult,
+	cfg physics.ProjectileConfig,
+	targets []physics.MobileTarget,
+	shooterID string,
+	detectionRange float64,
+	maxWalk float64,
+) {
+	if res.HitType != physics.HitTerrain {
+		return
+	}
+
+	// Seek closest enemy target within detection radius
+	var targetEnemy *physics.MobileTarget
+	minDist := 999999.0
+	for _, tgt := range targets {
+		if len(targets) > 1 && tgt.ID == shooterID {
+			continue // Don't target friendly/self when opponents exist
+		}
+		dx := tgt.Pos.X - res.ImpactPos.X
+		dy := tgt.Pos.Y - res.ImpactPos.Y
+		d := math.Hypot(dx, dy)
+		if d <= detectionRange && d < minDist {
+			minDist = d
+			t := tgt
+			targetEnemy = &t
+		}
+	}
+
+	if targetEnemy == nil {
+		// Enemy too far -> detonate on terrain at landing spot with small crater
+		res.TerrainDelta = &physics.TerrainDelta{
+			X:      int(res.ImpactPos.X),
+			Y:      int(res.ImpactPos.Y),
+			Radius: int(cfg.BlastRadius * 0.7),
+		}
+		m.Terrain.ClearCircle(res.TerrainDelta.X, res.TerrainDelta.Y, res.TerrainDelta.Radius)
+		res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage/2, cfg.BlastRadius)
+		return
+	}
+
+	// Determine crawl direction along terrain slope towards enemy
+	walkDir := 1.0
+	if targetEnemy.Pos.X < res.ImpactPos.X {
+		walkDir = -1.0
+	}
+
+	currX := res.ImpactPos.X
+	stepSize := 3.0
+	steps := int(maxWalk / stepSize)
+
+	for s := 0; s < steps; s++ {
+		currX += walkDir * stepSize
+		if currX < 15 || currX > float64(m.Terrain.Width-15) {
+			break
+		}
+		groundY := float64(m.Terrain.FindGroundY(int(currX), 0))
+		if groundY >= float64(m.Terrain.Height) {
+			break
+		}
+		res.Trajectory = append(res.Trajectory, physics.Vec2{X: currX, Y: groundY})
+
+		// Detonate when colliding with target mobile
+		if math.Abs(currX-targetEnemy.Pos.X) < 18.0 {
+			break
+		}
+	}
+
+	// Final destination where mine detonates
+	finalPos := res.Trajectory[len(res.Trajectory)-1]
+	res.ImpactPos = finalPos
+	res.TerrainDelta = &physics.TerrainDelta{
+		X:      int(finalPos.X),
+		Y:      int(finalPos.Y),
+		Radius: int(cfg.BlastRadius),
+	}
+	m.Terrain.ClearCircle(res.TerrainDelta.X, res.TerrainDelta.Y, res.TerrainDelta.Radius)
+	res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage, cfg.BlastRadius*1.5)
+}
+
 
 

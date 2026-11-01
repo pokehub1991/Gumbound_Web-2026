@@ -193,8 +193,17 @@ export class MatchController {
     const subShots = result.sub_shots && result.sub_shots.length > 1 ? result.sub_shots : null;
 
     if (subShots) {
-      // Salvo firing (Bigfoot 4 missiles: 65ms, Boomer 10 boomerangs: 40ms)
-      const staggerDelay = mobileType === 4 ? 65 : 40;
+      // Salvo firing delay calibrated per mobile type
+      let staggerDelay = 50;
+      if (mobileType === 4) {
+        staggerDelay = subShots.length > 5 ? 32 : 65; // Bigfoot SS 20 rockets: 32ms, Shot 1 & 2: 65ms
+      } else if (mobileType === 5) {
+        staggerDelay = 40; // Boomer 10 boomerangs: 40ms
+      } else if (mobileType === 3) {
+        staggerDelay = 45; // Trico 3 cabbages: 45ms
+      } else if (mobileType === 6) {
+        staggerDelay = 65; // Raon 2 walking mines: 65ms
+      }
       let completedCount = 0;
 
       subShots.forEach((sub, idx) => {
@@ -324,6 +333,14 @@ export class MatchController {
 
   public setShotType(type: number) {
     this.game.aimController.shotType = type;
+  }
+
+  public changeActiveMobile(mobileId: number) {
+    const activeMob = this.game.mobiles.get(this.localUserId);
+    if (activeMob) {
+      activeMob.setMobileType(mobileId);
+      this.game.aimController.setActiveMobile(activeMob);
+    }
   }
 }
 

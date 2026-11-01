@@ -21,7 +21,7 @@ export class Projectile extends Container {
   private mobileType: number;
   private shotType: number;
   private progress: number = 0;
-  private speedFactor: number = 1.0; // 1 trajectory point per tick (at 60 FPS)
+  private speedFactor: number = 0.72; // Calibrated speed for dramatic, authentic GunBound flight arc
 
   private onImpactCallback?: () => void;
   private onCompleteCallback?: () => void;
@@ -171,6 +171,10 @@ export class Projectile extends Container {
   public update(dt: number = 1): boolean {
     if (this.isExploding) {
       this.explosionTimer += dt;
+      // Mage SS: spin rapidly around its impact axis while detonating!
+      if (this.mobileType === 1 && this.shotType === 2 && this.explodeSprite) {
+        this.explodeSprite.rotation += 0.14 * dt;
+      }
       if (this.explodeSprite && this.explodeSprite.textures.length > 0) {
         if (!this.explodeSprite.playing || this.explodeSprite.currentFrame >= this.explodeSprite.textures.length - 1) {
           this.finish();
@@ -221,37 +225,69 @@ export class Projectile extends Container {
     const nextPt = this.getPointAtProgress(nextProg);
     const dx = nextPt.x - currentPt.x;
     const dy = nextPt.y - currentPt.y;
-    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
-      this.bulletContainer.rotation = Math.atan2(dy, dx);
+
+    // Special animation & rotation for Raon walking mines
+    if (this.mobileType === 6 && this.shotType >= 1 && this.bulletSprite && this.bulletSprite.textures.length >= 10) {
+      const isWalkingGround = Math.abs(dx) <= 4.0 && Math.abs(dy) <= 3.5 && this.progress > 5;
+      if (isWalkingGround) {
+        // Mine reached terrain: walk upright with animated walking frames 4-9
+        this.bulletContainer.rotation = 0;
+        if (dx < -0.1) {
+          this.bulletSprite.scale.x = -1;
+        } else if (dx > 0.1) {
+          this.bulletSprite.scale.x = 1;
+        }
+        const walkFrame = 4 + (Math.floor(this.progress * 1.6) % 6);
+        this.bulletSprite.gotoAndStop(walkFrame);
+      } else {
+        // In-flight spinning capsule: frames 0-3
+        this.bulletSprite.scale.x = 1;
+        if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+          this.bulletContainer.rotation = Math.atan2(dy, dx);
+        }
+        const flyFrame = Math.floor(this.progress * 1.5) % 4;
+        this.bulletSprite.gotoAndStop(flyFrame);
+      }
+    } else {
+      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+        this.bulletContainer.rotation = Math.atan2(dy, dx);
+      }
     }
 
     // Procedural rendering for Mage (Lasers) and Turtle (Water Jets)
     if (this.isProcedural) {
-      this.renderProceduralShot(currentPt, dx, dy);
+      this.renderProceduralShot(currentPt);
     }
 
     return false;
   }
 
-  private renderProceduralShot(headPt: Point2D, flightDx: number, flightDy: number) {
+  private renderProceduralShot(headPt: Point2D) {
     this.proceduralGraphics.clear();
 
-    const trailSpan = this.mobileType === 1 ? (this.shotType === 1 ? 16 : 13) : (this.shotType === 1 ? 18 : 14);
+    const trailSpan = this.shotType === 1 ? 28 : 18;
     const span = Math.min(this.progress, trailSpan);
     if (span <= 0.2) return;
 
-    const sampleSteps = Math.max(4, Math.floor(span * 2));
+    const sampleSteps = Math.max(10, Math.floor(span * 3));
     const pts: Point2D[] = [];
+    const normals: Point2D[] = [];
+    const progs: number[] = [];
+
     for (let s = 0; s <= sampleSteps; s++) {
-      const prog = Math.max(0, this.progress - (span * (s / sampleSteps)));
-      pts.push(this.getPointAtProgress(prog));
+      const p = Math.max(0, this.progress - (span * (s / sampleSteps)));
+      progs.push(p);
+      const pt = this.getPointAtProgress(p);
+      pts.push(pt);
+
+      const pNext = this.getPointAtProgress(Math.min(this.points.length - 1, p + 0.1));
+      const pPrev = this.getPointAtProgress(Math.max(0, p - 0.1));
+      const tdx = pNext.x - pPrev.x;
+      const tdy = pNext.y - pPrev.y;
+      const dist = Math.hypot(tdx, tdy) || 1;
+      normals.push({ x: -tdy / dist, y: tdx / dist });
     }
     if (pts.length < 2) return;
-
-    // Normal unit vector perpendicular to flight direction
-    const flightDist = Math.hypot(flightDx, flightDy) || 1;
-    const nx = -flightDy / flightDist;
-    const ny = flightDx / flightDist;
 
     // ----------------------------------------------------
     // MAGE SHOTS (Plasma Energy Lasers)
@@ -269,7 +305,7 @@ export class Projectile extends Container {
         this.proceduralGraphics.beginPath();
         this.proceduralGraphics.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) this.proceduralGraphics.lineTo(pts[i].x, pts[i].y);
-        this.proceduralGraphics.stroke({ width: 6.5, color: 0x00f5d4, alpha: 0.80, cap: "round", join: "round" });
+        this.proceduralGraphics.stroke({ width: 6.5, color: 0x00f5d4, alpha: 0.85, cap: "round", join: "round" });
 
         // Layer 3: Blinding white core
         this.proceduralGraphics.beginPath();
@@ -282,59 +318,62 @@ export class Projectile extends Container {
         this.proceduralGraphics.circle(headPt.x, headPt.y, 4.5).fill(0xffffff);
 
       } else {
-        // Mage Shot 2: Twin spiraling plasma energy lasers
-        const wavePhase = this.progress * 2.8;
+        // Mage Shot 2: Twin spiraling plasma energy lasers (Reference Image 1)
+        const spatialFreq = 0.22;
+        const amp = 5.8;
 
-        // Beam A (Cyan energy)
-        this.proceduralGraphics.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          const osc = Math.sin(wavePhase + i * 0.45) * 4.5;
-          const bx = pts[i].x + nx * osc;
-          const by = pts[i].y + ny * osc;
-          if (i === 0) this.proceduralGraphics.moveTo(bx, by);
-          else this.proceduralGraphics.lineTo(bx, by);
-        }
-        this.proceduralGraphics.stroke({ width: 5, color: 0x00f0ff, alpha: 0.85, cap: "round", join: "round" });
+        const ptsA: Point2D[] = [];
+        const ptsB: Point2D[] = [];
 
-        // Beam B (Magenta energy)
-        this.proceduralGraphics.beginPath();
         for (let i = 0; i < pts.length; i++) {
-          const osc = Math.sin(wavePhase + i * 0.45 + Math.PI) * 4.5;
-          const bx = pts[i].x + nx * osc;
-          const by = pts[i].y + ny * osc;
-          if (i === 0) this.proceduralGraphics.moveTo(bx, by);
-          else this.proceduralGraphics.lineTo(bx, by);
+          const osc = Math.sin(progs[i] * spatialFreq) * amp;
+          ptsA.push({
+            x: pts[i].x + normals[i].x * osc,
+            y: pts[i].y + normals[i].y * osc,
+          });
+          ptsB.push({
+            x: pts[i].x - normals[i].x * osc,
+            y: pts[i].y - normals[i].y * osc,
+          });
         }
-        this.proceduralGraphics.stroke({ width: 5, color: 0xe879f9, alpha: 0.85, cap: "round", join: "round" });
 
-        // Cores
+        // Beam A: Electric Cyan Aura & Core
         this.proceduralGraphics.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          const osc = Math.sin(wavePhase + i * 0.45) * 4.5;
-          const bx = pts[i].x + nx * osc;
-          const by = pts[i].y + ny * osc;
-          if (i === 0) this.proceduralGraphics.moveTo(bx, by);
-          else this.proceduralGraphics.lineTo(bx, by);
-        }
-        this.proceduralGraphics.stroke({ width: 2, color: 0xffffff, alpha: 1.0 });
+        this.proceduralGraphics.moveTo(ptsA[0].x, ptsA[0].y);
+        for (let i = 1; i < ptsA.length; i++) this.proceduralGraphics.lineTo(ptsA[i].x, ptsA[i].y);
+        this.proceduralGraphics.stroke({ width: 7, color: 0x00f0ff, alpha: 0.45, cap: "round", join: "round" });
 
         this.proceduralGraphics.beginPath();
-        for (let i = 0; i < pts.length; i++) {
-          const osc = Math.sin(wavePhase + i * 0.45 + Math.PI) * 4.5;
-          const bx = pts[i].x + nx * osc;
-          const by = pts[i].y + ny * osc;
-          if (i === 0) this.proceduralGraphics.moveTo(bx, by);
-          else this.proceduralGraphics.lineTo(bx, by);
-        }
-        this.proceduralGraphics.stroke({ width: 2, color: 0xffffff, alpha: 1.0 });
+        this.proceduralGraphics.moveTo(ptsA[0].x, ptsA[0].y);
+        for (let i = 1; i < ptsA.length; i++) this.proceduralGraphics.lineTo(ptsA[i].x, ptsA[i].y);
+        this.proceduralGraphics.stroke({ width: 3.2, color: 0x38bdf8, alpha: 0.90, cap: "round", join: "round" });
 
-        // Dual heads
-        const hA = Math.sin(wavePhase) * 4.5;
-        const hB = Math.sin(wavePhase + Math.PI) * 4.5;
-        this.proceduralGraphics.circle(headPt.x + nx * hA, headPt.y + ny * hA, 4).fill(0x00f0ff);
-        this.proceduralGraphics.circle(headPt.x + nx * hA, headPt.y + ny * hA, 2).fill(0xffffff);
-        this.proceduralGraphics.circle(headPt.x + nx * hB, headPt.y + ny * hB, 4).fill(0xe879f9);
-        this.proceduralGraphics.circle(headPt.x + nx * hB, headPt.y + ny * hB, 2).fill(0xffffff);
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsA[0].x, ptsA[0].y);
+        for (let i = 1; i < ptsA.length; i++) this.proceduralGraphics.lineTo(ptsA[i].x, ptsA[i].y);
+        this.proceduralGraphics.stroke({ width: 1.5, color: 0xffffff, alpha: 1.0, cap: "round", join: "round" });
+
+        // Beam B: Electric Pink/Magenta Aura & Core
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsB[0].x, ptsB[0].y);
+        for (let i = 1; i < ptsB.length; i++) this.proceduralGraphics.lineTo(ptsB[i].x, ptsB[i].y);
+        this.proceduralGraphics.stroke({ width: 7, color: 0xf43f5e, alpha: 0.45, cap: "round", join: "round" });
+
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsB[0].x, ptsB[0].y);
+        for (let i = 1; i < ptsB.length; i++) this.proceduralGraphics.lineTo(ptsB[i].x, ptsB[i].y);
+        this.proceduralGraphics.stroke({ width: 3.2, color: 0xf472b6, alpha: 0.90, cap: "round", join: "round" });
+
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsB[0].x, ptsB[0].y);
+        for (let i = 1; i < ptsB.length; i++) this.proceduralGraphics.lineTo(ptsB[i].x, ptsB[i].y);
+        this.proceduralGraphics.stroke({ width: 1.5, color: 0xffffff, alpha: 1.0, cap: "round", join: "round" });
+
+        // Dual glowing heads
+        this.proceduralGraphics.circle(ptsA[0].x, ptsA[0].y, 4.5).fill({ color: 0x00f0ff, alpha: 0.9 });
+        this.proceduralGraphics.circle(ptsA[0].x, ptsA[0].y, 2.2).fill(0xffffff);
+        this.proceduralGraphics.circle(ptsB[0].x, ptsB[0].y, 4.5).fill({ color: 0xf43f5e, alpha: 0.9 });
+        this.proceduralGraphics.circle(ptsB[0].x, ptsB[0].y, 2.2).fill(0xffffff);
       }
     }
 
@@ -344,7 +383,7 @@ export class Projectile extends Container {
     else if (this.mobileType === 7) {
       if (this.shotType === 0) {
         // Turtle Shot 1: Smooth curving continuous water stream
-        // Layer 1: Outer water body
+        // Layer 1: Outer water envelope
         this.proceduralGraphics.beginPath();
         this.proceduralGraphics.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) this.proceduralGraphics.lineTo(pts[i].x, pts[i].y);
@@ -354,71 +393,75 @@ export class Projectile extends Container {
         this.proceduralGraphics.beginPath();
         this.proceduralGraphics.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) this.proceduralGraphics.lineTo(pts[i].x, pts[i].y);
-        this.proceduralGraphics.stroke({ width: 7, color: 0x38bdf8, alpha: 0.85, cap: "round", join: "round" });
+        this.proceduralGraphics.stroke({ width: 6.5, color: 0x38bdf8, alpha: 0.85, cap: "round", join: "round" });
 
         // Layer 3: Frothy whitewater core
         this.proceduralGraphics.beginPath();
         this.proceduralGraphics.moveTo(pts[0].x, pts[0].y);
         for (let i = 1; i < pts.length; i++) this.proceduralGraphics.lineTo(pts[i].x, pts[i].y);
-        this.proceduralGraphics.stroke({ width: 2.5, color: 0xffffff, alpha: 0.95, cap: "round", join: "round" });
+        this.proceduralGraphics.stroke({ width: 2.2, color: 0xffffff, alpha: 0.95, cap: "round", join: "round" });
 
         // Hydrodynamic water droplet head
         this.proceduralGraphics.circle(headPt.x, headPt.y, 6.5).fill({ color: 0x38bdf8, alpha: 0.9 });
         this.proceduralGraphics.circle(headPt.x, headPt.y, 3.5).fill(0xffffff);
 
       } else {
-        // Turtle Shot 2: Twin parallel pressurized water streams
-        const streamOffset = 4.0;
+        // Turtle Shot 2: Braided figure-8 twin water jets (Reference Image 2)
+        const spatialFreq = 0.20;
+        const amp = 7.0;
 
-        // Stream 1
-        this.proceduralGraphics.beginPath();
-        this.proceduralGraphics.moveTo(pts[0].x + nx * streamOffset, pts[0].y + ny * streamOffset);
-        for (let i = 1; i < pts.length; i++) {
-          this.proceduralGraphics.lineTo(pts[i].x + nx * streamOffset, pts[i].y + ny * streamOffset);
-        }
-        this.proceduralGraphics.stroke({ width: 6, color: 0x0284c7, alpha: 0.5, cap: "round", join: "round" });
+        const ptsA: Point2D[] = [];
+        const ptsB: Point2D[] = [];
 
-        this.proceduralGraphics.beginPath();
-        this.proceduralGraphics.moveTo(pts[0].x + nx * streamOffset, pts[0].y + ny * streamOffset);
-        for (let i = 1; i < pts.length; i++) {
-          this.proceduralGraphics.lineTo(pts[i].x + nx * streamOffset, pts[i].y + ny * streamOffset);
+        for (let i = 0; i < pts.length; i++) {
+          const osc = Math.sin(progs[i] * spatialFreq) * amp;
+          ptsA.push({
+            x: pts[i].x + normals[i].x * osc,
+            y: pts[i].y + normals[i].y * osc,
+          });
+          ptsB.push({
+            x: pts[i].x - normals[i].x * osc,
+            y: pts[i].y - normals[i].y * osc,
+          });
         }
-        this.proceduralGraphics.stroke({ width: 3.5, color: 0x38bdf8, alpha: 0.9, cap: "round", join: "round" });
 
+        // Stream A: Outer translucent water body & pressurized foam core
         this.proceduralGraphics.beginPath();
-        this.proceduralGraphics.moveTo(pts[0].x + nx * streamOffset, pts[0].y + ny * streamOffset);
-        for (let i = 1; i < pts.length; i++) {
-          this.proceduralGraphics.lineTo(pts[i].x + nx * streamOffset, pts[i].y + ny * streamOffset);
-        }
-        this.proceduralGraphics.stroke({ width: 1.5, color: 0xffffff, alpha: 1.0 });
-
-        // Stream 2
-        this.proceduralGraphics.beginPath();
-        this.proceduralGraphics.moveTo(pts[0].x - nx * streamOffset, pts[0].y - ny * streamOffset);
-        for (let i = 1; i < pts.length; i++) {
-          this.proceduralGraphics.lineTo(pts[i].x - nx * streamOffset, pts[i].y - ny * streamOffset);
-        }
-        this.proceduralGraphics.stroke({ width: 6, color: 0x0284c7, alpha: 0.5, cap: "round", join: "round" });
+        this.proceduralGraphics.moveTo(ptsA[0].x, ptsA[0].y);
+        for (let i = 1; i < ptsA.length; i++) this.proceduralGraphics.lineTo(ptsA[i].x, ptsA[i].y);
+        this.proceduralGraphics.stroke({ width: 8.5, color: 0x0284c7, alpha: 0.40, cap: "round", join: "round" });
 
         this.proceduralGraphics.beginPath();
-        this.proceduralGraphics.moveTo(pts[0].x - nx * streamOffset, pts[0].y - ny * streamOffset);
-        for (let i = 1; i < pts.length; i++) {
-          this.proceduralGraphics.lineTo(pts[i].x - nx * streamOffset, pts[i].y - ny * streamOffset);
-        }
-        this.proceduralGraphics.stroke({ width: 3.5, color: 0x38bdf8, alpha: 0.9, cap: "round", join: "round" });
+        this.proceduralGraphics.moveTo(ptsA[0].x, ptsA[0].y);
+        for (let i = 1; i < ptsA.length; i++) this.proceduralGraphics.lineTo(ptsA[i].x, ptsA[i].y);
+        this.proceduralGraphics.stroke({ width: 4.5, color: 0x7dd3fc, alpha: 0.85, cap: "round", join: "round" });
 
         this.proceduralGraphics.beginPath();
-        this.proceduralGraphics.moveTo(pts[0].x - nx * streamOffset, pts[0].y - ny * streamOffset);
-        for (let i = 1; i < pts.length; i++) {
-          this.proceduralGraphics.lineTo(pts[i].x - nx * streamOffset, pts[i].y - ny * streamOffset);
-        }
-        this.proceduralGraphics.stroke({ width: 1.5, color: 0xffffff, alpha: 1.0 });
+        this.proceduralGraphics.moveTo(ptsA[0].x, ptsA[0].y);
+        for (let i = 1; i < ptsA.length; i++) this.proceduralGraphics.lineTo(ptsA[i].x, ptsA[i].y);
+        this.proceduralGraphics.stroke({ width: 1.8, color: 0xffffff, alpha: 0.95, cap: "round", join: "round" });
 
-        // Dual heads
-        this.proceduralGraphics.circle(headPt.x + nx * streamOffset, headPt.y + ny * streamOffset, 4.5).fill(0x38bdf8);
-        this.proceduralGraphics.circle(headPt.x + nx * streamOffset, headPt.y + ny * streamOffset, 2.5).fill(0xffffff);
-        this.proceduralGraphics.circle(headPt.x - nx * streamOffset, headPt.y - ny * streamOffset, 4.5).fill(0x38bdf8);
-        this.proceduralGraphics.circle(headPt.x - nx * streamOffset, headPt.y - ny * streamOffset, 2.5).fill(0xffffff);
+        // Stream B: Outer translucent water body & pressurized foam core
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsB[0].x, ptsB[0].y);
+        for (let i = 1; i < ptsB.length; i++) this.proceduralGraphics.lineTo(ptsB[i].x, ptsB[i].y);
+        this.proceduralGraphics.stroke({ width: 8.5, color: 0x0284c7, alpha: 0.40, cap: "round", join: "round" });
+
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsB[0].x, ptsB[0].y);
+        for (let i = 1; i < ptsB.length; i++) this.proceduralGraphics.lineTo(ptsB[i].x, ptsB[i].y);
+        this.proceduralGraphics.stroke({ width: 4.5, color: 0x7dd3fc, alpha: 0.85, cap: "round", join: "round" });
+
+        this.proceduralGraphics.beginPath();
+        this.proceduralGraphics.moveTo(ptsB[0].x, ptsB[0].y);
+        for (let i = 1; i < ptsB.length; i++) this.proceduralGraphics.lineTo(ptsB[i].x, ptsB[i].y);
+        this.proceduralGraphics.stroke({ width: 1.8, color: 0xffffff, alpha: 0.95, cap: "round", join: "round" });
+
+        // Dual droplet heads
+        this.proceduralGraphics.circle(ptsA[0].x, ptsA[0].y, 5).fill({ color: 0x38bdf8, alpha: 0.9 });
+        this.proceduralGraphics.circle(ptsA[0].x, ptsA[0].y, 2.5).fill(0xffffff);
+        this.proceduralGraphics.circle(ptsB[0].x, ptsB[0].y, 5).fill({ color: 0x38bdf8, alpha: 0.9 });
+        this.proceduralGraphics.circle(ptsB[0].x, ptsB[0].y, 2.5).fill(0xffffff);
       }
     }
   }
