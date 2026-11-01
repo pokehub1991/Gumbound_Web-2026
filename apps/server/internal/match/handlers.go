@@ -149,6 +149,9 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 			if len(result.Trajectory) > 50 {
 				turnDelay = time.Duration(len(result.Trajectory)*20+600) * time.Millisecond
 			}
+			if len(result.SubShots) > 1 {
+				turnDelay += time.Duration(len(result.SubShots)*65) * time.Millisecond
+			}
 			time.AfterFunc(turnDelay, func() {
 				mm.broadcastTurnStart(m)
 			})

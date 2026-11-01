@@ -81,6 +81,7 @@ export interface ProjectileResultState {
     y: number;
     radius: number;
   };
+  sub_shots?: ProjectileResultState[];
 }
 
 export interface MatchEndState {

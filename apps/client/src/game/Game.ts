@@ -1,6 +1,7 @@
 import { Application, Container, Graphics } from "pixi.js";
 import { Background } from "./Background.js";
 import { TerrainRenderer } from "./TerrainRenderer.js";
+import { TerrainDebrisManager } from "./TerrainDebrisManager.js";
 import { Camera } from "./Camera.js";
 import { Mobile } from "./Mobile.js";
 import { PowerBar } from "./PowerBar.js";
@@ -14,6 +15,7 @@ export class Game {
   public uiContainer: Container;
   public background: Background;
   public terrain: TerrainRenderer;
+  public debrisManager: TerrainDebrisManager;
   public camera: Camera;
   public mobilesContainer: Container;
   public projectilesContainer: Container;
@@ -23,7 +25,15 @@ export class Game {
   public aimController: AimController;
 
   public mobiles: Map<string, Mobile> = new Map();
-  public activeProjectile?: Projectile;
+  public activeProjectiles: Projectile[] = [];
+
+  public get activeProjectile(): Projectile | undefined {
+    return this.activeProjectiles[0];
+  }
+
+  public get hasActiveProjectiles(): boolean {
+    return this.activeProjectiles.length > 0;
+  }
 
   private ssOverlay: Graphics;
   private ssTargetAlpha: number = 0;
@@ -40,6 +50,7 @@ export class Game {
     this.ssOverlay = new Graphics();
     this.background = new Background(2400, 800);
     this.terrain = new TerrainRenderer(2400, 800);
+    this.debrisManager = new TerrainDebrisManager();
     this.camera = new Camera(this.worldContainer, 800, 600);
 
     this.powerBar = new PowerBar(360, 22);
@@ -63,6 +74,7 @@ export class Game {
     this.worldContainer.addChild(this.terrain);
     this.worldContainer.addChild(this.aimController);
     this.worldContainer.addChild(this.mobilesContainer);
+    this.worldContainer.addChild(this.debrisManager);
 
     // Dramatic SS darkening filter: covers world while SS projectile & aura fly on top
     this.ssOverlay.rect(-1000, -1000, 5000, 4000).fill({ color: 0x030712, alpha: 0.70 });
@@ -137,11 +149,7 @@ export class Game {
     shotType: number = 0,
     onImpact?: () => void,
     onFinished?: () => void
-  ) {
-    if (this.activeProjectile) {
-      this.projectilesContainer.removeChild(this.activeProjectile);
-    }
-
+  ): Projectile {
     const proj = new Projectile(
       points,
       mobileType,
@@ -150,14 +158,18 @@ export class Game {
         if (onImpact) onImpact();
       },
       () => {
+        const idx = this.activeProjectiles.indexOf(proj);
+        if (idx !== -1) {
+          this.activeProjectiles.splice(idx, 1);
+        }
         this.projectilesContainer.removeChild(proj);
-        this.activeProjectile = undefined;
         if (onFinished) onFinished();
       }
     );
 
-    this.activeProjectile = proj;
+    this.activeProjectiles.push(proj);
     this.projectilesContainer.addChild(proj);
+    return proj;
   }
 
   public setSSMode(active: boolean) {
@@ -171,16 +183,25 @@ export class Game {
   }
 
   public update(dt: number) {
-    if (this.activeProjectile) {
-      const pos = this.activeProjectile.currentPosition;
+    // Update active projectiles and camera tracking
+    if (this.activeProjectiles.length > 0) {
+      // Follow active flying projectile in the salvo, or last exploding
+      const activeFlyer = this.activeProjectiles.find((p) => !p.isExplodingState) || this.activeProjectiles[0];
+      const pos = activeFlyer.currentPosition;
       this.camera.panTo(pos.x, pos.y);
-      this.activeProjectile.update(dt);
+
+      for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
+        const p = this.activeProjectiles[i];
+        p.update(dt);
+      }
     } else {
       const activeMob = this.aimController.activeMobile;
       if (activeMob) {
         this.camera.panTo(activeMob.x, activeMob.y - 30);
       }
     }
+
+    this.debrisManager.update(dt);
     this.camera.update(dt);
     this.aimController.update(dt);
 

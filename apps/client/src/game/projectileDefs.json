@@ -2008,26 +2008,14 @@
     },
     "mage1": {
       "file": "mage1",
-      "isStream": true,
-      "trace": 8,
-      "traceH": 16,
-      "traceY": 0,
       "graphics": []
     },
     "mage2a": {
       "file": "mage2a",
-      "isStream": true,
-      "trace": 16,
-      "traceH": 16,
-      "traceY": 0,
       "graphics": []
     },
     "mage2b": {
       "file": "mage2a",
-      "isStream": true,
-      "trace": 16,
-      "traceH": 16,
-      "traceY": 0,
       "graphics": []
     },
     "magess": {
@@ -2127,26 +2115,14 @@
     },
     "turtle1": {
       "file": "turtle12a",
-      "isStream": true,
-      "trace": 8,
-      "traceH": 32,
-      "traceY": 0,
       "graphics": []
     },
     "turtle2a": {
       "file": "turtle12a",
-      "isStream": true,
-      "trace": 16,
-      "traceH": 32,
-      "traceY": 0,
       "graphics": []
     },
     "turtle2b": {
       "file": "turtle12a",
-      "isStream": true,
-      "trace": 16,
-      "traceH": 32,
-      "traceY": 0,
       "graphics": []
     },
     "turtless": {

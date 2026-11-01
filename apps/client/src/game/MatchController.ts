@@ -190,70 +190,136 @@ export class MatchController {
       this.game.setSSMode(true);
     }
 
-    // Fire authentic projectile animation with bullet & explosion sprites (camera tracks projectile)
-    this.game.fireProjectile(
-      result.trajectory,
-      mobileType,
-      shotType,
-      () => {
-        // Detonation screen rumble (epic magnitude for SS)
-        if (shotType === 2) {
-          this.game.shakeScreen(9, 500);
-        } else {
-          this.game.shakeScreen(3, 220);
-        }
+    const subShots = result.sub_shots && result.sub_shots.length > 1 ? result.sub_shots : null;
 
-        // On impact: carve crater into terrain
-        if (result.terrain_delta) {
-          this.game.terrain.clearCircle(
-            result.terrain_delta.x,
-            result.terrain_delta.y,
-            result.terrain_delta.radius
-          );
+    if (subShots) {
+      // Salvo firing (Bigfoot 4 missiles: 65ms, Boomer 10 boomerangs: 40ms)
+      const staggerDelay = mobileType === 4 ? 65 : 40;
+      let completedCount = 0;
 
-          // Re-align and tilt all mobiles to updated ground terrain
-          this.game.mobiles.forEach((m) => {
-            const slope = this.game.terrain.getSlopeAngle(m.x, m.y);
-            m.y = slope.groundY;
-            m.setTilt(slope.angle);
-          });
-        }
+      subShots.forEach((sub, idx) => {
+        setTimeout(() => {
+          this.game.fireProjectile(
+            sub.trajectory,
+            mobileType,
+            shotType,
+            () => {
+              // Screen rumble on each sub-projectile impact
+              this.game.shakeScreen(shotType === 2 ? 8 : 3.5, 180);
 
-        // Apply damage to mobiles
-        for (const [id, dmg] of Object.entries(result.damages || {})) {
-          const mob = this.game.mobiles.get(id);
-          if (mob) {
-            mob.setHp(mob.hp - dmg);
-          }
-        }
-      },
-      () => {
-        // Return lighting to normal after SS
-        this.game.setSSMode(false);
+              // Excavate crater on terrain
+              if (sub.terrain_delta) {
+                this.game.terrain.clearCircle(
+                  sub.terrain_delta.x,
+                  sub.terrain_delta.y,
+                  sub.terrain_delta.radius
+                );
 
-        // Explosion finished: return camera and idle animation to active mobile
-        const activeMob = this.game.mobiles.get(this.activeUserId) || Array.from(this.game.mobiles.values())[0];
-        if (activeMob) {
-          activeMob.playAnimation("normal");
-          this.game.camera.panTo(activeMob.x, activeMob.y - 30);
-        }
+                // Spawn authentic terrain splash particles (soil, rocks, grass)
+                this.game.debrisManager.spawnSplash(
+                  sub.terrain_delta.x,
+                  sub.terrain_delta.y,
+                  sub.terrain_delta.radius
+                );
 
-        // Apply deferred turn state or re-enable turn for solo practice testing
-        if (this.pendingTurnState) {
-          const nextState = this.pendingTurnState;
-          this.pendingTurnState = undefined;
-          this.handleTurnStart(nextState);
-        } else if (this.activeUserId === this.localUserId || this.game.mobiles.size === 1) {
-          this.game.aimController.enabled = true;
-          if (activeMob) {
-            this.game.aimController.setActiveMobile(activeMob);
-            if (this.onTurnChange) {
-              this.onTurnChange(activeMob.nickname, true, this.turnNumber);
+                // Re-align mobiles to newly excavated ground slope
+                this.game.mobiles.forEach((m) => {
+                  const slope = this.game.terrain.getSlopeAngle(m.x, m.y);
+                  m.y = slope.groundY;
+                  m.setTilt(slope.angle);
+                });
+              } else if (sub.impact_pos) {
+                this.game.debrisManager.spawnSplash(sub.impact_pos.x, sub.impact_pos.y, 22);
+              }
+            },
+            () => {
+              completedCount++;
+              if (completedCount >= subShots.length) {
+                this.finishProjectileTurn(result);
+              }
             }
+          );
+        }, idx * staggerDelay);
+      });
+    } else {
+      // Single projectile flight (Armor, Nak, Mage, Turtle, Raon, Trico, SS)
+      this.game.fireProjectile(
+        result.trajectory,
+        mobileType,
+        shotType,
+        () => {
+          // Detonation screen rumble (epic magnitude for SS)
+          if (shotType === 2) {
+            this.game.shakeScreen(9, 500);
+          } else {
+            this.game.shakeScreen(3.5, 220);
           }
+
+          // On impact: carve crater into terrain
+          if (result.terrain_delta) {
+            this.game.terrain.clearCircle(
+              result.terrain_delta.x,
+              result.terrain_delta.y,
+              result.terrain_delta.radius
+            );
+
+            // Spawn authentic terrain splash particles (soil, rocks, grass)
+            this.game.debrisManager.spawnSplash(
+              result.terrain_delta.x,
+              result.terrain_delta.y,
+              result.terrain_delta.radius
+            );
+
+            // Re-align and tilt all mobiles to updated ground terrain
+            this.game.mobiles.forEach((m) => {
+              const slope = this.game.terrain.getSlopeAngle(m.x, m.y);
+              m.y = slope.groundY;
+              m.setTilt(slope.angle);
+            });
+          } else if (result.impact_pos) {
+            this.game.debrisManager.spawnSplash(result.impact_pos.x, result.impact_pos.y, 28);
+          }
+        },
+        () => {
+          this.finishProjectileTurn(result);
+        }
+      );
+    }
+  }
+
+  private finishProjectileTurn(result: ProjectileResultState) {
+    // Return lighting to normal after SS
+    this.game.setSSMode(false);
+
+    // Apply accumulated damage to mobiles
+    for (const [id, dmg] of Object.entries(result.damages || {})) {
+      const mob = this.game.mobiles.get(id);
+      if (mob) {
+        mob.setHp(mob.hp - dmg);
+      }
+    }
+
+    // Explosion finished: return camera and idle animation to active mobile
+    const activeMob = this.game.mobiles.get(this.activeUserId) || Array.from(this.game.mobiles.values())[0];
+    if (activeMob) {
+      activeMob.playAnimation("normal");
+      this.game.camera.panTo(activeMob.x, activeMob.y - 30);
+    }
+
+    // Apply deferred turn state or re-enable turn for solo practice testing
+    if (this.pendingTurnState) {
+      const nextState = this.pendingTurnState;
+      this.pendingTurnState = undefined;
+      this.handleTurnStart(nextState);
+    } else if (this.activeUserId === this.localUserId || this.game.mobiles.size === 1) {
+      this.game.aimController.enabled = true;
+      if (activeMob) {
+        this.game.aimController.setActiveMobile(activeMob);
+        if (this.onTurnChange) {
+          this.onTurnChange(activeMob.nickname, true, this.turnNumber);
         }
       }
-    );
+    }
   }
 
   public setShotType(type: number) {

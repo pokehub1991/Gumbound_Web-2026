@@ -27,13 +27,14 @@ type TerrainDelta struct {
 }
 
 type ProjectileResult struct {
-	ShooterID    string           `json:"shooter_id,omitempty"`
-	MobileType   int              `json:"mobile_type"`
-	ShotType     int              `json:"shot_type"`
-	Trajectory   []Vec2           `json:"trajectory"`
-	HitType      HitType          `json:"hit_type"`
-	ImpactPos    Vec2             `json:"impact_pos"`
-	Damages      map[string]int   `json:"damages"`
-	TerrainDelta *TerrainDelta    `json:"terrain_delta,omitempty"`
+	ShooterID    string             `json:"shooter_id,omitempty"`
+	MobileType   int                `json:"mobile_type"`
+	ShotType     int                `json:"shot_type"`
+	Trajectory   []Vec2             `json:"trajectory"`
+	HitType      HitType            `json:"hit_type"`
+	ImpactPos    Vec2               `json:"impact_pos"`
+	Damages      map[string]int     `json:"damages"`
+	TerrainDelta *TerrainDelta      `json:"terrain_delta,omitempty"`
+	SubShots     []ProjectileResult `json:"sub_shots,omitempty"`
 }
 

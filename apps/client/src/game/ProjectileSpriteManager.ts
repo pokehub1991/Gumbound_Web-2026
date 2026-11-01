@@ -4,11 +4,7 @@ import projDefs from "./projectileDefs.json";
 export interface ProjectileTextures {
   textures: Texture[];
   anchor: { x: number; y: number };
-  isStream?: boolean;
-  trace?: number;
-  traceH?: number;
-  traceY?: number;
-  baseTexture?: Texture;
+  isProcedural?: boolean;
 }
 
 const MOBILE_BULLET_MAP: Record<number, string[]> = {
@@ -174,6 +170,12 @@ export class ProjectileSpriteManager {
   }
 
   public static async loadBullet(mobileType: number, shotType: number): Promise<ProjectileTextures> {
+    // Mage Shot 1 & 2 (mobileType 1, shot 0 & 1) and Turtle Shot 1 & 2 (mobileType 7, shot 0 & 1)
+    // are rendered procedurally with authentic laser/water streams
+    if ((mobileType === 1 && shotType < 2) || (mobileType === 7 && shotType < 2)) {
+      return { textures: [], anchor: { x: 0.5, y: 0.5 }, isProcedural: true };
+    }
+
     const list = MOBILE_BULLET_MAP[mobileType] || MOBILE_BULLET_MAP[0];
     const key = list[Math.min(shotType, list.length - 1)] || "armor1";
 
@@ -190,20 +192,7 @@ export class ProjectileSpriteManager {
       baseTexture.source.scaleMode = "nearest";
       baseTexture.source.autoGenerateMipmaps = false;
 
-      let result: ProjectileTextures;
-      if (def?.isStream) {
-        result = {
-          textures: [baseTexture],
-          anchor: { x: 0, y: 0.5 },
-          isStream: true,
-          trace: def.trace || 8,
-          traceH: def.traceH || baseTexture.height,
-          traceY: def.traceY || 0,
-          baseTexture: baseTexture,
-        };
-      } else {
-        result = this.decompressGraphics(baseTexture, def?.graphics || []);
-      }
+      const result = this.decompressGraphics(baseTexture, def?.graphics || []);
       this.bulletCache.set(key, result);
       return result;
     } catch (e) {

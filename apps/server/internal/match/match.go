@@ -138,19 +138,75 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		baseDamage = stats.SSDamage
 	}
 
-	// Run authoritative physics simulation with authentic GunBound mobile ballistics
-	cfg := physics.ProjectileConfig{
-		Origin:      activePlayer.Pos,
-		AngleDeg:    angle,
-		Power:       power,
-		Wind:        m.Wind.Vector,
-		Gravity:     stats.Gravity,
-		WindFactor:  stats.WindFactor,
-		BaseDamage:  baseDamage,
-		BlastRadius: stats.BlastRadius,
-		Facing:      f,
+	var result physics.ProjectileResult
+
+	numProjectiles := 1
+	if activePlayer.MobileID == MobileBigFoot && shotType == 0 {
+		numProjectiles = 4
+	} else if activePlayer.MobileID == MobileBoomer && shotType == 1 {
+		numProjectiles = 10
 	}
-	result := physics.SimulateProjectileAdv(cfg, m.Terrain, targets)
+
+	if numProjectiles > 1 {
+		subShots := make([]physics.ProjectileResult, 0, numProjectiles)
+		accumulatedDamages := make(map[string]int)
+
+		for i := 0; i < numProjectiles; i++ {
+			var angleOffset, powerMult float64
+			var blastRadiusMult float64 = 0.70
+
+			if activePlayer.MobileID == MobileBigFoot {
+				// Bigfoot Shot 1: Salvo of 4 rockets with slight angle & power spread
+				angleOffset = (float64(i) - 1.5) * 0.40
+				powerMult = 1.0 - float64(i)*0.012
+			} else {
+				// Boomer Shot 2: Barrage of 10 boomerangs curving with authentic aerodynamics
+				angleOffset = (float64(i) - 4.5) * 0.50
+				powerMult = 1.0 + (float64(i)-4.5)*0.008
+				blastRadiusMult = 0.65
+			}
+
+			subCfg := physics.ProjectileConfig{
+				Origin:      activePlayer.Pos,
+				AngleDeg:    angle + angleOffset,
+				Power:       power * powerMult,
+				Wind:        m.Wind.Vector,
+				Gravity:     stats.Gravity,
+				WindFactor:  stats.WindFactor,
+				BaseDamage:  baseDamage / numProjectiles,
+				BlastRadius: stats.BlastRadius * blastRadiusMult,
+				Facing:      f,
+			}
+
+			subRes := physics.SimulateProjectileAdv(subCfg, m.Terrain, targets)
+			subRes.ShooterID = playerID
+			subRes.MobileType = activePlayer.MobileID
+			subRes.ShotType = shotType
+			subShots = append(subShots, subRes)
+
+			for vid, dmg := range subRes.Damages {
+				accumulatedDamages[vid] += dmg
+			}
+		}
+
+		result = subShots[0]
+		result.Damages = accumulatedDamages
+		result.SubShots = subShots
+	} else {
+		// Run authoritative physics simulation with authentic GunBound mobile ballistics
+		cfg := physics.ProjectileConfig{
+			Origin:      activePlayer.Pos,
+			AngleDeg:    angle,
+			Power:       power,
+			Wind:        m.Wind.Vector,
+			Gravity:     stats.Gravity,
+			WindFactor:  stats.WindFactor,
+			BaseDamage:  baseDamage,
+			BlastRadius: stats.BlastRadius,
+			Facing:      f,
+		}
+		result = physics.SimulateProjectileAdv(cfg, m.Terrain, targets)
+	}
 	result.ShooterID = playerID
 	result.MobileType = activePlayer.MobileID
 	result.ShotType = shotType
