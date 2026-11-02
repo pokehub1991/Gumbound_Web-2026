@@ -1,140 +1,121 @@
 # 🎯 GunBound Web (Edición 2026)
 
-Recreación moderna, ligera y de alto rendimiento de **GunBound Season 2 / Thor's Hammer** para la web moderna (2026). Construido sobre **PixiJS 8** (WebGL2/WebGPU), **React 19**, **TypeScript** y un **Servidor Autoritativo en Go 1.23+**.
+Recreación moderna, ligera y de alto rendimiento de **GunBound** / **DragonBound** para navegadores modernos (2026), construida con **PixiJS 8** (WebGL2/WebGPU), **React 19**, **TypeScript** y un **Servidor Autoritativo en Go**.
 
 ---
 
-## 🌟 Características Principales
+## ⚡ Resumen Rápido del Proyecto
 
-### 🎮 Física y Balística Autoritativa (Inspirada en Thor's Hammer)
-* **Simulación en el Servidor:** La trayectoria, el viento, la gravedad y la colisión son calculados al 100% por el servidor en Go, garantizando partidas deterministas e inmunes a trampas de cliente.
-* **Calibración Balística Real:**
-  * Escala de fuerza en 4 barras ($v_0 = \text{potencia} \times 0.24$).
-  * Gravedad calibrada a $g = 0.42\text{ px/tick}^2$ (a $45^\circ$, un tiro a 4 barras recorre $\approx 1370$ px con $1.35$s de tiempo de vuelo).
-  * Viento físico vectorial ($a_x = \text{viento}_x \times 0.0035 \times \text{windFactor}$).
-  * Constantes específicas por móvil (e.g. Boomer ultraligero con factor de viento $2.2$ para disparos con gancho; Bigfoot con proyectiles pesados de alta gravedad $g = 0.50$).
+Este proyecto es una reconstrucción fiel desde cero del clásico juego de combate balístico por turnos, unificando los sprites originales, dinámicas de disparo, deformación de terreno por píxeles y animaciones completas con tecnologías web de vanguardia.
 
-### 🚀 Gráficos y Animaciones Originales
-* **8 Móviles Auténticos:** `Armor`, `Boomer`, `Turtle`, `Mage`, `BigFoot`, `Nak`, `Raon` y `Trico`.
-* **Animaciones Completas Fluidas (27–36 FPS):** Estados de reposo (`normal`), desplazamiento con orugas/patas dinámicas (`move`), carga de tiro con retroalimentación en tiempo real (`bfire`), retroceso de disparo (`fire`/`sfire`), reacción al daño (`fdamage`) y animación de destrucción (`dead`).
-* **Arsenal Balístico Completo:** 21 spritesheets de proyectiles y 16 spritesheets de explosiones animadas con transparencias y descompresor de tramas EPA.
-* **Números de Daño Flotantes:** Indicadores pop-up estilo arcade (`-250`, `-320`) con animación ascendente y desvanecimiento.
-
-### 🎥 Cámara Cinemática Inteligente
-* **Zoom $1.35\times$:** Campo de visión optimizado para resaltar los detalles de los tanques y centrar la acción.
-* **Seguimiento Balístico en Tiempo Real:** La cámara sigue suavemente al misil en su arco parabólico por los cielos, enfoca el impacto y la excavación del cráter, y regresa fluidamente al móvil en turno.
-* **Alineación con el Terreno:** Los móviles calculan la pendiente y se inclinan dinámicamente según las colinas y cráteres excavados.
-
-### 🕹️ Modos de Juego y Sala
-* **Modo Práctica / Prueba en Solitario:** Permite a un jugador único disparar infinitamente sin bloqueos de pantalla ni fin de partida; el temporizador de 30s y los controles se reinician automáticamente tras cada disparo.
-* **Sistema de Salas y Lobby:** Selector de salas, chat en tiempo real, equipos (Team A vs Team B) y turnos ordenados por *Delay*.
+### 🎮 Tecnologías Principales:
+* **Frontend:** React 19 + TypeScript + PixiJS 8 (Renderizado por hardware WebGL2/WebGPU con antialiasing).
+* **Física y Balística:** Motor determinista de cálculo de trayectorias, vector de viento, gravedad ($g = 0.42$) y colisión píxel a píxel.
+* **Terreno Dinámico:** Renderizado sobre canvas con máscaras alfa (`destination-out`), cálculo de pendientes a 19 píxeles y excavación de cráteres con bordes quemados.
+* **Servidor:** Go 1.23+ con arquitectura de microservicios y sincronización en tiempo real vía WebSockets.
 
 ---
 
-## 🏗️ Arquitectura del Proyecto
+## 🌟 Características Implementadas
+
+### 1. 🚜 25 Móviles Canónicos con Spritesheets Originales
+* Soporte para los 25 móviles clásicos: **Armor, Boomer, Turtle, Mage, Bigfoot, Nak, Raon, Trico, Ice, Aduka, Lightning, ASate, Knight, Fox, Dragon, Grub, Frog, Kalsiddon, Maya, Phoenix, etc.**
+* **Animaciones Completas EPA:**
+  * Respiración en reposo suave (`wnormal`).
+  * Desplazamiento dinámico (`move` / `wmove`).
+  * Preparación y carga de disparo (`bfire` / `bsfire`).
+  * Retroceso de disparo sincronizado con el lanzamiento (`fire1`, `fire2`, `sfire`).
+  * Física aérea y animación natural de caída al salir de riscos o precipicios (`drop`).
+  * Reacción al impacto frontal y posterior (`fdamage` / `bdamage`).
+  * Destrucción / K.O. (`dead`).
+
+### 2. 🎯 Balística Avanzada y Mecánicas Especiales
+* **Armor:**
+  * **S1:** Proyectil penetrante concentrado.
+  * **S2:** Misil pesado de alta demolición y bunge.
+  * **SS:** Misil que al superar $1540\text{ ms}$ de vuelo ejecuta una pausa dramática en el aire, despliega sus hélices/alas mecánicas con sonido característico y continúa en vuelo acelerado con daño masivo ($580+$ HP) y cráter gigante.
+* **BigFoot:** Salvas múltiples escalonadas (4 misiles en S1, 6 en S2 y 8 en SS).
+* **Mage y Turtle:** Disparos procedimentales trenzados sinusoidales y bombas temporizadas de 4 fases con reconvergencia.
+* **Trico:** 3 coles rotativas con dispersión angular y convergencia en ápice.
+* **Aduka y ASate:** Rastreadores balísticos y rayos orbitales de satélite Thor/Iónico desde la estratosfera.
+* **Nak:** Misil subterráneo que excava el terreno.
+* **Raon:** Minas caminantes autónomas con IA de proximidad.
+
+### 3. 🗺️ Terreno y Cámara Cinemática
+* **Mapa Meta Mine Clásico:** Puente desértico con colisión limpia; se eliminaron las colisiones fantasma en cables aéreos para permitir tiros altos limpios.
+* **Cámara de Tiros Altos:** Las balas pueden salir de la pantalla por la parte superior. La cámara se mantiene contenida en el límite superior del fondo escénico mientras sigue fluidamente el eje horizontal ($X$) de la bala, y se re-centra en vertical ($Y$) cuando el proyectil desciende hacia el impacto.
+* **Modo Panorámico:** Arrastre libre con clic derecho sosteniendo el ratón, con cursor guantelete personalizado de alta definición.
+* **Sistema de Zoom Preset:** Botones rápidos de escala `1x`, `1.2x` y `1.4x` para acercar la acción.
+
+### 4. 🎛️ HUD Moderno y Compacto
+* **Botones de Tiro Compactos:** Botones **S1**, **S2** y **SS** estilizados con colores temáticos e iluminación de selección.
+* **Selector Rápido de Móvil:** Botón píldora con icono de tanque que permite cambiar entre los 25 móviles al instante.
+* **Barra de Potencia 60 FPS:** Barra de tiro de ancho completo con sensibilidad clásica, medidor numérico y marcador de memoria del último tiro.
+* **Goniómetro / Transportador:** Sector angular en verde GunBound y aguja roja orientada al pivote del cañón, renderizada detrás del chasis para no tapar el móvil en pendientes.
+
+---
+
+## 📁 Estructura del Código
 
 ```
-Gumbound_Web-2026/
+Gumbound-2026/
 ├── apps/
-│   ├── client/                  # Cliente Web Frontend
-│   │   ├── public/sprites/      # Spritesheets oficiales (mobiles, bullets, explodes)
-│   │   ├── src/
-│   │   │   ├── game/            # Motor de juego PixiJS 8 (Game, Mobile, Projectile, Terrain, Camera)
-│   │   │   ├── network/         # Conexión WebSocket y protocolo binario
-│   │   │   └── ui/              # Interfaz React 19 + Zustand (Login, Lobby, Room, MatchHUD)
-│   └── server/                  # Servidor de Juego en Go
-│       ├── cmd/                 # Punto de entrada
-│       └── internal/
-│           ├── auth/            # Autenticación JWT y hash Argon2id
-│           ├── gateway/         # Gateway WebSocket y serialización de mensajes
-│           ├── lobby/           # Gestor de canales, salas y chat
-│           ├── match/           # Motor de partida, gestión de turnos por delay y stats
-│           └── physics/         # Simulación balística determinista y TerrainMask
+│   ├── client/                      # Cliente Frontend React + PixiJS
+│   │   ├── public/
+│   │   │   ├── audio/               # Efectos de sonido y BGM oficiales
+│   │   │   ├── maps/metamine/       # Texturas de fondo y máscara de terreno
+│   │   │   └── sprites/             # Sprites de móviles, proyectiles y explosiones
+│   │   └── src/
+│   │       ├── core/                # Motor de Juego Refactorizado y Limpio
+│   │       │   ├── animation/       # Gestores de sprites EPA (MobileSpriteManager, ProjectileSpriteManager)
+│   │       │   ├── audio/           # AudioManager para efectos y música
+│   │       │   ├── combat/          # CombatArena, BotDummy
+│   │       │   ├── constants/       # MOBILES_DATA, mapas, definiciones JSON
+│   │       │   ├── controls/        # AimController (teclado, disparo, inclinación)
+│   │       │   ├── effects/         # DestructionParticles (rocas, chispas, polvo)
+│   │       │   ├── engine/          # GameEngine (Pixi App, cámara, parallax, zoom, screen shake)
+│   │       │   ├── entities/        # MobileEntity, ProjectileEntity
+│   │       │   ├── physics/         # BallisticsEngine (simulación de proyectiles)
+│   │       │   └── terrain/         # TerrainRenderer, TerrainMask (destrucción de terreno)
+│   │       └── ui/                  # Componentes React (ArenaScreen, MobileSelector, HUD)
+│   └── server/                      # Servidor Autoritativo en Go
+│       ├── cmd/server/              # Punto de entrada
+│       └── internal/                # Lógica de juego, física y salas
 └── packages/
-    └── shared/                  # Opcodes, DTOs y tipos compartidos en TypeScript
+    └── shared/                      # Tipos compartidos
 ```
 
 ---
 
-## ⚡ Guía de Inicio Rápido (Local)
+## 🚀 Cómo Ejecutar el Proyecto (Para Continuar Mañana)
 
-### Requisitos Previos
-* **Node.js** v20+ y **pnpm** v9+
-* **Go** 1.23+
-
-### 1. Clonar el Repositorio
+### 1. Iniciar el Cliente Web:
 ```bash
-git clone https://github.com/pokehub1991/Gumbound_Web-2026.git
-cd Gumbound_Web-2026
-```
-
-### 2. Instalar Dependencias y Compilar
-```bash
-# Instalar dependencias del monorepo
+# En la raíz del proyecto
 pnpm install
-
-# Compilar paquetes compartidos y cliente
-pnpm -r build
+pnpm --filter client dev
 ```
+Abre en tu navegador: [http://localhost:3000](http://localhost:3000)
 
-### 3. Iniciar el Servidor de Juego (Go)
+### 2. Iniciar el Servidor Go (Opcional para multijugador):
 ```bash
 cd apps/server
-go run main.go
-# El servidor iniciará en http://localhost:8080 (WebSocket en /ws)
+go run ./cmd/server
 ```
+Servidor activo en: [http://localhost:8080](http://localhost:8080)
 
-### 4. Iniciar el Cliente Web (Frontend)
-En otra terminal:
+### 3. Compilar para Producción / Validar Código:
 ```bash
-cd apps/client
-pnpm dev --port 3000
-# Abrir en el navegador: http://localhost:3000
+pnpm --filter client build
 ```
 
 ---
 
-## 👤 Cuentas de Prueba Preconfiguradas
-
-El servidor inicializa automáticamente las siguientes cuentas de prueba:
-
-| Usuario | Contraseña | Rol |
-| :--- | :--- | :--- |
-| `player1` | `123456` | Jugador Estándar |
-| `player2` | `123456` | Jugador Estándar |
-| `admin` | `admin123` | Administrador |
-
-*(También puedes registrar nuevas cuentas directamente desde la pantalla de Login).*
+## 📌 Próximos Pasos para Mañana
+1. **Lobby y Salas Multijugador:** Conectar el cliente con los sockets del servidor Go para matchmaking y partidas 1v1 y 2v2.
+2. **Sistema de Turnos y Delay:** Implementar la barra lateral de orden de turnos según el delay acumulado de cada móvil y tiro utilizado.
+3. **Mapas Adicionales:** Incorporar mapas clásicos como Miramo Town, Sea of Hero, Nirvana y Cozy Tower con sus máscaras de colisión.
+4. **Ítems Clásicos:** Dual, Dual+, Teleport, Energy Bunge y Blood.
 
 ---
-
-## 🎮 Controles en Batalla
-
-| Tecla / Acción | Función |
-| :--- | :--- |
-| **`A` / `D`** o **`Flechas Izq / Der`** | Desplazarse por el terreno (adapta inclinación y gasta delay) |
-| **`W` / `S`** o **`Flechas Arriba / Abajo`** | Ajustar ángulo de tiro |
-| **`Barra Espaciadora` (Mantener)** | Cargar barra de potencia (escala de 4 barras, ~3.7 segundos al 100%) |
-| **`1`** | Seleccionar **Tiro 1** |
-| **`2`** | Seleccionar **Tiro 2** |
-| **`3`** | Seleccionar **Super Shot (SS)** |
-| **Botón `Salir al Lobby`** | Regresar al menú de salas para cambiar de móvil |
-
----
-
-## 🗺️ Hoja de Ruta (Roadmap)
-
-- [x] Física autoritativa en Go basada en ingeniería inversa de Thor's Hammer (`colemancda/GunBound-Decomp`).
-- [x] Sprites originales de 8 móviles, proyectiles y explosiones con definición EPA.
-- [x] Cámara con zoom $1.35\times$ y seguimiento cinemático de disparos.
-- [x] Modo de disparo continuo en solitario para pruebas de puntería y daño.
-- [ ] **Sincronización Multijugador 4v4:** Partidas multijugador con servidores de relevo y sincronización de espectadores.
-- [ ] **Ítems Clásicos de Batalla:** Implementar Dual, Dual+, Teleport, Change Wind y Bunge Shot.
-- [ ] **Eventos de Clima / Satélites:** Thor satelital, Rayo eléctrico, Vórtice Tornado, Portal Force y Niebla.
-- [ ] **Efectos de Sonido y Música:** Integrar el extractor de audio `.xes` y los 85 sonidos originales de armas y UI.
-- [ ] **Tienda y Sistema de Avatares:** Compra y equipamiento de avatares con bonificaciones de stats (Cabeza, Cuerpo, Gafas, Bandera).
-
----
-
-## 📄 Licencia
-Este proyecto es una recreación educativa y de código abierto sin fines de lucro para preservar la arquitectura y el legado técnico del juego original. Los nombres, sonidos y recursos gráficos son propiedad intelectual de Softnyx Co., Ltd.
+*Desarrollado para la comunidad de GunBound.*

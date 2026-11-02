@@ -28,3 +28,6 @@ apps/server/gumbound_server
 .DS_Store
 Thumbs.db
 *.log
+
+# Local references and decomps (heavy assets)
+referencias/

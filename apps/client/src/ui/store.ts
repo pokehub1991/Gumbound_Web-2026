@@ -10,7 +10,7 @@ export interface ChatEntry {
 }
 
 export interface UIState {
-  screen: "login" | "lobby" | "room" | "match";
+  screen: "arena" | "login" | "lobby" | "room" | "match";
   token?: string;
   user?: UserInfo;
   connection: Connection;
@@ -18,7 +18,7 @@ export interface UIState {
   currentRoom?: RoomState;
   chatMessages: ChatEntry[];
 
-  setScreen: (screen: "login" | "lobby" | "room" | "match") => void;
+  setScreen: (screen: "arena" | "login" | "lobby" | "room" | "match") => void;
   setAuth: (token: string, user: UserInfo) => void;
   setRooms: (rooms: RoomState[]) => void;
   setCurrentRoom: (room?: RoomState) => void;
@@ -26,7 +26,7 @@ export interface UIState {
 }
 
 export const useStore = create<UIState>((set) => ({
-  screen: "login",
+  screen: "arena",
   connection: new Connection(),
   rooms: [],
   chatMessages: [],

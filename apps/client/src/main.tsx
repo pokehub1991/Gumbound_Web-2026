@@ -1,15 +1,18 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { Game } from "./game/Game.js";
+import { GameEngine } from "./core/engine/GameEngine.js";
+import { CombatArena } from "./core/combat/CombatArena.js";
 import { App } from "./ui/App.js";
 
 async function bootstrap() {
-  // 1. Initialize PixiJS 2D Engine
+  // 1. Initialize PixiJS 2D Game Engine and Combat Arena
   const canvasContainer = document.getElementById("game-canvas-container");
   if (canvasContainer) {
-    const game = new Game();
-    await game.init(canvasContainer);
-    (window as unknown as { __game: Game }).__game = game;
+    const engine = new GameEngine();
+    await engine.init(canvasContainer);
+    const arena = new CombatArena(engine);
+    (window as unknown as { __arena: CombatArena; __engine: GameEngine }).__arena = arena;
+    (window as unknown as { __arena: CombatArena; __engine: GameEngine }).__engine = engine;
   }
 
   // 2. Initialize React UI Overlay

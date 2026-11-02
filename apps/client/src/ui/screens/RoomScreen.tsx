@@ -30,6 +30,10 @@ export const RoomScreen: React.FC = () => {
     connection.send(Opcode.MATCH_START, { room_id: currentRoom.id });
   };
 
+  const handleSelectMobile = (id: number) => {
+    connection.send(Opcode.SELECT_MOBILE, { mobile_id: id });
+  };
+
   return (
     <div style={{
       width: "100%",
@@ -191,7 +195,7 @@ export const RoomScreen: React.FC = () => {
       }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "4px" }}>Selecciona tu Móvil:</div>
-          <MobileSelector selectedMobileId={myPlayer?.mobile ?? 0} />
+          <MobileSelector selectedMobileId={myPlayer?.mobile ?? 0} onSelectMobile={handleSelectMobile} />
         </div>
 
         <div style={{ display: "flex", gap: "12px" }}>

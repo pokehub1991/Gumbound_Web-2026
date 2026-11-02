@@ -1,49 +1,38 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { useStore } from "./store.js";
+import { ArenaScreen } from "./screens/ArenaScreen.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { RoomScreen } from "./screens/RoomScreen.js";
 import { MatchHUD } from "./screens/MatchHUD.js";
-import { MatchController } from "../game/MatchController.js";
-import { Game } from "../game/Game.js";
+import { CombatArena } from "../core/combat/CombatArena.js";
 import { Opcode, ChannelState, RoomState } from "@gumbound/shared";
 
 export const App: React.FC = () => {
-  const { screen, connection, user, setRooms, setCurrentRoom, addChatMessage, setScreen } = useStore();
+  const { screen, connection, setRooms, setCurrentRoom, addChatMessage, setScreen } = useStore();
 
-  const [activeNickname, setActiveNickname] = useState("");
-  const [isMyTurn, setIsMyTurn] = useState(false);
-  const [turnNumber, setTurnNumber] = useState(1);
+  const [activeNickname] = useState("");
+  const [isMyTurn] = useState(false);
+  const [turnNumber] = useState(1);
   const [selectedShotType, setSelectedShotType] = useState(0);
   const [currentMobileId, setCurrentMobileId] = useState(0);
   const [winnerTeam, setWinnerTeam] = useState<string | undefined>(undefined);
 
-  const matchCtrlRef = useRef<MatchController | null>(null);
+  const [arenaInstance, setArenaInstance] = useState<CombatArena | null>(null);
 
   useEffect(() => {
-    // Acquire game instance from window
-    const game = (window as unknown as { __game?: Game }).__game;
-    if (game && !matchCtrlRef.current) {
-      const ctrl = new MatchController(game, connection);
-      ctrl.localUserId = user?.id || "";
+    // Acquire CombatArena from window
+    const checkArena = () => {
+      const arena = (window as unknown as { __arena?: CombatArena }).__arena;
+      if (arena) {
+        setArenaInstance(arena);
+      }
+    };
 
-      ctrl.onTurnChange = (activeNick, myTurn, turnNum) => {
-        setActiveNickname(activeNick);
-        setIsMyTurn(myTurn);
-        setTurnNumber(turnNum);
-      };
-
-      ctrl.onMatchEnd = (winner) => {
-        setWinnerTeam(winner);
-      };
-
-      matchCtrlRef.current = ctrl;
-    }
-
-    if (matchCtrlRef.current && user) {
-      matchCtrlRef.current.localUserId = user.id;
-    }
-  }, [user, connection]);
+    checkArena();
+    const interval = setInterval(checkArena, 200);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     // Register global WebSocket event handlers into Zustand store
@@ -76,36 +65,26 @@ export const App: React.FC = () => {
 
   const handleSelectShotType = (type: number) => {
     setSelectedShotType(type);
-    if (matchCtrlRef.current) {
-      matchCtrlRef.current.setShotType(type);
+    if (arenaInstance) {
+      arenaInstance.setShotType(type);
     }
   };
 
   const handleChangeMobile = (mobileId: number) => {
     setCurrentMobileId(mobileId);
     connection.send(Opcode.SELECT_MOBILE, { mobile_id: mobileId });
-    if (matchCtrlRef.current) {
-      matchCtrlRef.current.changeActiveMobile(mobileId);
+    if (arenaInstance) {
+      arenaInstance.setPlayerMobile(mobileId);
     }
   };
 
   const handleReturnToRoom = () => {
     setWinnerTeam(undefined);
-    const game = (window as unknown as { __game?: Game }).__game;
-    if (game) {
-      game.aimController.enabled = false;
-      game.aimController.setActiveMobile(undefined);
-    }
     setScreen("room");
   };
 
   const handleExitToLobby = () => {
     setWinnerTeam(undefined);
-    const game = (window as unknown as { __game?: Game }).__game;
-    if (game) {
-      game.aimController.enabled = false;
-      game.aimController.setActiveMobile(undefined);
-    }
     connection.send(Opcode.ROOM_LEAVE, {});
     setCurrentRoom(undefined);
     setScreen("lobby");
@@ -113,6 +92,74 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      {/* Top Navigator when not on the Arena screen to avoid obscuring combat HUD */}
+      {screen !== "arena" && (
+        <div style={{
+          position: "absolute",
+          top: "8px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 50,
+          display: "flex",
+          gap: "6px",
+          background: "rgba(15, 23, 42, 0.8)",
+          padding: "4px 8px",
+          borderRadius: "20px",
+          border: "1px solid rgba(255,255,255,0.12)",
+          backdropFilter: "blur(8px)",
+        }}>
+          <button
+            onClick={() => setScreen("arena")}
+            style={{
+              background: "transparent",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "14px",
+              padding: "4px 12px",
+              fontSize: "11px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+          >
+            ⚔️ Modo Combate (Metamine)
+          </button>
+
+          <button
+            onClick={() => setScreen("login")}
+            style={{
+              background: screen === "login" ? "#0284c7" : "transparent",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "14px",
+              padding: "4px 12px",
+              fontSize: "11px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            🔑 Login / Multi-jugador
+          </button>
+
+          <button
+            onClick={() => setScreen("lobby")}
+            style={{
+              background: screen === "lobby" ? "#0284c7" : "transparent",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "14px",
+              padding: "4px 12px",
+              fontSize: "11px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            🏛️ Lobby / Salas
+          </button>
+        </div>
+      )}
+
+      {/* Screen views */}
+      {screen === "arena" && <ArenaScreen arena={arenaInstance} />}
       {screen === "login" && <LoginScreen />}
       {screen === "lobby" && <LobbyScreen />}
       {screen === "room" && <RoomScreen />}
@@ -124,7 +171,7 @@ export const App: React.FC = () => {
           selectedShotType={selectedShotType}
           onSelectShotType={handleSelectShotType}
           winnerTeam={winnerTeam}
-          myTeam={matchCtrlRef.current?.myTeam}
+          myTeam="A"
           onReturnToRoom={handleReturnToRoom}
           onExitToLobby={handleExitToLobby}
           currentMobileId={currentMobileId}
