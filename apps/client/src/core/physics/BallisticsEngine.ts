@@ -44,6 +44,7 @@ export interface FireParams {
   isPixelSolid: (x: number, y: number) => boolean;
   mapWidth: number;
   mapHeight: number;
+  targets?: { id: string; x: number; y: number; radius: number }[];
 }
 
 export class BallisticsEngine {
@@ -197,7 +198,7 @@ export class BallisticsEngine {
     let hitType: "ground" | "player" | "oob" = "oob";
     let finalPos: Point2D = { ...origin };
 
-    const maxMs = 8000;
+    const maxMs = 16000;
     const stepMs = 8; // High-precision sub-stepping
 
     for (let tMs = 0; tMs <= maxMs; tMs += stepMs) {
@@ -223,14 +224,28 @@ export class BallisticsEngine {
         isSpecialPhase,
       });
 
-      // Out of bounds check
-      if (x < -100 || x > params.mapWidth + 100 || y > params.mapHeight + 50) {
+      // 1. Mobile Enemy Collision check (skip initial launch to clear muzzle)
+      if (tMs >= 80 && params.targets && params.targets.length > 0) {
+        let hitMobile = false;
+        for (const target of params.targets) {
+          if (Math.hypot(x - target.x, y - target.y) <= target.radius) {
+            hitType = "player";
+            finalPos = { x, y };
+            hitMobile = true;
+            break;
+          }
+        }
+        if (hitMobile) break;
+      }
+
+      // 2. Out of bounds check (wide sky margins allow extreme high shots)
+      if (x < -300 || x > params.mapWidth + 300 || y > params.mapHeight + 100) {
         hitType = "oob";
         finalPos = { x, y };
         break;
       }
 
-      // Terrain solid pixel collision (ensure projectile has left mobile muzzle clearance)
+      // 3. Terrain solid pixel collision (ensure projectile has left mobile muzzle clearance)
       const distFromOrigin = Math.hypot(x - origin.x, y - origin.y);
       if (tMs > 100 && distFromOrigin > 35 && params.isPixelSolid(x, y)) {
         hitType = "ground";
@@ -289,7 +304,7 @@ export class BallisticsEngine {
     const pointsB: TrajectoryPoint[] = [];
     let hitPos = { ...origin };
 
-    for (let tMs = 0; tMs <= 8000; tMs += 8) {
+    for (let tMs = 0; tMs <= 16000; tMs += 8) {
       const p = tMs / 1000;
       const baseX = origin.x + vx * p + (ax * p * p) / 2;
       const baseY = origin.y + vy * p + (ay * p * p) / 2;
@@ -371,7 +386,7 @@ export class BallisticsEngine {
     const pointsB: TrajectoryPoint[] = [];
     let hitPos = { ...origin };
 
-    for (let tMs = 0; tMs <= 8000; tMs += 8) {
+    for (let tMs = 0; tMs <= 16000; tMs += 8) {
       const p = tMs / 1000;
       const baseX = origin.x + vx * p + (ax * p * p) / 2;
       const baseY = origin.y + vy * p + (ay * p * p) / 2;

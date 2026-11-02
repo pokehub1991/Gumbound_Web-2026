@@ -1,7 +1,6 @@
 import { Container, Text, TextStyle } from "pixi.js";
 import { MobileEntity } from "../entities/MobileEntity.js";
 import { TerrainRenderer } from "../terrain/TerrainRenderer.js";
-import { AudioManager } from "../audio/AudioManager.js";
 
 export class BotDummy extends Container {
   public mobile: MobileEntity;
@@ -9,8 +8,11 @@ export class BotDummy extends Container {
   public spawnX: number;
   public spawnY: number;
 
-  private isDead: boolean = false;
+  public isDead: boolean = false;
+  public isImmortal: boolean = true;
   private damageNumbersContainer: Container;
+  private botFallVy: number = 0;
+  private isBotAirborne: boolean = false;
 
   constructor(terrain: TerrainRenderer, spawnX: number = 1380, spawnY: number = 520, mobileType: number = 1) {
     super();
@@ -23,11 +25,11 @@ export class BotDummy extends Container {
     const groundY = this.terrain.findSurfaceY(spawnX, spawnY);
     this.mobile = new MobileEntity({
       id: "bot_dummy",
-      nickname: "Bot Dummy [Target]",
+      nickname: "Bot Dummy [∞ HP]",
       team: "B",
       mobileType: mobileType,
-      maxHp: 1000,
-      hp: 1000,
+      maxHp: 99999,
+      hp: 99999,
       x: spawnX,
       y: groundY,
     });
@@ -44,8 +46,15 @@ export class BotDummy extends Container {
   public takeDamage(damage: number, impactX: number, impactY: number) {
     if (this.isDead) return;
 
-    this.mobile.hp = Math.max(0, this.mobile.hp - damage);
-    this.mobile.updateHpBar();
+    if (this.isImmortal) {
+      // Immortal mode: HP stays maxed, bot never dies, but all hits & numbers are shown
+      this.mobile.hp = this.mobile.maxHp;
+      this.mobile.updateHpBar();
+    } else {
+      // Mortal mode: Bot takes real damage and can be defeated
+      this.mobile.hp = Math.max(0, this.mobile.hp - damage);
+      this.mobile.updateHpBar();
+    }
 
     // Damage animation
     const isFrontHit = impactX <= this.mobile.x;
@@ -55,10 +64,10 @@ export class BotDummy extends Container {
       }
     });
 
-    // Spawn floating damage text
+    // Spawn floating damage text with authentic hit impact
     this.spawnFloatingDamage(damage, impactX, impactY);
 
-    if (this.mobile.hp <= 0) {
+    if (!this.isImmortal && this.mobile.hp <= 0) {
       this.handleDeath("K.O.!");
     }
   }
@@ -67,19 +76,36 @@ export class BotDummy extends Container {
     if (this.isDead) return;
 
     const currentSurfaceY = this.terrain.findSurfaceY(this.mobile.x, this.mobile.y);
+    const dropDist = currentSurfaceY - this.mobile.y;
 
-    // If crater excavated below bot, drop into it
-    if (currentSurfaceY > this.mobile.y + 4) {
-      this.mobile.y += 6;
+    // Instant gravity fall whenever terrain beneath is destroyed
+    if (dropDist > 3) {
+      if (!this.isBotAirborne) {
+        this.isBotAirborne = true;
+        this.mobile.playAnimation("drop", true);
+      }
+      this.botFallVy = Math.min(8.0, this.botFallVy + 0.35);
+      this.mobile.y = Math.min(currentSurfaceY, this.mobile.y + this.botFallVy);
       const slope = this.terrain.getSlopeAngle(this.mobile.x, this.mobile.y);
       this.mobile.setTilt(slope.angle);
     } else {
+      if (this.isBotAirborne) {
+        this.isBotAirborne = false;
+        this.botFallVy = 0;
+        this.mobile.playAnimation("normal", true);
+      }
       this.mobile.y = currentSurfaceY;
+      const slope = this.terrain.getSlopeAngle(this.mobile.x, this.mobile.y);
+      this.mobile.setTilt(slope.angle);
     }
 
-    // Bunge death if fell off bottom of map
+    // Knocked completely off map bottom
     if (this.mobile.y >= this.terrain.mapHeight - 30) {
-      this.handleDeath("BUNGE!");
+      if (!this.isImmortal) {
+        this.handleDeath("BUNGE!");
+      } else {
+        this.respawn();
+      }
     }
   }
 
@@ -88,18 +114,36 @@ export class BotDummy extends Container {
     this.isDead = true;
 
     this.mobile.playAnimation("dead", false);
-    AudioManager.play("result_win.mp3", 0.6);
 
     this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, reason);
 
-    // Auto respawn after 1.8 seconds for continuous combat testing
+    // Auto respawn after 2.2 seconds for continuous combat testing
     setTimeout(() => {
       this.respawn();
-    }, 1800);
+    }, 2200);
+  }
+
+  public toggleImmortal(): boolean {
+    this.isImmortal = !this.isImmortal;
+    if (this.isImmortal) {
+      this.mobile.maxHp = 99999;
+      this.mobile.hp = 99999;
+    } else {
+      this.mobile.maxHp = 1000;
+      this.mobile.hp = 1000;
+    }
+    this.mobile.updateHpBar();
+    return this.isImmortal;
+  }
+
+  public update(dt: number) {
+    this.mobile.update(dt);
   }
 
   public spawnAt(x: number, y: number) {
     this.isDead = false;
+    this.isBotAirborne = false;
+    this.botFallVy = 0;
     this.mobile.hp = this.mobile.maxHp;
     this.mobile.updateHpBar();
 

@@ -9,6 +9,7 @@ export interface WalkResult {
   x: number;
   y: number;
   stuck: boolean;
+  isAirborne?: boolean;
   fallAndDie: boolean;
 }
 
@@ -27,38 +28,52 @@ export class TerrainMask {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
     if (ix < 0 || ix >= this.width || iy < 0 || iy >= this.height) return false;
-    // Sky above bridge deck is strictly non-solid (prevents ghost mid-air collisions on sky shots)
-    if (iy < 475) return false;
     const index = (iy * this.width + ix) * 4 + 3; // Alpha channel
     return this.maskData[index] > 64;
   }
 
+  /**
+   * Finds the ground contact Y for column x (the air pixel immediately above solid terrain).
+   * Matches DragonBound surface convention: IsPixel(x, y) == false && IsPixel(x, y + 1) == true.
+   */
   public findSurfaceY(x: number, startY: number): number {
     const ix = Math.floor(x);
     if (ix < 0 || ix >= this.width) return startY;
 
-    // Scan vertically around current Y
-    const minY = Math.max(0, Math.floor(startY - 50));
-    const maxY = Math.min(this.height - 1, Math.floor(startY + 80));
+    const sy = Math.floor(startY);
 
-    // If already inside solid ground, scan upward for surface
-    if (this.isPixelSolid(ix, startY)) {
-      for (let y = Math.floor(startY); y >= minY; y--) {
+    // If already inside solid ground, scan upward to find the true surface air pixel
+    if (this.isPixelSolid(ix, sy)) {
+      for (let y = sy; y >= 0; y--) {
         if (!this.isPixelSolid(ix, y)) {
-          return y + 1;
+          return y;
         }
       }
-      return minY;
+      return sy;
     }
 
-    // Otherwise scan downward for first solid pixel
-    for (let y = Math.floor(startY); y <= maxY; y++) {
+    // Starting in air: scan downwards to find first solid pixel; return the air pixel (y - 1)
+    for (let y = Math.max(0, sy); y < this.height; y++) {
       if (this.isPixelSolid(ix, y)) {
-        return y;
+        return y - 1;
       }
     }
 
-    return startY;
+    // No ground exists below (abyss / bunge)
+    return this.height + 200;
+  }
+
+  public getUnder(x: number, y: number, maxDepth: number = 25): number | undefined {
+    const ix = Math.floor(x);
+    if (ix < 0 || ix >= this.width) return undefined;
+    const sy = Math.floor(y);
+    const limit = Math.min(this.height, sy + maxDepth);
+    for (let cy = sy; cy < limit; cy++) {
+      if (this.isPixelSolid(ix, cy)) {
+        return cy - 1;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -69,7 +84,7 @@ export class TerrainMask {
     if (ix < 0 || ix >= this.width) return null;
     for (let y = 0; y < this.height; y++) {
       if (this.isPixelSolid(ix, y)) {
-        return y;
+        return y - 1;
       }
     }
     return null;
@@ -95,24 +110,28 @@ export class TerrainMask {
   }
 
   /**
-   * Authentic DragonBound 19-pixel slope sampling algorithm.
+   * Authentic DragonBound 19-pixel slope sampling algorithm (GetAngle):
+   * Samples up to 9 pixels left and 9 pixels right.
    */
   public getSlopeAngle(x: number, y: number): SlopeInfo {
-    const currentY = this.findSurfaceY(x, y);
+    const groundY = this.findSurfaceY(x, y);
 
-    let sumLeft = currentY;
+    let sumLeft = groundY;
     let countLeft = 1;
-    let sumRight = currentY;
+    let sumRight = groundY;
     let countRight = 1;
 
     for (let k = 1; k <= 9; k++) {
-      const yL = this.findSurfaceY(x - k, currentY);
-      sumLeft += yL;
-      countLeft++;
-
-      const yR = this.findSurfaceY(x + k, currentY);
-      sumRight += yR;
-      countRight++;
+      const uL = this.getUnder(x - k, groundY - 5, 25);
+      if (uL !== undefined) {
+        sumLeft += uL;
+        countLeft++;
+      }
+      const uR = this.getUnder(x + k, groundY - 5, 25);
+      if (uR !== undefined) {
+        sumRight += uR;
+        countRight++;
+      }
     }
 
     const avgLeft = sumLeft / countLeft;
@@ -122,7 +141,7 @@ export class TerrainMask {
     const angleDeg = (rad * 180) / Math.PI;
 
     return {
-      groundY: currentY,
+      groundY,
       angle: rad,
       angleDeg,
       dy,
@@ -132,8 +151,10 @@ export class TerrainMask {
   /**
    * Authentic DragonBound walking physics (GetPosForWalking):
    * Moves left (dir < 0) or right (dir > 0) by 1 step.
-   * Can climb up to 10 pixels uphill.
-   * Falls downward until solid ground is hit.
+   * Can climb up to 12 pixels uphill.
+   * Walks down slopes (<= 8px drop per step directly).
+   * Over cliffs or abyss (drop > 8px or void): advances X horizontally so mobile never gets stuck,
+   * while CombatArena gravity smoothly accelerates the tank downward into the crater/abyss.
    */
   public walk(x: number, y: number, dir: number): WalkResult {
     const targetX = dir < 0 ? Math.floor(x - 1) : Math.floor(x + 1);
@@ -141,29 +162,46 @@ export class TerrainMask {
       return { x, y, stuck: true, fallAndDie: false };
     }
 
-    // If destination pixel is solid ground (Uphill):
-    if (this.isPixelSolid(targetX, y)) {
-      // Check if it can climb up to 10 pixels of slope
-      for (let stepY = y; stepY >= y - 10; stepY--) {
+    const currentY = Math.floor(y);
+
+    // 1. Destination pixel at currentY is solid ground (Uphill):
+    if (this.isPixelSolid(targetX, currentY)) {
+      // DragonBound: scan upwards up to 12 pixels to find walkable air
+      for (let stepY = currentY; stepY > currentY - 12; stepY--) {
         if (!this.isPixelSolid(targetX, stepY)) {
           return { x: targetX, y: stepY, stuck: false, fallAndDie: false };
         }
       }
-      // Wall too steep: stuck
+      // Wall steeper than 12 pixels: blocked/stuck
       return { x, y, stuck: true, fallAndDie: false };
     }
 
-    // If destination pixel is air (Downhill or flat):
-    // Only walk downward if the drop is gentle (<= 4 pixels per horizontal step)
-    for (let fallY = y; fallY <= y + 4; fallY++) {
+    // 2. Destination pixel is air (Downhill / Flat / Slope / Cliff):
+    // Check gentle downhill slope (up to 8 pixels down per horizontal step)
+    for (let fallY = currentY + 1; fallY <= currentY + 8; fallY++) {
       if (this.isPixelSolid(targetX, fallY)) {
         return { x: targetX, y: fallY - 1, stuck: false, fallAndDie: false };
       }
     }
 
-    // Ground drops more than 4px below (Cliff / Crater / Airborne):
-    // Advance X horizontally, but do NOT snap Y down. CombatArena gravity physics smoothly handles the descent!
-    return { x: targetX, y, stuck: false, fallAndDie: false };
+    // 3. Ground drops more than 8px below (Cliff / Crater / Abyss / Void):
+    // In GunBound/DragonBound, the tank advances X horizontally off the ledge,
+    // and CombatArena gravity physics smoothly handles the descent!
+    let hasGroundBelow = false;
+    for (let testY = currentY + 9; testY < this.height; testY++) {
+      if (this.isPixelSolid(targetX, testY)) {
+        hasGroundBelow = true;
+        break;
+      }
+    }
+
+    return {
+      x: targetX,
+      y: currentY,
+      stuck: false,
+      isAirborne: true,
+      fallAndDie: !hasGroundBelow,
+    };
   }
 
   /**

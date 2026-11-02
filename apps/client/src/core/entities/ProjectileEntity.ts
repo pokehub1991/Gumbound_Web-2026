@@ -2,6 +2,7 @@ import { AnimatedSprite, Container, Graphics } from "pixi.js";
 import { ProjectileSpriteManager } from "../animation/ProjectileSpriteManager.js";
 import { Point2D } from "../physics/BallisticsEngine.js";
 import { AudioManager } from "../audio/AudioManager.js";
+import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 
 export class ProjectileEntity extends Container {
   private bulletContainer: Container;
@@ -19,6 +20,9 @@ export class ProjectileEntity extends Container {
   private mobileType: number;
   private shotType: number;
   private subType?: string;
+  private hitType: "ground" | "player" | "oob";
+  private bungeRadius: number;
+  private damage: number;
   private progress: number = 0;
   private speedFactor: number = 2.08; // 1:1 real-time velocity matching 8ms simulation steps at 60fps
 
@@ -36,13 +40,19 @@ export class ProjectileEntity extends Container {
     shotType: number = 0,
     onImpact?: () => void,
     onComplete?: () => void,
-    subType?: string
+    subType?: string,
+    hitType: "ground" | "player" | "oob" = "ground",
+    bungeRadius: number = 42,
+    damage: number = 200
   ) {
     super();
     this.points = points;
     this.mobileType = mobileType;
     this.shotType = shotType;
     this.subType = subType;
+    this.hitType = hitType;
+    this.bungeRadius = bungeRadius;
+    this.damage = damage;
     this.onImpactCallback = onImpact;
     this.onCompleteCallback = onComplete;
     this.speedFactor = 2.08;
@@ -132,7 +142,7 @@ export class ProjectileEntity extends Container {
       if (explodeData && explodeData.textures.length > 0) {
         this.explodeSprite = new AnimatedSprite(explodeData.textures);
         this.explodeSprite.anchor.set(explodeData.anchor.x, explodeData.anchor.y);
-        this.explodeSprite.animationSpeed = 0.45;
+        this.explodeSprite.animationSpeed = 0.28; // Subtly slower for majestic blast visibility
         this.explodeSprite.loop = false;
         this.explodeSprite.visible = false;
         this.explodeSprite.onFrameChange = (frameIdx) => {
@@ -396,12 +406,51 @@ export class ProjectileEntity extends Container {
     this.bulletContainer.visible = false;
     this.proceduralGraphics.clear();
 
-    if (this.explodeSprite) {
+    // Out of bounds / void shots vanish quietly without detonating an explosion in the sky
+    if (this.hitType === "oob") {
+      if (this.onCompleteCallback) {
+        this.onCompleteCallback();
+      }
+      return;
+    }
+
+    // 1. Real-time procedural dynamic explosion without spritesheets
+    if (DynamicExplosionEngine.isDynamicEnabled) {
+      const dynamicEngine = DynamicExplosionEngine.getInstance();
+      if (dynamicEngine) {
+        dynamicEngine.triggerExplosion(
+          this.currentX,
+          this.currentY,
+          this.bungeRadius,
+          this.damage,
+          () => {
+            if (this.onCompleteCallback) this.onCompleteCallback();
+          }
+        );
+      } else {
+        setTimeout(() => {
+          if (this.onCompleteCallback) this.onCompleteCallback();
+        }, 400);
+      }
+    } else if (this.explodeSprite) {
+      // 2. Classic retro spritesheet explosion with smooth alpha fade-out
       this.explodeSprite.position.set(this.currentX, this.currentY);
       this.explodeSprite.visible = true;
+      this.explodeSprite.alpha = 1.0;
       this.explodeSprite.gotoAndPlay(0);
       this.explodeSprite.onComplete = () => {
-        if (this.onCompleteCallback) this.onCompleteCallback();
+        // Smooth fade-out alpha transition so blast disperses naturally into air
+        let fadeAlpha = 1.0;
+        const fadeInterval = setInterval(() => {
+          fadeAlpha -= 0.14;
+          if (this.explodeSprite) {
+            this.explodeSprite.alpha = Math.max(0, fadeAlpha);
+          }
+          if (fadeAlpha <= 0) {
+            clearInterval(fadeInterval);
+            if (this.onCompleteCallback) this.onCompleteCallback();
+          }
+        }, 25);
       };
     } else {
       // Fallback shockwave ring

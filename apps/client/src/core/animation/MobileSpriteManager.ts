@@ -192,12 +192,18 @@ export class MobileSpriteManager {
       }
     }
 
-    // Resolve aliases (like "fire2: { d: 'fire1' }")
-    for (const animName of stateKeys) {
-      const animData = def[animName] as { d?: string };
-      if (animData && animData.d && animations[animData.d]) {
-        animations[animName] = animations[animData.d];
-        anchors[animName] = anchors[animData.d];
+    // Resolve aliases (like "fire2: { d: 'fire1' }", chained aliases, etc.)
+    let resolvedAny = true;
+    while (resolvedAny) {
+      resolvedAny = false;
+      for (const animName of stateKeys) {
+        if (animations[animName]) continue;
+        const animData = def[animName] as { d?: string };
+        if (animData && animData.d && animations[animData.d]) {
+          animations[animName] = animations[animData.d];
+          anchors[animName] = anchors[animData.d];
+          resolvedAny = true;
+        }
       }
     }
 

@@ -22,7 +22,7 @@ nohup ./gumbound_server > /tmp/gumbound_server.log 2>&1 &
 # Iniciar Vite dev server en segundo plano (puerto 3000)
 echo "[3/3] Iniciando Cliente Web Vite (:3000)..."
 cd "$DIR/apps/client"
-nohup node ../../node_modules/.pnpm/vite@6.4.5/node_modules/vite/bin/vite.js --host 0.0.0.0 --port 3000 < /dev/null > /tmp/gumbound_client.log 2>&1 &
+nohup ./node_modules/.bin/vite --host 0.0.0.0 --port 3000 < /dev/null > /tmp/gumbound_client.log 2>&1 &
 
 sleep 2
 echo "=== Servidores Activos ==="

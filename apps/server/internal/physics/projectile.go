@@ -5,15 +5,21 @@ import (
 )
 
 type ProjectileConfig struct {
-	Origin      Vec2
-	AngleDeg    float64
-	Power       float64
-	Wind        Vec2
-	Gravity     float64
-	WindFactor  float64
-	BaseDamage  int
-	BlastRadius float64
-	Facing      int
+	Origin       Vec2
+	AngleDeg     float64
+	Power        float64
+	Wind         Vec2
+	WindPower    float64
+	WindAngleDeg float64
+	By           float64
+	Bx           float64
+	Ax           float64
+	Ay           float64
+	Gravity      float64
+	WindFactor   float64
+	BaseDamage   int
+	BlastRadius  float64
+	Facing       int
 }
 
 // SimulateProjectile runs an authoritative, deterministic projectile simulation
@@ -45,7 +51,7 @@ func SimulateProjectile(
 	return SimulateProjectileAdv(cfg, terrain, mobiles)
 }
 
-// SimulateProjectileAdv executes calibrated ballistics based on GunBound mechanics
+// SimulateProjectileAdv executes calibrated ballistics based on authentic GunBound / DragonBound mechanics
 func SimulateProjectileAdv(
 	cfg ProjectileConfig,
 	terrain *TerrainMask,
@@ -57,7 +63,7 @@ func SimulateProjectileAdv(
 	}
 	rad := cfg.AngleDeg * (math.Pi / 180.0)
 
-	// Elevated muzzle origin in direction of aim (avoids starting underground)
+	// Elevated muzzle origin in direction of aim
 	muzzleOffset := 24.0
 	muzzleX := cfg.Origin.X + muzzleOffset*math.Cos(rad)*facingMult
 	muzzleY := cfg.Origin.Y - 14.0 - muzzleOffset*math.Sin(rad)
@@ -68,40 +74,68 @@ func SimulateProjectileAdv(
 	}
 	currentPos := Vec2{X: muzzleX, Y: muzzleY}
 
-	// GunBound calibrated speed: 100 power (4 full bars) = 24.0 px/tick initial velocity
-	speed := cfg.Power * 0.24
-	vx := speed * math.Cos(rad) * facingMult
-	vy := -speed * math.Sin(rad) // Screen coordinates: -Y is up
+	// Authentic mobile aerodynamics (by, bx)
+	by := cfg.By
+	if by <= 1.0 {
+		if cfg.Gravity > 0.01 {
+			// Convert legacy gravity (0.25..0.50) to standard GunBound by scale (~398)
+			by = cfg.Gravity * 1000.0
+		} else {
+			by = 398.0
+		}
+	}
+	bx := cfg.Bx
 
-	gravity := cfg.Gravity
-	if gravity <= 0.05 {
-		gravity = 0.42 // Standard GunBound gravity fallback
+	// Calculate wind power and angle
+	windPower := cfg.WindPower
+	windAngle := cfg.WindAngleDeg
+	if windPower == 0 && (cfg.Wind.X != 0 || cfg.Wind.Y != 0) {
+		windPower = math.Hypot(cfg.Wind.X, cfg.Wind.Y) * 10.0
+		// In DragonBound convention: ax = 0 - b0, so tailwind (X > 0) corresponds to 180 deg
+		windAngle = math.Atan2(-cfg.Wind.Y, -cfg.Wind.X) * (180.0 / math.Pi)
+		if windAngle < 0 {
+			windAngle += 360.0
+		}
 	}
 
-	windFactor := cfg.WindFactor
-	if windFactor <= 0.01 {
-		windFactor = 1.0
+	var ax, ay float64
+	if windPower == 0 {
+		ax = 0
+		ay = by
+	} else {
+		wRad := windAngle * (math.Pi / 180.0)
+		b0 := math.Round(math.Floor(math.Cos(wRad) * windPower * by)) / 100.0
+		b1 := math.Round(math.Floor(math.Sin(wRad) * windPower * by - bx)) / 100.0
+		ax = math.Round(0.0 - b0)
+		ay = math.Round(by - b1)
 	}
-	windAccelCoeff := 0.0035 * windFactor
+
+	// GunBound analytical speed: 0-100 power -> 0-400 power units -> v0 up to 936 px/sec
+	scaledPower := (cfg.Power / 100.0) * 400.0
+	v0 := math.Floor((scaledPower * 234.0) / 100.0)
+	if v0 <= 0 {
+		v0 = 234.0
+	}
+	vx := math.Cos(rad) * v0 * facingMult
+	vy := -math.Sin(rad) * v0 // Screen coordinates: -Y is up
 
 	trajectory := []Vec2{currentPos}
-	maxTicks := 600 // Up to 10 seconds simulation max
-	stepDt := 1.0
+	stepMs := 16 // ~60 steps per second
+	maxMs := 8000
 
 	var hitType HitType = HitOOB
 	var impactPos Vec2 = currentPos
 	var hitMobileID string
 
-	for tick := 0; tick < maxTicks; tick++ {
-		// Apply forces (gravity + wind acceleration vector)
-		vx += cfg.Wind.X * windAccelCoeff * stepDt
-		vy += (gravity + cfg.Wind.Y*windAccelCoeff) * stepDt
-
+	for tMs := stepMs; tMs <= maxMs; tMs += stepMs {
+		p := float64(tMs) / 1000.0
 		prevPos := currentPos
-		currentPos.X += vx * stepDt
-		currentPos.Y += vy * stepDt
+		currentPos = Vec2{
+			X: muzzleX + vx*p + (ax*p*p)/2.0,
+			Y: muzzleY + vy*p + (ay*p*p)/2.0,
+		}
 
-		// Continuous collision detection: check along trajectory step every 1.5 pixels
+		// Continuous collision detection between prevPos and currentPos
 		dx := currentPos.X - prevPos.X
 		dy := currentPos.Y - prevPos.Y
 		dist := math.Hypot(dx, dy)
@@ -118,8 +152,8 @@ func SimulateProjectileAdv(
 				Y: prevPos.Y + dy*t,
 			}
 
-			// 1. Check Mobile collision (ignore shooter during first 4 ticks to prevent self-collision at muzzle)
-			if tick >= 4 {
+			// 1. Check Mobile collision (skip initial ms to clear immediate muzzle release)
+			if tMs >= 60 {
 				if mobID, hit := CheckMobileCollision(checkPos, mobiles); hit {
 					hitType = HitMobile
 					impactPos = checkPos
@@ -129,9 +163,9 @@ func SimulateProjectileAdv(
 				}
 			}
 
-			// 2. Check Terrain collision (skip first tick to clear immediate muzzle release)
+			// 2. Check Terrain collision (skip initial ms to clear muzzle elevation)
 			px, py := int(checkPos.X), int(checkPos.Y)
-			if tick >= 1 && terrain.IsGround(px, py) {
+			if tMs >= 40 && terrain.IsGround(px, py) {
 				lowT := float64(s-1) / float64(steps)
 				highT := t
 				for iter := 0; iter < 8; iter++ {
@@ -148,7 +182,6 @@ func SimulateProjectileAdv(
 				hitX := prevPos.X + dx*highT
 				hitY := prevPos.Y + dy*highT
 
-				// Exact surface alignment: ensure impact coordinates are on the top ground boundary
 				ix, iy := int(hitX), int(hitY)
 				for iy > 0 && terrain.IsGround(ix, iy-1) {
 					iy--
@@ -161,57 +194,47 @@ func SimulateProjectileAdv(
 				break
 			}
 
-			// 3. Check Water / Bottom boundary
-			if py >= terrain.Height {
-				hitType = HitWater
+			// 3. Out of bounds check
+			if checkPos.X < -150 || checkPos.X > float64(terrain.Width)+150 || checkPos.Y > float64(terrain.Height)+50 {
+				hitType = HitOOB
 				impactPos = checkPos
 				collided = true
 				break
 			}
 		}
 
+		trajectory = append(trajectory, currentPos)
 		if collided {
 			break
 		}
-
-		// 4. Out of bounds check
-		px, py := int(currentPos.X), int(currentPos.Y)
-		if px < -300 || px > terrain.Width+300 || py < -1200 {
-			hitType = HitOOB
-			impactPos = currentPos
-			break
-		}
-
-		// Record sample points every tick for completely smooth trajectory
-		trajectory = append(trajectory, currentPos)
 	}
 
-	// Always ensure impact position is recorded in trajectory
-	trajectory = append(trajectory, impactPos)
-
-	// Calculate blast & damage
-	blastRadius := cfg.BlastRadius
-	if blastRadius <= 0 {
-		blastRadius = 28.0
-	}
-	baseDamage := cfg.BaseDamage
-	if baseDamage <= 0 {
-		baseDamage = 250
-	}
-
+	damages := make(map[string]int)
 	var terrainDelta *TerrainDelta
-	if hitType == HitTerrain || hitType == HitMobile {
-		terrainDelta = &TerrainDelta{
-			X:      int(impactPos.X),
-			Y:      int(impactPos.Y),
-			Radius: int(blastRadius),
-		}
-		terrain.ClearCircle(terrainDelta.X, terrainDelta.Y, terrainDelta.Radius)
-	}
 
-	damages := CalculateRadialDamage(impactPos, mobiles, baseDamage, blastRadius*1.5)
-	if hitMobileID != "" && damages[hitMobileID] == 0 {
-		damages[hitMobileID] = baseDamage
+	if hitType == HitMobile && hitMobileID != "" {
+		damages[hitMobileID] = cfg.BaseDamage
+		if cfg.BlastRadius > 0 {
+			craterRadius := int(cfg.BlastRadius)
+			terrain.ClearCircle(int(impactPos.X), int(impactPos.Y), craterRadius)
+			terrainDelta = &TerrainDelta{
+				X:      int(impactPos.X),
+				Y:      int(impactPos.Y),
+				Radius: craterRadius,
+			}
+		}
+	} else if hitType == HitTerrain {
+		damages = CalculateRadialDamage(impactPos, mobiles, cfg.BaseDamage, cfg.BlastRadius*1.5)
+
+		if cfg.BlastRadius > 0 {
+			craterRadius := int(cfg.BlastRadius)
+			terrain.ClearCircle(int(impactPos.X), int(impactPos.Y), craterRadius)
+			terrainDelta = &TerrainDelta{
+				X:      int(impactPos.X),
+				Y:      int(impactPos.Y),
+				Radius: craterRadius,
+			}
+		}
 	}
 
 	return ProjectileResult{

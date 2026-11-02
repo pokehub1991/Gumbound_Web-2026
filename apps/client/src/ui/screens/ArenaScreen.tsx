@@ -16,8 +16,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [shotType, setShotType] = useState<number>(0);
 
   const [angle, setAngle] = useState<number>(45);
-  const [windPower, setWindPower] = useState<number>(8);
-  const [windAngle, setWindAngle] = useState<number>(45);
+  const [windPower, setWindPower] = useState<number>(0);
+  const [windAngle, setWindAngle] = useState<number>(0);
+  const [isWindEnabled, setIsWindEnabled] = useState<boolean>(false);
 
   const [botHp, setBotHp] = useState<number>(1000);
   const [botMaxHp, setBotMaxHp] = useState<number>(1000);
@@ -26,6 +27,12 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [selectorTarget, setSelectorTarget] = useState<"player" | "bot">("player");
   const [shootMode, setShootMode] = useState<"space" | "drag">("space");
   const [lastPower, setLastPower] = useState<number | null>(null);
+
+  // Audio and Graphics enhancements
+  const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
+  const [isHighContrast, setIsHighContrast] = useState<boolean>(true);
+  const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
+  const [isDynamicExplosion, setIsDynamicExplosion] = useState<boolean>(true);
 
   // Direct DOM references for 60fps smooth power bar with zero React re-render overhead
   const powerBarFillRef = useRef<HTMLDivElement>(null);
@@ -39,10 +46,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     setAngle(arena.player.angleDeg);
     setWindPower(arena.windPower);
     setWindAngle(arena.windAngle);
+    setIsWindEnabled(arena.isWindEnabled);
+    setIsBotImmortal(arena.bot.isImmortal);
+    arena.setShootMode(shootMode);
 
     arena.onWindUpdate = (pw, ang) => {
       setWindPower(pw);
       setWindAngle(ang);
+      setIsWindEnabled(arena.isWindEnabled);
     };
 
     arena.onPlayerAngleUpdate = (ang) => {
@@ -100,9 +111,43 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     }
   };
 
+  const handleToggleWind = () => {
+    if (arena) {
+      const enabled = arena.toggleWind();
+      setIsWindEnabled(enabled);
+      setWindPower(arena.windPower);
+      setWindAngle(arena.windAngle);
+      AudioManager.play("click", 0.7);
+    }
+  };
+
   const handleResetBot = () => {
     if (arena) {
       arena.resetBot();
+      AudioManager.play("click", 0.7);
+    }
+  };
+
+  const handleToggleMusic = () => {
+    const active = AudioManager.toggleMusic();
+    setIsMusicActive(active);
+    AudioManager.play("click", 0.7);
+  };
+
+  const handleToggleContrast = () => {
+    if (arena) {
+      const next = !isHighContrast;
+      setIsHighContrast(next);
+      arena.engine.setSpriteContrast(next);
+      AudioManager.play("click", 0.7);
+    }
+  };
+
+  const handleToggleExplosionMode = () => {
+    if (arena) {
+      const next = !isDynamicExplosion;
+      setIsDynamicExplosion(next);
+      arena.setDynamicExplosions(next);
       AudioManager.play("click", 0.7);
     }
   };
@@ -212,80 +257,108 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           pointerEvents: "auto",
         }}>
           <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700, marginRight: "2px" }}>🔍</span>
-          {[1.0, 1.2, 1.4].map((z) => (
+          {[
+            { label: "1.2x", val: 1.2, title: "Zoom normal (1.2x por defecto)" },
+            { label: "0.85x", val: 0.85, title: "Vista amplia (0.85x)" },
+            { label: "0.55x", val: 0.55, title: "Vista panorámica máxima (0.55x)" },
+          ].map((item) => (
             <button
-              key={z}
+              key={item.label}
               onClick={() => {
-                if (arena) arena.engine.setPresetZoom(z);
+                if (arena) arena.engine.setPresetZoom(item.val);
                 AudioManager.play("click", 0.6);
               }}
               style={{
                 background: "#1e293b",
                 border: "1px solid #334155",
                 borderRadius: "4px",
-                padding: "2px 6px",
-                color: "#38bdf8",
+                padding: "2px 7px",
+                color: item.val === 1.2 ? "#38bdf8" : "#94a3b8",
                 fontSize: "10px",
                 fontWeight: 800,
                 cursor: "pointer",
               }}
-              title={`Zoom ${z}x`}
+              title={item.title}
             >
-              {z}x
+              {item.label}
             </button>
           ))}
         </div>
 
-        {/* Wind Compass Indicator (Compact without redundant text) */}
+        {/* Wind Compass Indicator & Toggle Widget */}
         <div style={{
-          background: "rgba(15, 23, 42, 0.88)",
-          border: "1px solid rgba(56, 189, 248, 0.3)",
+          background: isWindEnabled ? "rgba(15, 23, 42, 0.88)" : "rgba(30, 41, 59, 0.70)",
+          border: isWindEnabled ? "1px solid rgba(56, 189, 248, 0.45)" : "1px solid rgba(148, 163, 184, 0.25)",
           borderRadius: "8px",
           padding: "4px 10px",
           backdropFilter: "blur(8px)",
           display: "flex",
           alignItems: "center",
           gap: "8px",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
+          boxShadow: isWindEnabled ? "0 4px 14px rgba(56, 189, 248, 0.2)" : "none",
           pointerEvents: "auto",
         }}>
           {/* Compass Graphic */}
-          <div style={{ position: "relative", width: "30px", height: "30px" }}>
+          <div style={{ position: "relative", width: "30px", height: "30px", opacity: isWindEnabled ? 1 : 0.45 }}>
             <svg width="30" height="30" viewBox="0 0 36 36">
               <circle cx="18" cy="18" r="16" fill="#1e293b" stroke="#334155" strokeWidth="2" />
               <g transform={`rotate(${windAngle}, 18, 18)`}>
-                <polygon points="18,5 23,26 18,21 13,26" fill="#38bdf8" />
+                <polygon points="18,5 23,26 18,21 13,26" fill={isWindEnabled ? "#38bdf8" : "#94a3b8"} />
                 <circle cx="18" cy="18" r="3" fill="#ffffff" />
               </g>
             </svg>
           </div>
 
           <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
-            <span style={{ color: "#38bdf8", fontSize: "16px", fontWeight: 900 }}>{windPower}</span>
-            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>({windAngle}°)</span>
+            <span style={{ color: isWindEnabled ? "#38bdf8" : "#94a3b8", fontSize: "16px", fontWeight: 900 }}>
+              {isWindEnabled ? windPower : 0}
+            </span>
+            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>
+              {isWindEnabled ? `(${windAngle}°)` : "OFF"}
+            </span>
           </div>
 
+          {/* Toggle Button for Wind ON/OFF */}
           <button
-            onClick={handleRandomizeWind}
+            onClick={handleToggleWind}
             style={{
-              background: "#1e293b",
-              border: "1px solid #334155",
-              color: "#38bdf8",
+              background: isWindEnabled ? "#0284c7" : "#334155",
+              border: "none",
+              color: "#ffffff",
               borderRadius: "4px",
-              padding: "2px 6px",
-              fontSize: "12px",
+              padding: "3px 8px",
+              fontSize: "11px",
+              fontWeight: 800,
               cursor: "pointer",
             }}
-            title="Generar viento aleatorio"
+            title={isWindEnabled ? "Desactivar viento (0 por defecto)" : "Activar viento"}
           >
-            🎲
+            🌬️ {isWindEnabled ? "ON" : "OFF"}
           </button>
+
+          {isWindEnabled && (
+            <button
+              onClick={handleRandomizeWind}
+              style={{
+                background: "#1e293b",
+                border: "1px solid #334155",
+                color: "#38bdf8",
+                borderRadius: "4px",
+                padding: "2px 6px",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title="Generar viento aleatorio"
+            >
+              🎲
+            </button>
+          )}
         </div>
 
-        {/* Bot Dummy Status (Compact) */}
+        {/* Bot Dummy Status with Immortality Toggle */}
         <div style={{
           background: "rgba(15, 23, 42, 0.88)",
-          border: "1px solid rgba(239, 68, 68, 0.3)",
+          border: isBotImmortal ? "1px solid rgba(16, 185, 129, 0.35)" : "1px solid rgba(239, 68, 68, 0.4)",
           borderRadius: "8px",
           padding: "5px 10px",
           backdropFilter: "blur(8px)",
@@ -300,13 +373,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               <span style={{ color: "#ef4444", fontSize: "11px", fontWeight: 800 }}>
                 [{botMob.name}]
               </span>
-              <span style={{ color: "#fff", fontSize: "11px", fontWeight: 800 }}>
-                {botHp} HP
+              <span style={{ color: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444", fontSize: "11px", fontWeight: 800 }}>
+                {isBotImmortal ? "∞ HP (Inmortal)" : `${botHp}/${botMaxHp} HP`}
               </span>
             </div>
             {/* Health Bar */}
             <div style={{
-              width: "100px",
+              width: "110px",
               height: "5px",
               background: "#0f172a",
               borderRadius: "3px",
@@ -314,13 +387,63 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               marginTop: "3px",
             }}>
               <div style={{
-                width: `${Math.max(0, (botHp / botMaxHp) * 100)}%`,
+                width: isBotImmortal ? "100%" : `${Math.max(0, Math.min(100, (botHp / (botMaxHp || 1)) * 100))}%`,
                 height: "100%",
-                background: botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444",
-                transition: "width 0.25s ease",
+                background: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444",
+                transition: "width 0.2s ease",
               }} />
             </div>
           </div>
+
+          {/* Toggle Inmortal / Mortal */}
+          <button
+            onClick={() => {
+              if (arena) {
+                const next = arena.toggleBotImmortality();
+                setIsBotImmortal(next);
+                AudioManager.play("click", 0.7);
+              }
+            }}
+            style={{
+              background: isBotImmortal ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
+              border: isBotImmortal ? "1px solid #10b981" : "1px solid #ef4444",
+              color: isBotImmortal ? "#34d399" : "#f87171",
+              borderRadius: "4px",
+              padding: "3px 7px",
+              fontSize: "10px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+            title={isBotImmortal ? "Modo Inmortal activado (bot nunca muere). Haz clic para hacerlo mortal." : "Modo Mortal activado (puedes bajarle vida y hacerle K.O.). Haz clic para hacerlo inmortal."}
+          >
+            {isBotImmortal ? "🛡️ INMORTAL" : "⚔️ MORTAL"}
+          </button>
+
+          {/* Button to change enemy bot mobile */}
+          <button
+            onClick={() => {
+              setSelectorTarget("bot");
+              setIsSelectorOpen(true);
+              AudioManager.play("click", 0.7);
+            }}
+            style={{
+              background: "linear-gradient(135deg, #ef4444, #b91c1c)",
+              border: "1px solid #f87171",
+              color: "#ffffff",
+              borderRadius: "4px",
+              padding: "3px 8px",
+              fontSize: "10px",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "3px",
+              boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
+            }}
+            title="Cambiar móvil del bot enemigo"
+          >
+            🚗 Móvil
+          </button>
 
           <button
             onClick={handleResetBot}
@@ -328,14 +451,86 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               background: "#1e293b",
               border: "1px solid #334155",
               color: "#ef4444",
-              borderRadius: "6px",
+              borderRadius: "4px",
+              padding: "3px 6px",
+              fontSize: "10px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+            title="Respawnear bot en posición válida"
+          >
+            🔄
+          </button>
+        </div>
+
+        {/* Floating Controls: Music Toggle & Sprite Contrast Widget */}
+        <div style={{
+          background: "rgba(15, 23, 42, 0.88)",
+          border: "1px solid rgba(56, 189, 248, 0.3)",
+          borderRadius: "8px",
+          padding: "4px 8px",
+          backdropFilter: "blur(8px)",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px",
+          boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
+          pointerEvents: "auto",
+        }}>
+          {/* Music Mute / Unmute Button */}
+          <button
+            onClick={handleToggleMusic}
+            style={{
+              background: isMusicActive ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
+              border: isMusicActive ? "1px solid #10b981" : "1px solid #ef4444",
+              color: isMusicActive ? "#34d399" : "#f87171",
+              borderRadius: "4px",
+              padding: "4px 8px",
+              fontSize: "11px",
+              fontWeight: 800,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+            title={isMusicActive ? "Silenciar música de fondo" : "Activar música de fondo"}
+          >
+            {isMusicActive ? "🔊 Música: ON" : "🔇 Música: OFF"}
+          </button>
+
+          {/* Sprite Contrast Toggle */}
+          <button
+            onClick={handleToggleContrast}
+            style={{
+              background: isHighContrast ? "rgba(56, 189, 248, 0.2)" : "#1e293b",
+              border: isHighContrast ? "1px solid #38bdf8" : "1px solid #334155",
+              color: isHighContrast ? "#38bdf8" : "#94a3b8",
+              borderRadius: "4px",
               padding: "4px 8px",
               fontSize: "11px",
               fontWeight: 800,
               cursor: "pointer",
             }}
+            title="Mejorar contraste de los sprites para estilo retro nítido"
           >
-            Reset
+            {isHighContrast ? "✨ Contraste: ALTO" : "🎨 Contraste: NORMAL"}
+          </button>
+
+          {/* Dynamic Real-Time Explosion Toggle */}
+          <button
+            onClick={handleToggleExplosionMode}
+            style={{
+              background: isDynamicExplosion ? "rgba(249, 115, 22, 0.2)" : "#1e293b",
+              border: isDynamicExplosion ? "1px solid #f97316" : "1px solid #334155",
+              color: isDynamicExplosion ? "#fb923c" : "#94a3b8",
+              borderRadius: "4px",
+              padding: "4px 8px",
+              fontSize: "11px",
+              fontWeight: 800,
+              cursor: "pointer",
+            }}
+            title="Alternar entre explosiones dinámicas en tiempo real (GPU) y sprites retro clásicos"
+          >
+            {isDynamicExplosion ? "💥 Explosión: DINÁMICA" : "🎞️ Explosión: SPRITE"}
           </button>
         </div>
       </div>
@@ -532,7 +727,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             onClick={() => {
               const newMode = shootMode === "space" ? "drag" : "space";
               setShootMode(newMode);
-              if (arena) arena.shootMode = newMode;
+              if (arena) arena.setShootMode(newMode);
               AudioManager.play("click", 0.7);
             }}
             style={{

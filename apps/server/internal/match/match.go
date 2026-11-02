@@ -200,15 +200,19 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 			}
 
 			subCfg := physics.ProjectileConfig{
-				Origin:      activePlayer.Pos,
-				AngleDeg:    angle + angleOffset,
-				Power:       power * powerMult,
-				Wind:        m.Wind.Vector,
-				Gravity:     stats.Gravity,
-				WindFactor:  stats.WindFactor,
-				BaseDamage:  baseDamage / numProjectiles,
-				BlastRadius: stats.BlastRadius * blastRadiusMult,
-				Facing:      f,
+				Origin:       activePlayer.Pos,
+				AngleDeg:     angle + angleOffset,
+				Power:        power * powerMult,
+				Wind:         m.Wind.Vector,
+				WindPower:    m.Wind.Magnitude,
+				WindAngleDeg: m.Wind.AngleDeg,
+				By:           stats.By,
+				Bx:           stats.Bx,
+				Ax:           stats.Ax,
+				Ay:           stats.Ay,
+				BaseDamage:   baseDamage / numProjectiles,
+				BlastRadius:  stats.BlastRadius * blastRadiusMult,
+				Facing:       f,
 			}
 
 			// For Raon walking mines, disable instant crater during flight so terrain is carved at final walk position
@@ -240,15 +244,19 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 	} else {
 		// Run authoritative physics simulation with authentic GunBound mobile ballistics
 		cfg := physics.ProjectileConfig{
-			Origin:      activePlayer.Pos,
-			AngleDeg:    angle,
-			Power:       power,
-			Wind:        m.Wind.Vector,
-			Gravity:     stats.Gravity,
-			WindFactor:  stats.WindFactor,
-			BaseDamage:  baseDamage,
-			BlastRadius: stats.BlastRadius,
-			Facing:      f,
+			Origin:       activePlayer.Pos,
+			AngleDeg:     angle,
+			Power:        power,
+			Wind:         m.Wind.Vector,
+			WindPower:    m.Wind.Magnitude,
+			WindAngleDeg: m.Wind.AngleDeg,
+			By:           stats.By,
+			Bx:           stats.Bx,
+			Ax:           stats.Ax,
+			Ay:           stats.Ay,
+			BaseDamage:   baseDamage,
+			BlastRadius:  stats.BlastRadius,
+			Facing:       f,
 		}
 
 		if activePlayer.MobileID == MobileRaon && shotType == 2 {

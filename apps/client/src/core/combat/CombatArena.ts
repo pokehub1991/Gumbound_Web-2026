@@ -10,6 +10,7 @@ import { MOBILES_DATA } from "../constants/mobiles.js";
 import { MAPS } from "../constants/maps.js";
 import { AudioManager } from "../audio/AudioManager.js";
 import { DestructionParticles } from "../effects/DestructionParticles.js";
+import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 
 export class CombatArena {
   public engine: GameEngine;
@@ -20,6 +21,7 @@ export class CombatArena {
 
   public backgroundSprite?: Sprite;
   public destructionParticles: DestructionParticles;
+  public dynamicExplosionEngine: DynamicExplosionEngine;
 
   public windPower: number = 8;
   public windAngle: number = 45;
@@ -42,20 +44,31 @@ export class CombatArena {
   private playerFallVy: number = 0;
   private isPlayerAirborne: boolean = false;
 
+  // Wind settings (disabled by default as requested: wind = 0)
+  public isWindEnabled: boolean = false;
+
   // Drag Shoot Mode
   public shootMode: "space" | "drag" = "space";
   public isDraggingAim: boolean = false;
   private dragStartPos: { x: number; y: number } = { x: 0, y: 0 };
+  private dragSmoothedPower: number = 0;
 
   constructor(engine: GameEngine) {
     this.engine = engine;
     this.orbitalEffectsContainer = new Container();
     this.destructionParticles = new DestructionParticles(this.engine.effectsContainer);
+    this.dynamicExplosionEngine = new DynamicExplosionEngine(this.engine.effectsContainer);
 
     const mapDef = MAPS["metamine"];
 
     // 1. Initialize Metamine Terrain (1800x904 px)
     this.terrain = new TerrainRenderer(mapDef.width, mapDef.height);
+    this.terrain.onLoadedCallback = () => {
+      // Reposition player and bot to true ground surface once map mask finishes loading
+      this.respawnPlayer();
+      this.resetBot();
+      this.engine.panTo(700, 520, true);
+    };
     this.engine.worldContainer.addChildAt(this.terrain, 0);
 
     // 2. Load Parallax Background
@@ -108,8 +121,9 @@ export class CombatArena {
       this.selectedShotType = type;
     };
 
-    // 7. Initial Wind
-    this.randomizeWind();
+    // 7. Initial Wind (Disabled by default: 0)
+    this.windPower = 0;
+    this.windAngle = 0;
 
     // 8. Center Camera across the battlefield with authentic framing
     this.engine.panTo(700, 520, true);
@@ -130,7 +144,8 @@ export class CombatArena {
         if (target && target.tagName === "BUTTON") return;
         this.isDraggingAim = true;
         this.dragStartPos = { x: e.clientX, y: e.clientY };
-        this.aimController.power = 0;
+        this.dragSmoothedPower = 0;
+        this.aimController.startCharging();
       }
     });
 
@@ -139,21 +154,18 @@ export class CombatArena {
         const dx = this.dragStartPos.x - e.clientX;
         const dy = this.dragStartPos.y - e.clientY;
         const dist = Math.hypot(dx, dy);
-        const power = Math.max(0, Math.min(100, (dist / 220) * 100));
-        this.aimController.power = power;
-        if (this.onPlayerPowerUpdate) this.onPlayerPowerUpdate(power);
+        // Drag span scaled to 360px for high-precision, low-jitter aiming
+        const targetPower = Math.max(0, Math.min(100, (dist / 360) * 100));
+        // Exponential moving average filter to dampen mouse twitching and jitter
+        this.dragSmoothedPower = this.dragSmoothedPower * 0.70 + targetPower * 0.30;
+        this.aimController.updateCharging(this.dragSmoothedPower);
       }
     });
 
     window.addEventListener("pointerup", () => {
       if (this.isDraggingAim && this.shootMode === "drag" && !this.isSimulating) {
         this.isDraggingAim = false;
-        const finalPower = Math.round(this.aimController.power);
-        if (finalPower >= 5) {
-          this.fireShot(this.player.angleDeg, finalPower, this.selectedShotType);
-        }
-        this.aimController.power = 0;
-        if (this.onPlayerPowerUpdate) this.onPlayerPowerUpdate(0);
+        this.aimController.releaseFire();
       }
     });
   }
@@ -174,46 +186,49 @@ export class CombatArena {
 
   public update(dt: number) {
     this.aimController.update(dt);
+    this.player.update(dt);
+    this.bot.update(dt);
     this.bot.checkGroundFall();
     this.destructionParticles.update(dt);
+    this.dynamicExplosionEngine.update(dt * 16.66);
 
-    // Check player ground fall with smooth airborne gravity physics
-    if (!this.isSimulating) {
-      const pSurface = this.terrain.findSurfaceY(this.player.x, this.player.y);
-      const dropDistance = pSurface - this.player.y;
+    // Instant ground fall: whenever terrain beneath is destroyed, mobile falls immediately!
+    const pSurface = this.terrain.findSurfaceY(this.player.x, this.player.y);
+    const dropDistance = pSurface - this.player.y;
 
-      if (dropDistance > 4) {
-        // Airborne gravity fall with authentic 'drop' animation
-        if (!this.isPlayerAirborne) {
-          this.isPlayerAirborne = true;
-          this.player.playAnimation("drop", true);
-        }
-        this.playerFallVy += 0.55 * dt;
-        this.player.y += this.playerFallVy * dt;
-
-        // Subtle natural tilt during air fall
-        const targetFallTilt = this.player.facing * 0.12;
-        this.player.setTilt(targetFallTilt);
-      } else {
-        if (this.isPlayerAirborne) {
-          // Landing impact
-          this.isPlayerAirborne = false;
-          if (this.playerFallVy > 3.0) {
-            AudioManager.play("click", 0.5);
-            this.engine.shakeScreen(3, 140);
-          }
-          this.playerFallVy = 0;
-          this.player.playAnimation("normal", true);
-        }
-        this.player.y = pSurface;
-        const slope = this.terrain.getSlopeAngle(this.player.x, this.player.y);
-        this.player.setTilt(slope.angle);
+    if (dropDistance > 3) {
+      // Airborne gravity fall with authentic 'drop' animation
+      if (!this.isPlayerAirborne) {
+        this.isPlayerAirborne = true;
+        this.aimController.isAirborne = true;
+        this.player.playAnimation("drop", true);
       }
+      this.playerFallVy = Math.min(5.5, this.playerFallVy + 0.22 * dt);
+      this.player.y = Math.min(pSurface, this.player.y + this.playerFallVy * dt);
 
-      // Check player fall off map bottom (bunge)
-      if (this.player.y >= this.terrain.mapHeight - 30 && this.player.hp > 0) {
-        this.damagePlayer(this.player.hp, this.player.x, this.player.y);
+      // Subtle natural tilt during air fall
+      const targetFallTilt = this.player.facing * 0.10;
+      this.player.setTilt(targetFallTilt);
+    } else {
+      if (this.isPlayerAirborne) {
+        // Landing impact
+        this.isPlayerAirborne = false;
+        this.aimController.isAirborne = false;
+        if (this.playerFallVy > 2.2) {
+          AudioManager.play("click", 0.5);
+          this.engine.shakeScreen(3, 140);
+        }
+        this.playerFallVy = 0;
+        this.player.playAnimation("normal", true);
       }
+      this.player.y = pSurface;
+      const slope = this.terrain.getSlopeAngle(this.player.x, this.player.y);
+      this.player.setTilt(slope.angle);
+    }
+
+    // Check player fall off map bottom (bunge)
+    if (this.player.y >= this.terrain.mapHeight - 30 && this.player.hp > 0) {
+      this.damagePlayer(this.player.hp, this.player.x, this.player.y);
     }
 
     // Update active flying projectiles
@@ -222,11 +237,15 @@ export class CombatArena {
       proj.update(dt);
     }
 
-    // Camera follow active projectile: keep Camera Y bounded within background limits on high sky shots
-    // while continuously tracking the bullet's horizontal X trajectory across the map
+    // Camera follow active projectile: continuously track bullet horizontally (X) and vertically (Y)
+    // When bullet climbs into the high sky or beyond background bounds, clamp camera Y to sky ceiling
+    // while maintaining horizontal (X) tracking until the bullet descends back into view
     if (this.activeProjectiles.length > 0) {
       const leadProj = this.activeProjectiles.find((p) => !p.isExploding) || this.activeProjectiles[0];
-      const minCamY = 320; // Holds camera at upper sky limit while bullet travels above screen
+      const screenH = this.engine.app.screen.height || 600;
+      const zoom = this.engine.cameraZoom || 1.2;
+      // Top background boundary is -500; keep camera Y above the void
+      const minCamY = Math.max(120, -460 + (screenH / 2) / zoom);
       const targetY = Math.max(minCamY, leadProj.currentY);
       this.engine.panTo(leadProj.currentX, targetY);
     }
@@ -245,6 +264,14 @@ export class CombatArena {
     this.bot.setMobileType(mobileId);
   }
 
+  public setShootMode(mode: "space" | "drag") {
+    this.shootMode = mode;
+    this.aimController.shootMode = mode;
+    if (mode === "space" && this.isDraggingAim) {
+      this.isDraggingAim = false;
+    }
+  }
+
   public setShotType(type: number) {
     this.selectedShotType = type;
     this.aimController.setShotType(type);
@@ -259,9 +286,35 @@ export class CombatArena {
   }
 
   public randomizeWind() {
-    const power = Math.floor(Math.random() * 25);
+    if (!this.isWindEnabled) {
+      this.windPower = 0;
+      this.windAngle = 0;
+      if (this.onWindUpdate) this.onWindUpdate(0, 0);
+      return;
+    }
+    const power = 1 + Math.floor(Math.random() * 25);
     const angle = Math.floor(Math.random() * 360);
     this.setWind(power, angle);
+  }
+
+  public toggleWind(): boolean {
+    this.isWindEnabled = !this.isWindEnabled;
+    if (this.isWindEnabled) {
+      const power = 1 + Math.floor(Math.random() * 25);
+      const angle = Math.floor(Math.random() * 360);
+      this.setWind(power, angle);
+    } else {
+      this.setWind(0, this.windAngle);
+    }
+    return this.isWindEnabled;
+  }
+
+  public toggleBotImmortality(): boolean {
+    const isImmortal = this.bot.toggleImmortal();
+    if (this.onBotHpUpdate) {
+      this.onBotHpUpdate(this.bot.mobile.hp, this.bot.mobile.maxHp);
+    }
+    return isImmortal;
   }
 
   public fireShot(rawAngle: number, power: number, shotType: number) {
@@ -287,11 +340,10 @@ export class CombatArena {
     const defaultSound = shotType === 2 ? "12fire" : "11fire";
     const soundFire = (shotType === 2 ? mobileDef.soundSS : shotType === 1 ? mobileDef.sound2 : mobileDef.sound1) || defaultSound;
 
-    // Compute ballistics
-    const muzzle = this.player.getMuzzlePosition();
+    // Compute ballistics from mobile root coordinates (computeMuzzle calculates exact cannon pivot)
     const params: FireParams = {
-      x: muzzle.x,
-      y: muzzle.y,
+      x: this.player.x,
+      y: this.player.y,
       rawAngle,
       power,
       look: this.player.facing === -1 ? 0 : 1,
@@ -303,30 +355,30 @@ export class CombatArena {
       isPixelSolid: (x, y) => this.terrain.isGround(x, y),
       mapWidth: this.terrain.mapWidth,
       mapHeight: this.terrain.mapHeight,
+      targets: !this.bot.isDead && this.bot.mobile.hp > 0
+        ? [{ id: "bot", x: this.bot.mobile.x, y: this.bot.mobile.y - 14, radius: 26 }]
+        : [],
     };
 
     const trajectories = BallisticsEngine.simulateShot(params);
 
-    // Firing recoil animation plays FIRST; projectile and sound launch strictly after animation finishes
+    // 1. Immediately trigger cannon fire recoil animation (fire1 / fire2 / sfire)
     const fireAnim = shotType === 2 ? "sfire" : shotType === 1 ? "fire2" : "fire1";
-    let launched = false;
-    const launchAfterAnimation = () => {
-      if (launched) return;
-      launched = true;
-      this.player.playAnimation("normal");
-      AudioManager.play(soundFire, 0.9);
-      this.launchTrajectories(trajectories);
-    };
-
     this.player.playAnimation(fireAnim, false, () => {
-      launchAfterAnimation();
+      this.player.playAnimation("normal");
     });
 
-    // Fallback timer ensures shot launches even if animation sprite is uninitialized
-    const recoilFallbackMs = shotType === 2 ? 620 : shotType === 1 ? 520 : 380;
+    // 2. Projectile ejection blast timing (with requested delays: S1 +100ms, S2 +200ms, SS +300ms):
+    // Shot 1: frame blast (~200ms) + 100ms = 300ms
+    // Shot 2: frame blast (~420ms) + 200ms = 620ms
+    // SS: frame blast (~480ms) + 300ms = 780ms
+    const blastDelayMs = shotType === 2 ? 780 : shotType === 1 ? 620 : 300;
+
     setTimeout(() => {
-      launchAfterAnimation();
-    }, recoilFallbackMs);
+      // 3. Firing blast audio and projectile trajectory launch
+      AudioManager.play(soundFire, 0.9);
+      this.launchTrajectories(trajectories);
+    }, blastDelayMs);
   }
 
   private launchTrajectories(trajectories: ShotTrajectory[]) {
@@ -371,7 +423,10 @@ export class CombatArena {
               this.onAllProjectilesFinished();
             }
           },
-          traj.subType
+          traj.subType,
+          traj.hitType,
+          traj.bungeRadius,
+          traj.damage
         );
 
         this.activeProjectiles.push(proj);
@@ -381,6 +436,11 @@ export class CombatArena {
   }
 
   private handleImpact(traj: ShotTrajectory) {
+    // Out-of-bounds shots vanish into the void without detonating an explosion, hole, or sound in the sky
+    if (traj.hitType === "oob") {
+      return;
+    }
+
     const { x, y } = traj.finalPos;
 
     // 1. Excavate 3D crater on Metamine terrain
@@ -535,11 +595,12 @@ export class CombatArena {
 
   public resetCamera() {
     this.engine.panTo(700, 520);
-    this.engine.setZoom(1.08);
+    this.engine.setZoom(1.20);
   }
 
   public async resetMap() {
     this.destructionParticles.clear();
+    this.dynamicExplosionEngine.clear();
     await this.terrain.loadMap("metamine");
     this.respawnPlayer();
     this.resetBot();
@@ -547,7 +608,13 @@ export class CombatArena {
     this.randomizeWind();
   }
 
+  public setDynamicExplosions(enabled: boolean) {
+    DynamicExplosionEngine.isDynamicEnabled = enabled;
+  }
+
   public destroy() {
     this.aimController.destroy();
+    this.dynamicExplosionEngine.clear();
+    this.destructionParticles.clear();
   }
 }

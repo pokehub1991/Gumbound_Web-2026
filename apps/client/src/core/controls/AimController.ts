@@ -10,7 +10,9 @@ export class AimController {
   public shotType: number = 0; // 0 = Shot 1, 1 = Shot 2, 2 = SS
   public power: number = 0;
   public isCharging: boolean = false;
-  private chargeSpeed: number = 36; // 0 to 100 in ~2.7 seconds (authentic GunBound/DragonBound charging sensitivity)
+  public isAirborne: boolean = false;
+  public shootMode: "space" | "drag" = "space"; // Strict mutual exclusivity: space OR drag
+  private chargeSpeed: number = 26; // 0 to 100 in ~3.8 seconds (slower epic charging pace)
 
   // Keyboard state
   private keysPressed: Record<string, boolean> = {};
@@ -48,9 +50,9 @@ export class AimController {
   public update(dt: number) {
     if (!this.enabled || !this.activeMobile) return;
 
-    // 1. Mobile Movement along terrain contour (Authentic DragonBound WALK_SPEED = 50px/sec)
-    const isLeft = this.keysPressed["ArrowLeft"] || this.keysPressed["KeyA"];
-    const isRight = this.keysPressed["ArrowRight"] || this.keysPressed["KeyD"];
+    // 1. Mobile Movement along terrain contour with WASD standard (A = Left, D = Right)
+    const isLeft = !!this.keysPressed["KeyA"];
+    const isRight = !!this.keysPressed["KeyD"];
 
     if (isLeft && !isRight) {
       this.walkAccumulator += dt * 0.833;
@@ -68,9 +70,9 @@ export class AimController {
       this.walkAccumulator = 0;
     }
 
-    // 2. Smooth aim angle adjustments when key is held down (~17 deg/sec)
-    const isUp = this.keysPressed["ArrowUp"] || this.keysPressed["KeyW"];
-    const isDown = this.keysPressed["ArrowDown"] || this.keysPressed["KeyS"];
+    // 2. Smooth aim angle adjustments with WASD standard (W = Up, S = Down) (~17 deg/sec)
+    const isUp = !!this.keysPressed["KeyW"];
+    const isDown = !!this.keysPressed["KeyS"];
 
     if (isUp && !isDown) {
       this.angleAccumulator += dt * 0.28;
@@ -88,7 +90,7 @@ export class AimController {
       this.angleAccumulator = 0;
     }
 
-    // 3. Spacebar Power Charging
+    // 3. Power Charging
     if (this.isCharging) {
       this.power += this.chargeSpeed * (dt / 60);
       if (this.power >= 100) {
@@ -107,10 +109,32 @@ export class AimController {
 
     this.activeMobile.setFacing(dir);
 
+    // If airborne, permit horizontal air-drift so mobile never freezes or gets stuck on cliff edge!
+    if (this.isAirborne) {
+      this.activeMobile.x += dir * 0.75;
+      if (this.onMobileMove) {
+        this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
+      }
+      return;
+    }
+
     // Terrain walking step with ground incline tracking
     const walkRes = this.terrain.walk(this.activeMobile.x, this.activeMobile.y, dir);
+    if (walkRes.stuck) {
+      return;
+    }
+
     this.activeMobile.x = walkRes.x;
     this.activeMobile.y = walkRes.y;
+
+    if (walkRes.isAirborne) {
+      // Stepped off a ledge or cliff: mobile advances horizontally and gravity handles the fall
+      this.isAirborne = true;
+      if (this.onMobileMove) {
+        this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
+      }
+      return;
+    }
 
     const slope = this.terrain.getSlopeAngle(this.activeMobile.x, this.activeMobile.y);
     this.activeMobile.setTilt(slope.angle);
@@ -131,21 +155,56 @@ export class AimController {
     }
   }
 
+  public startCharging() {
+    if (this.isCharging || !this.activeMobile) return;
+    this.isCharging = true;
+    this.power = 0;
+    const chargeAnim = this.shotType === 2 ? "bsfire" : this.shotType === 1 ? "bfire2" : "bfire1";
+    this.activeMobile.playAnimation(chargeAnim, true);
+    AudioManager.play("power_charge", 0.7);
+  }
+
+  public updateCharging(power: number) {
+    if (!this.activeMobile) return;
+    this.power = Math.max(0, Math.min(100, power));
+    if (this.onPowerChange) {
+      this.onPowerChange(this.power);
+    }
+  }
+
+  public stopCharging() {
+    this.isCharging = false;
+  }
+
+  public releaseFire() {
+    if (!this.activeMobile) return;
+    const firedAngle = this.activeMobile.angleDeg;
+    const firedPower = Math.max(5, this.power);
+
+    this.stopCharging();
+
+    // Note: Do not reset onPowerChange(0) here so power bar stays filled until turn resets!
+
+    if (this.onFireCallback) {
+      this.onFireCallback(firedAngle, firedPower, this.shotType);
+    }
+  }
+
   private handleKeyDown(e: KeyboardEvent) {
     if (!this.enabled || !this.activeMobile) return;
 
-    // Prevent default scrolling for game controls
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+    // Prevent default scrolling for standard game controls (WASD and Space)
+    if (["KeyW", "KeyA", "KeyS", "KeyD", "Space"].includes(e.code)) {
       e.preventDefault();
     }
 
     if (this.keysPressed[e.code]) return;
     this.keysPressed[e.code] = true;
 
-    // Angle adjustment on tap: exactly 1 degree per tap!
-    if (e.code === "ArrowUp" || e.code === "KeyW") {
+    // Angle adjustment on tap with W / S: exactly 1 degree per tap!
+    if (e.code === "KeyW") {
       this.adjustAngle(1);
-    } else if (e.code === "ArrowDown" || e.code === "KeyS") {
+    } else if (e.code === "KeyS") {
       this.adjustAngle(-1);
     }
 
@@ -158,47 +217,28 @@ export class AimController {
       this.setShotType(2);
     }
 
-    // Spacebar start charge
-    if (e.code === "Space" && !this.isCharging) {
-      this.isCharging = true;
-      this.power = 0;
-      const chargeAnim = this.shotType === 2 ? "bsfire" : this.shotType === 1 ? "bfire2" : "bfire1";
-      this.activeMobile.playAnimation(chargeAnim);
-      AudioManager.play("power_charge", 0.7);
+    // Spacebar start charge (only allowed if shootMode === 'space')
+    if (e.code === "Space" && !this.isCharging && this.shootMode === "space") {
+      this.startCharging();
     }
   }
 
   private handleKeyUp(e: KeyboardEvent) {
     this.keysPressed[e.code] = false;
 
-    // Stop walking animation when arrow keys released
+    // Stop walking animation when A or D keys released
     if (
-      (e.code === "ArrowLeft" || e.code === "KeyA" || e.code === "ArrowRight" || e.code === "KeyD") &&
+      (e.code === "KeyA" || e.code === "KeyD") &&
       this.activeMobile &&
-      !this.isCharging
+      !this.isCharging &&
+      !this.isAirborne
     ) {
       this.activeMobile.playAnimation("normal");
     }
 
-    // Spacebar release fire
-    if (e.code === "Space" && this.isCharging) {
+    // Spacebar release fire (only allowed if shootMode === 'space')
+    if (e.code === "Space" && this.isCharging && this.shootMode === "space") {
       this.releaseFire();
-    }
-  }
-
-  private releaseFire() {
-    if (!this.isCharging || !this.activeMobile) return;
-    this.isCharging = false;
-
-    const firedAngle = this.activeMobile.angleDeg;
-    const firedPower = Math.max(5, this.power);
-
-    if (this.onPowerChange) {
-      this.onPowerChange(0);
-    }
-
-    if (this.onFireCallback) {
-      this.onFireCallback(firedAngle, firedPower, this.shotType);
     }
   }
 

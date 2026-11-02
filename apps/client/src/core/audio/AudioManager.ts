@@ -2,6 +2,7 @@ export class AudioManager {
   private static audioCache: Map<string, HTMLAudioElement> = new Map();
   private static musicAudio?: HTMLAudioElement;
   public static isMuted: boolean = false;
+  public static isMusicMuted: boolean = false;
   public static volume: number = 0.7;
 
   public static play(soundName: string, volScale: number = 1.0) {
@@ -38,7 +39,7 @@ export class AudioManager {
   }
 
   public static playMusic(filename: string = "dbBattleMiramoTown.mp3") {
-    if (this.isMuted) return;
+    if (this.isMuted || this.isMusicMuted) return;
 
     try {
       if (this.musicAudio) {
@@ -59,6 +60,18 @@ export class AudioManager {
       this.musicAudio.pause();
       this.musicAudio = undefined;
     }
+  }
+
+  public static toggleMusic(): boolean {
+    this.isMusicMuted = !this.isMusicMuted;
+    if (this.musicAudio) {
+      if (this.isMusicMuted) {
+        this.musicAudio.pause();
+      } else {
+        this.musicAudio.play().catch(() => {});
+      }
+    }
+    return !this.isMusicMuted;
   }
 
   public static toggleMute(): boolean {

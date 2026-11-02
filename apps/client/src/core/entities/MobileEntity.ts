@@ -13,6 +13,17 @@ export interface MobileEntityConfig {
   y: number;
 }
 
+interface DamageSmokeParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  radius: number;
+  alpha: number;
+  color: number;
+  isSpark?: boolean;
+}
+
 export class MobileEntity extends Container {
   public readonly id: string;
   public nickname: string;
@@ -37,6 +48,12 @@ export class MobileEntity extends Container {
   private hpBarGraphics: Graphics;
   private nameText: Text;
 
+  // Damaged vehicle breakdown smoke & spark particles
+  private smokeContainer: Container;
+  private smokeGraphics: Graphics;
+  private smokeParticles: DamageSmokeParticle[] = [];
+  private smokeTimer: number = 0;
+
   constructor(config: MobileEntityConfig) {
     super();
     this.id = config.id;
@@ -53,6 +70,9 @@ export class MobileEntity extends Container {
     this.spriteContainer = new Container();
     this.fallbackBody = new Graphics();
     this.hpBarGraphics = new Graphics();
+    this.smokeContainer = new Container();
+    this.smokeGraphics = new Graphics();
+    this.smokeContainer.addChild(this.smokeGraphics);
 
     const teamColor = this.team === "A" ? 0x38bdf8 : 0xef4444;
 
@@ -81,19 +101,23 @@ export class MobileEntity extends Container {
     this.aimContainer.addChild(this.aimArrowGraphics);
     this.aimContainer.addChild(this.aimAngleText);
 
-    // Nickname Label
+    // HP Bar placed fixed below mobile treads (horizontal, never tilted with slope)
+    this.hpBarGraphics.y = 14;
+
+    // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
       fontFamily: "Inter, Roboto, Arial, sans-serif",
       fontSize: 11,
       fontWeight: "bold",
-      fill: "#ffffff",
+      fill: "#ffedd5",
       stroke: { color: "#000000", width: 3 },
     });
     this.nameText = new Text({ text: this.nickname, style: textStyle });
     this.nameText.anchor.set(0.5, 0);
     this.nameText.y = 22;
 
-    // Protractor is rendered behind the mobile tank and avatar driver so it never covers them
+    // Crucial: smokeContainer is placed at index 0 behind the mobile body and wheels
+    this.addChild(this.smokeContainer);
     this.addChild(this.aimContainer);
     this.addChild(this.fallbackBody);
     this.addChild(this.spriteContainer);
@@ -169,9 +193,6 @@ export class MobileEntity extends Container {
 
     // Authentic GunBound Aiming Protractor Gauge (Radius 48px, attached to mobile tilt)
     const gaugeRadius = 48;
-    const arrowLen = 47;
-    const headLen = 10;
-    const headWidth = 6;
 
     let rotRad: number;
     let minRad: number;
@@ -187,89 +208,95 @@ export class MobileEntity extends Container {
       maxRad = -((180 - maxAng) * Math.PI) / 180;
     }
 
-    // Protractor tilts with tank body on slopes and anchors forward at the cannon pivot
+    // Protractor tilts with tank body on slopes and anchors precisely at mobile's nose/muzzle
     this.aimContainer.rotation = this.slopeAngle;
-    this.aimContainer.position.set(this.facing === 1 ? 16 : -16, -16);
+    const cosS = Math.cos(this.slopeAngle);
+    const sinS = Math.sin(this.slopeAngle);
+    const localMountX = this.facing * 20;
+    const localMountY = -22;
+    const noseX = localMountX * cosS - localMountY * sinS;
+    const noseY = localMountX * sinS + localMountY * cosS;
+    this.aimContainer.position.set(noseX, noseY);
 
-    // 1. Forward-half translucent white/ivory disc with smooth fade towards the rear (Image 1 reference)
+    // Forward-half angle bounds (rear half remains 100% transparent so mobile body is fully visible)
     const forwardBase = this.facing === 1 ? 0 : Math.PI;
-    const segmentCount = 20;
-    const startOffset = -Math.PI / 2 - 0.15;
-    const endOffset = Math.PI / 2 + 0.15;
-    const step = (endOffset - startOffset) / segmentCount;
+    const semiStart = forwardBase - Math.PI / 2;
+    const semiEnd = forwardBase + Math.PI / 2;
 
-    for (let i = 0; i < segmentCount; i++) {
-      const a0 = forwardBase + startOffset + i * step;
-      const a1 = a0 + step;
-      const midRel = startOffset + (i + 0.5) * step;
-      const forwardAlign = Math.cos(midRel); // 1.0 at center forward, 0 at top/bottom edges
-      if (forwardAlign > 0.01) {
-        const sliceAlpha = Math.min(0.25, Math.pow(forwardAlign, 0.65) * 0.22);
-        this.aimArrowGraphics.beginPath();
-        this.aimArrowGraphics.moveTo(0, 0);
-        this.aimArrowGraphics.arc(0, 0, gaugeRadius, a0, a1);
-        this.aimArrowGraphics.closePath();
-        this.aimArrowGraphics.fill({ color: 0xffffff, alpha: sliceAlpha });
-      }
-    }
-
-    // 2. Subtle 1px circular contour on forward arc
+    // 1. Forward-Half Translucent White Disc
     this.aimArrowGraphics.beginPath();
-    this.aimArrowGraphics.arc(0, 0, gaugeRadius, forwardBase - Math.PI / 2 - 0.1, forwardBase + Math.PI / 2 + 0.1);
-    this.aimArrowGraphics.stroke({ width: 1.0, color: 0x334155, alpha: 0.35 });
+    this.aimArrowGraphics.arc(0, 0, gaugeRadius, semiStart, semiEnd);
+    this.aimArrowGraphics.lineTo(0, 0);
+    this.aimArrowGraphics.closePath();
+    this.aimArrowGraphics.fill({ color: 0xffffff, alpha: 0.24 });
+    this.aimArrowGraphics.stroke({ width: 1.0, color: 0xffffff, alpha: 0.45 });
 
-    // 3. Subtle radial tick guidelines at 0°, 30°, 60°, 90°
+    // Subtle inner concentric ring guideline on forward half
+    this.aimArrowGraphics.beginPath();
+    this.aimArrowGraphics.arc(0, 0, 24, semiStart, semiEnd);
+    this.aimArrowGraphics.stroke({ width: 0.8, color: 0xffffff, alpha: 0.25 });
+
+    // Subtle radial tick guidelines at 0°, 30°, 60°, 90°
     const ticks = [0, 30, 60, 90];
     for (const deg of ticks) {
       const tRad = this.facing === 1 ? -(deg * Math.PI) / 180 : -((180 - deg) * Math.PI) / 180;
       this.aimArrowGraphics.moveTo(0, 0);
       this.aimArrowGraphics.lineTo(Math.cos(tRad) * gaugeRadius, Math.sin(tRad) * gaugeRadius);
-      this.aimArrowGraphics.stroke({ width: 1.0, color: 0x475569, alpha: 0.22 });
+      this.aimArrowGraphics.stroke({ width: 0.8, color: 0xffffff, alpha: 0.32 });
     }
 
-    // 4. Valid Angle Sector Wedge (Bright GunBound Green from minAngle to maxAngle)
+    // 2. Valid Angle Sector Wedge (Luminous GunBound Green arc band from minAngle to maxAngle - Image 4 reference)
     const arcStart = Math.min(minRad, maxRad);
     const arcEnd = Math.max(minRad, maxRad);
+    const innerR = 24;
+    const outerR = 52;
 
     this.aimArrowGraphics.beginPath();
-    this.aimArrowGraphics.moveTo(0, 0);
-    this.aimArrowGraphics.arc(0, 0, gaugeRadius, arcStart, arcEnd);
+    this.aimArrowGraphics.moveTo(Math.cos(arcStart) * innerR, Math.sin(arcStart) * innerR);
+    this.aimArrowGraphics.arc(0, 0, outerR, arcStart, arcEnd);
+    this.aimArrowGraphics.lineTo(Math.cos(arcEnd) * innerR, Math.sin(arcEnd) * innerR);
+    this.aimArrowGraphics.arc(0, 0, innerR, arcEnd, arcStart, true);
     this.aimArrowGraphics.closePath();
-    this.aimArrowGraphics.fill({ color: 0x22c55e, alpha: 0.82 });
-    this.aimArrowGraphics.stroke({ width: 1.0, color: 0x15803d, alpha: 0.9 });
+    this.aimArrowGraphics.fill({ color: 0x22c55e, alpha: 0.58 });
+    this.aimArrowGraphics.stroke({ width: 1.0, color: 0x15803d, alpha: 0.85 });
 
-    // 5. Active Pointer Needle (Sleek Red Needle with Arrowhead)
-    const needleEndX = Math.cos(rotRad) * arrowLen;
-    const needleEndY = Math.sin(rotRad) * arrowLen;
-    const shaftEndX = Math.cos(rotRad) * (arrowLen - headLen);
-    const shaftEndY = Math.sin(rotRad) * (arrowLen - headLen);
+    // 3. Active Pointer Needle (Sleek tapered red needle matching GunBound reference)
+    // Tapers from 3.2px base at inner radius (12) to a sharp 1.2px tip at radius 50
+    const tipR = 50;
+    const baseR = 12;
+    const baseHalfW = 1.6;
+    const tipHalfW = 0.6;
 
-    // Needle shadow
-    this.aimArrowGraphics.moveTo(0, 0);
-    this.aimArrowGraphics.lineTo(shaftEndX, shaftEndY);
-    this.aimArrowGraphics.stroke({ width: 3.5, color: 0x000000, alpha: 0.45 });
+    const tipMidX = Math.cos(rotRad) * tipR;
+    const tipMidY = Math.sin(rotRad) * tipR;
+    const baseMidX = Math.cos(rotRad) * baseR;
+    const baseMidY = Math.sin(rotRad) * baseR;
+    const perpBaseX = -Math.sin(rotRad) * baseHalfW;
+    const perpBaseY = Math.cos(rotRad) * baseHalfW;
+    const perpTipX = -Math.sin(rotRad) * tipHalfW;
+    const perpTipY = Math.cos(rotRad) * tipHalfW;
 
-    // Needle shaft
-    this.aimArrowGraphics.moveTo(0, 0);
-    this.aimArrowGraphics.lineTo(shaftEndX, shaftEndY);
-    this.aimArrowGraphics.stroke({ width: 2.2, color: 0xef4444, alpha: 1.0 });
-
-    // Arrowhead Triangle
-    const perpX = -Math.sin(rotRad) * headWidth;
-    const perpY = Math.cos(rotRad) * headWidth;
-
+    // Subtle needle drop shadow
+    const shadowOffset = 1.0;
     this.aimArrowGraphics.poly([
-      needleEndX, needleEndY,
-      shaftEndX + perpX, shaftEndY + perpY,
-      shaftEndX - perpX, shaftEndY - perpY,
+      tipMidX + perpTipX + shadowOffset, tipMidY + perpTipY + shadowOffset,
+      tipMidX - perpTipX + shadowOffset, tipMidY - perpTipY + shadowOffset,
+      baseMidX - perpBaseX + shadowOffset, baseMidY - perpBaseY + shadowOffset,
+      baseMidX + perpBaseX + shadowOffset, baseMidY + perpBaseY + shadowOffset,
+    ]);
+    this.aimArrowGraphics.fill({ color: 0x000000, alpha: 0.35 });
+
+    // Vibrant Red Tapered Needle (Image 4 reference)
+    this.aimArrowGraphics.poly([
+      tipMidX + perpTipX, tipMidY + perpTipY,
+      tipMidX - perpTipX, tipMidY - perpTipY,
+      baseMidX - perpBaseX, baseMidY - perpBaseY,
+      baseMidX + perpBaseX, baseMidY + perpBaseY,
     ]);
     this.aimArrowGraphics.fill({ color: 0xef4444, alpha: 1.0 });
-    this.aimArrowGraphics.stroke({ width: 1.0, color: 0x991b1b, alpha: 0.95 });
+    this.aimArrowGraphics.stroke({ width: 0.8, color: 0x7f1d1d, alpha: 0.95 });
 
-    // Center pivot dot
-    this.aimArrowGraphics.circle(0, 0, 3.0).fill(0x1e293b);
-    this.aimArrowGraphics.circle(0, 0, 1.5).fill(0xffffff);
-
+    // Center pivot removed to ensure no dot or white mark appears in the protractor center
     // Hide angle degree text & badge above mobile as requested (angle is displayed in HUD)
     this.aimAngleText.visible = false;
   }
@@ -385,7 +412,7 @@ export class MobileEntity extends Container {
     });
     const popup = new Text({ text: `-${damage}`, style });
     popup.anchor.set(0.5, 0.5);
-    popup.y = -50;
+    popup.y = -75;
     this.addChild(popup);
 
     let elapsed = 0;
@@ -403,28 +430,113 @@ export class MobileEntity extends Container {
 
   public updateHpBar() {
     this.hpBarGraphics.clear();
-    const w = 46;
-    const h = 5;
+    const w = 52;
+    const h = 6;
     const x = -w / 2;
-    const y = 14;
+    const y = 0; // Relative to hpBarGraphics which is anchored at y = 14 below treads
 
-    // Dark backdrop
-    this.hpBarGraphics.roundRect(x, y, w, h, 2).fill(0x0a0f1d);
+    // Dark backdrop with crisp 1.2px solid white border (Image 4 reference)
+    this.hpBarGraphics.rect(x, y, w, h).fill(0x0a0f1d);
+    this.hpBarGraphics.rect(x, y, w, h).stroke({ width: 1.2, color: 0xffffff, alpha: 0.95 });
 
     // Dynamic HP fill
-    const pct = this.hp / this.maxHp;
-    const fillColor = pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xeab308 : 0xef4444;
-    this.hpBarGraphics.roundRect(x + 1, y + 1, (w - 2) * pct, h - 2, 1).fill(fillColor);
+    const pct = this.maxHp > 0 ? this.hp / this.maxHp : 1;
+    const fillColor = pct > 0.5 ? 0x4ade80 : pct > 0.25 ? 0xfacc15 : 0xef4444;
+    if (pct > 0) {
+      this.hpBarGraphics.rect(x + 1, y + 1, Math.max(1, (w - 2) * pct), h - 2).fill(fillColor);
+    }
   }
 
   public getMuzzlePosition(): { x: number; y: number } {
-    const rad = (this.angleDeg * Math.PI) / 180;
-    const barrelLength = 34;
-    const offsetX = Math.cos(rad) * barrelLength * this.facing;
-    const offsetY = -Math.sin(rad) * barrelLength - 8;
+    const cosS = Math.cos(this.slopeAngle);
+    const sinS = Math.sin(this.slopeAngle);
+    const localMountX = this.facing * 20;
+    const localMountY = -22;
+    const noseX = localMountX * cosS - localMountY * sinS;
+    const noseY = localMountX * sinS + localMountY * cosS;
+
+    const rad = this.facing === 1
+      ? -(this.angleDeg * Math.PI) / 180 + this.slopeAngle
+      : -((180 - this.angleDeg) * Math.PI) / 180 + this.slopeAngle;
+    const barrelLength = 16;
     return {
-      x: this.x + offsetX,
-      y: this.y + offsetY,
+      x: this.x + noseX + Math.cos(rad) * barrelLength,
+      y: this.y + noseY + Math.sin(rad) * barrelLength,
     };
+  }
+
+  /**
+   * Update subtle damage breakdown smoke particles emitted behind vehicle when HP is low.
+   */
+  public update(dt: number) {
+    const isDamaged = this.hp < this.maxHp * 0.45;
+    const isCritical = this.hp < this.maxHp * 0.20;
+
+    if (isDamaged && this.hp > 0) {
+      this.smokeTimer += dt;
+      const spawnInterval = isCritical ? 5 : 10;
+
+      if (this.smokeTimer >= spawnInterval) {
+        this.smokeTimer = 0;
+
+        // Exhaust point at the rear of the tank, rotated with terrain slope
+        const cosS = Math.cos(this.slopeAngle);
+        const sinS = Math.sin(this.slopeAngle);
+        const rearLocalX = -this.facing * (14 + Math.random() * 4);
+        const rearLocalY = -8 + (Math.random() - 0.5) * 4;
+        const spawnX = rearLocalX * cosS - rearLocalY * sinS;
+        const spawnY = rearLocalX * sinS + rearLocalY * cosS;
+
+        // Subtle smoke puff
+        const color = isCritical
+          ? Math.random() < 0.25
+            ? 0xf59e0b // Occasional spark ember
+            : 0x1e293b // Dark breakdown smoke
+          : 0x64748b; // Wispy gray smoke
+
+        const isSpark = color === 0xf59e0b;
+
+        this.smokeParticles.push({
+          x: spawnX,
+          y: spawnY,
+          vx: -this.facing * (0.2 + Math.random() * 0.3) + (Math.random() - 0.5) * 0.2,
+          vy: -(0.5 + Math.random() * 0.6),
+          radius: isSpark ? 1.5 : 3.5 + Math.random() * 2,
+          alpha: isSpark ? 0.9 : 0.38,
+          color,
+          isSpark,
+        });
+      }
+    }
+
+    // Step active smoke particles
+    if (this.smokeParticles.length > 0) {
+      this.smokeGraphics.clear();
+
+      for (let i = this.smokeParticles.length - 1; i >= 0; i--) {
+        const p = this.smokeParticles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy -= 0.008 * dt; // gentle rise
+
+        if (p.isSpark) {
+          p.alpha -= 0.035 * dt;
+          p.radius = Math.max(0.5, p.radius - 0.02 * dt);
+        } else {
+          p.alpha -= 0.010 * dt; // soft, subtle fading
+          p.radius += 0.14 * dt;  // gentle puff expansion
+        }
+
+        if (p.alpha <= 0.01) {
+          this.smokeParticles.splice(i, 1);
+          continue;
+        }
+
+        this.smokeGraphics.circle(p.x, p.y, p.radius);
+        this.smokeGraphics.fill({ color: p.color, alpha: Math.max(0, p.alpha) });
+      }
+    } else {
+      this.smokeGraphics.clear();
+    }
   }
 }

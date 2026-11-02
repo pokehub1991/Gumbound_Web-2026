@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from "pixi.js";
+import { Application, Container, Graphics, ColorMatrixFilter } from "pixi.js";
 
 export class GameEngine {
   public app: Application;
@@ -21,13 +21,13 @@ export class GameEngine {
   private ssOverlay: Graphics;
   private ssTargetAlpha: number = 0;
 
-  // Camera & Zoom (Framed for authentic GunBound/DragonBound scale: 1.08 brings action closer)
+  // Camera & Zoom (Default 1.2x POV as requested)
   public cameraX: number = 700;
   public cameraY: number = 520;
   public targetCameraX: number = 700;
   public targetCameraY: number = 520;
-  public cameraZoom: number = 1.08;
-  public targetZoom: number = 1.08;
+  public cameraZoom: number = 1.20;
+  public targetZoom: number = 1.20;
 
   // Mouse pan controls
   private isDraggingCamera: boolean = false;
@@ -75,6 +75,9 @@ export class GameEngine {
     this.app.stage.addChild(this.worldContainer);
     this.app.stage.addChild(this.uiContainer);
 
+    // Apply retro contrast & saturation boost on mobile sprites
+    this.setSpriteContrast(true);
+
     // Initial camera placement framed nicely across the battlefield
     this.panTo(700, 520, true);
 
@@ -83,17 +86,14 @@ export class GameEngine {
       this.update(ticker.deltaTime);
     });
 
-    // Right-Click Drag to Pan Camera across battlefield (GunBound Panoramic mode)
+    // Right-Click Drag to Pan Camera across battlefield (Authentic GunBound glove hand)
     window.addEventListener("contextmenu", (e) => e.preventDefault());
-
-    // Custom larger SVG grab hand glove cursor (authentic GunBound/DragonBound panoramic hand)
-    const grabHandCursor = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath fill='%23ffffff' stroke='%230f172a' stroke-width='2.2' stroke-linejoin='round' d='M10 13V7a2.5 2.5 0 0 1 5 0v4.5a2.5 2.5 0 0 1 4 0V8a2.5 2.5 0 0 1 5 0v4.5a2.5 2.5 0 0 1 4 0V11a2.5 2.5 0 0 1 5 0v8c0 6-4 10.5-10 10.5s-10-4.5-10-10.5v-3.5a2.5 2.5 0 0 1 5 0z'/%3E%3Cpath fill='%23cbd5e1' d='M10 17v-1.5a1.5 1.5 0 0 1 3 0V18m2-2.5a1.5 1.5 0 0 1 3 0V18m2-3a1.5 1.5 0 0 1 3 0V18' stroke='%2394a3b8' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E") 16 16, grabbing`;
 
     window.addEventListener("pointerdown", (e) => {
       if (e.button === 2) {
         this.isDraggingCamera = true;
         this.dragStartPos = { x: e.clientX, y: e.clientY };
-        document.body.style.cursor = grabHandCursor;
+        document.body.classList.add("is-grabbing");
       }
     });
 
@@ -109,7 +109,7 @@ export class GameEngine {
     window.addEventListener("pointerup", (e) => {
       if (e.button === 2) {
         this.isDraggingCamera = false;
-        document.body.style.cursor = "default";
+        document.body.classList.remove("is-grabbing");
       }
     });
 
@@ -147,7 +147,7 @@ export class GameEngine {
   }
 
   public setZoom(zoom: number) {
-    this.targetZoom = Math.max(0.65, Math.min(1.50, zoom));
+    this.targetZoom = Math.max(0.45, Math.min(1.60, zoom));
   }
 
   public shakeScreen(intensity: number = 8, durationMs: number = 380) {
@@ -201,6 +201,20 @@ export class GameEngine {
 
     // 2. Smooth Battlefield Darkness during SS
     this.ssOverlay.alpha += (this.ssTargetAlpha - this.ssOverlay.alpha) * Math.min(1.0, 0.14 * dt);
+  }
+
+  public isContrastBoosted: boolean = true;
+
+  public setSpriteContrast(enabled: boolean) {
+    this.isContrastBoosted = enabled;
+    if (enabled) {
+      const filter = new ColorMatrixFilter();
+      filter.contrast(0.24, true); // +24% contrast boost for sharp retro outlines
+      filter.saturate(0.20, true); // +20% saturation boost for vibrant pixel art colors
+      this.mobilesContainer.filters = [filter];
+    } else {
+      this.mobilesContainer.filters = [];
+    }
   }
 
   public destroy() {
