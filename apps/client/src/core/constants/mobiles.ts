@@ -515,3 +515,41 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     description: "Ave fénix de fuego sagrado.",
   },
 };
+
+/**
+ * Authentic mobility walk speeds per mobile based on DragonBound/GunBound statmov stats.
+ * Values indicate the accumulator advance per 60fps frame:
+ * 0.85 = ~51 px/s (Solid tread vehicles like Armor)
+ * 0.95 = ~57 px/s (Medium mobility vehicles like Ice, Boomer, Nak)
+ * 1.10 = ~66 px/s (High mobility vehicles like Mage, Lightning, Kalsiddon)
+ * 1.30 = ~78 px/s (Fast vehicles like Bigfoot)
+ * 1.40 = ~84 px/s (Hyper-fast runners like Aduka)
+ * 0.65 = ~39 px/s (Heavy giants like Dragon, Knight)
+ */
+export const MOBILE_WALK_SPEEDS: Record<number, number> = {
+  0: 0.85,  // Armor (40% statmov - classic steady tank treads)
+  1: 0.95,  // Ice (50% statmov - mammoth trot)
+  2: 1.40,  // Aduka (100% statmov - agile runner)
+  3: 1.10,  // Lightning (70% statmov - energetic hover)
+  4: 1.30,  // Bigfoot (90% statmov - fast missile buggy)
+  5: 1.20,  // J.D (80% statmov - swift roll)
+  6: 0.95,  // A.Sate (50% statmov)
+  7: 0.85,  // Random (default)
+  8: 0.65,  // Knight (10% statmov - heavy colossal walker)
+  9: 0.65,  // Fox (10% statmov)
+  10: 0.65, // Dragon (10% statmov - colossal dragon)
+  11: 0.95, // Nak (50% statmov)
+  12: 0.95, // Trico (50% statmov)
+  13: 1.10, // Mage (70% statmov - levitating wand)
+  14: 0.85, // Turtle (40% statmov - heavy crawler)
+  15: 0.95, // Boomer (50% statmov - wooden wheels)
+  16: 0.65, // Electrico (10% statmov)
+  17: 0.95, // Grub (50% statmov)
+  18: 0.65, // Dragon (10% statmov)
+  19: 0.85, // Raon Launcher (40% statmov)
+  20: 0.95, // Copyloid (50% statmov)
+  21: 0.85, // Frog (40% statmov)
+  22: 1.10, // Kalsiddon (70% statmov)
+  23: 0.95, // Maya (50% statmov)
+  24: 0.75, // Phoenix (30% statmov)
+};

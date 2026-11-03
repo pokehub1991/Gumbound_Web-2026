@@ -59,6 +59,7 @@ export class MobileEntity extends Container {
   private smokeGraphics: Graphics;
   private smokeParticles: DamageSmokeParticle[] = [];
   private smokeTimer: number = 0;
+  private sparkTimer: number = 0;
 
   constructor(config: MobileEntityConfig) {
     super();
@@ -108,7 +109,7 @@ export class MobileEntity extends Container {
     this.aimContainer.addChild(this.aimAngleText);
 
     // HP Bar placed fixed below mobile treads (horizontal, never tilted with slope)
-    this.hpBarGraphics.y = 9;
+    this.hpBarGraphics.y = 10;
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
@@ -120,7 +121,7 @@ export class MobileEntity extends Container {
     });
     this.nameText = new Text({ text: this.nickname, style: textStyle });
     this.nameText.anchor.set(0.5, 0);
-    this.nameText.y = 17;
+    this.nameText.y = 19;
 
     // Crucial: smokeContainer is placed at index 0 behind the mobile body and wheels
     this.addChild(this.smokeContainer);
@@ -225,58 +226,87 @@ export class MobileEntity extends Container {
     const noseY = localMountX * sinS + localMountY * cosS;
     this.aimContainer.position.set(noseX, noseY);
 
-    // Forward direction base angle (0 rad when facing right, PI rad when facing left)
-    const forwardBase = this.facing === 1 ? 0 : Math.PI;
-
-    // 1. White Protractor Disc fading smoothly from the front of the mobile towards the rear
-    const numSlices = 28;
-    const sliceStep = Math.PI / numSlices;
-    const halfPi = Math.PI / 2;
+    // 1. White Protractor Disc with long, gentle symmetric fade at both bottom-rear and top-rear
+    // Seamlessly spans from -45° to +135° (180° semicircle) with a wide 65° smooth sinusoidal transition at both ends
+    const numSlices = 72;
+    const minDeg = -45;
+    const maxDeg = 135;
+    const totalSpan = maxDeg - minDeg;
+    const sliceStep = totalSpan / numSlices;
 
     for (let i = 0; i < numSlices; i++) {
-      const relStart = -halfPi + i * sliceStep;
-      const relEnd = relStart + sliceStep;
-      const midRel = (relStart + relEnd) / 2;
+      const startDeg = minDeg + i * sliceStep;
+      const endDeg = startDeg + sliceStep;
+      const midDeg = (startDeg + endDeg) / 2;
 
-      // cos(midRel) is 1.0 at front (midRel = 0) and fades smoothly to 0 at ±90° (midRel = ±PI/2)
-      const fadeFactor = Math.max(0, Math.cos(midRel));
-      const fillAlpha = 0.35 * Math.pow(fadeFactor, 1.15);
-      const strokeAlpha = 0.45 * Math.pow(fadeFactor, 1.15);
+      // Long, gradual cosine transition over 65 degrees:
+      // Bottom-rear: -45° to +20° (smooth sinusoidal ease-in)
+      // Top-rear: +70° to +135° (smooth sinusoidal ease-out)
+      // Forward aiming core (+20° to +70°): 100% full clarity
+      let bottomFade = 1.0;
+      if (midDeg < 20) {
+        const t = Math.max(0, Math.min(1, (midDeg - (-45)) / 65));
+        bottomFade = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      }
 
-      if (fillAlpha > 0.01) {
-        const aStart = forwardBase + relStart;
-        const aEnd = forwardBase + relEnd;
+      let topFade = 1.0;
+      if (midDeg > 70) {
+        const t = Math.max(0, Math.min(1, (135 - midDeg) / 65));
+        topFade = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      }
+
+      const edgeFade = bottomFade * topFade;
+      const fillAlpha = 0.35 * edgeFade;
+      const strokeAlpha = 0.45 * edgeFade;
+
+      if (fillAlpha > 0.005) {
+        let rad1: number;
+        let rad2: number;
+
+        if (this.facing === 1) {
+          rad1 = -(endDeg * Math.PI) / 180;
+          rad2 = -(startDeg * Math.PI) / 180;
+        } else {
+          rad1 = -((180 - startDeg) * Math.PI) / 180;
+          rad2 = -((180 - endDeg) * Math.PI) / 180;
+        }
 
         // Outer sector band (innerRadius -> gaugeRadius)
         this.aimArrowGraphics.beginPath();
-        this.aimArrowGraphics.arc(0, 0, gaugeRadius, aStart, aEnd);
-        this.aimArrowGraphics.lineTo(Math.cos(aEnd) * innerRadius, Math.sin(aEnd) * innerRadius);
-        this.aimArrowGraphics.arc(0, 0, innerRadius, aEnd, aStart, true);
+        this.aimArrowGraphics.arc(0, 0, gaugeRadius, rad1, rad2);
+        this.aimArrowGraphics.lineTo(Math.cos(rad2) * innerRadius, Math.sin(rad2) * innerRadius);
+        this.aimArrowGraphics.arc(0, 0, innerRadius, rad2, rad1, true);
         this.aimArrowGraphics.closePath();
         this.aimArrowGraphics.fill({ color: 0xffffff, alpha: fillAlpha });
 
         // Outer border arc segment
         this.aimArrowGraphics.beginPath();
-        this.aimArrowGraphics.arc(0, 0, gaugeRadius, aStart, aEnd);
+        this.aimArrowGraphics.arc(0, 0, gaugeRadius, rad1, rad2);
         this.aimArrowGraphics.stroke({ width: 1.0, color: 0xffffff, alpha: strokeAlpha });
 
         // Inner concentric guideline arc segment
         this.aimArrowGraphics.beginPath();
-        this.aimArrowGraphics.arc(0, 0, innerRadius, aStart, aEnd);
+        this.aimArrowGraphics.arc(0, 0, innerRadius, rad1, rad2);
         this.aimArrowGraphics.stroke({ width: 0.7, color: 0xffffff, alpha: strokeAlpha * 0.65 });
       }
     }
 
-    // Subtle radial tick guidelines at 0°, 30°, 60°, 90° fading with angle
+    // Subtle radial tick guidelines at 0°, 30°, 60°, 90° (Image 1 authentic GunBound crosshairs)
     const ticks = [0, 30, 60, 90];
     for (const deg of ticks) {
+      let tickFade = 1.0;
+      if (deg < 20) {
+        const t = Math.max(0, Math.min(1, (deg - (-45)) / 65));
+        tickFade = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      } else if (deg > 70) {
+        const t = Math.max(0, Math.min(1, (135 - deg) / 65));
+        tickFade = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      }
       const tRad = this.facing === 1 ? -(deg * Math.PI) / 180 : -((180 - deg) * Math.PI) / 180;
-      const radDiff = Math.abs(deg);
-      const tickAlpha = Math.max(0.08, 0.45 * Math.cos((radDiff * Math.PI) / 180));
       this.aimArrowGraphics.beginPath();
       this.aimArrowGraphics.moveTo(Math.cos(tRad) * innerRadius, Math.sin(tRad) * innerRadius);
       this.aimArrowGraphics.lineTo(Math.cos(tRad) * gaugeRadius, Math.sin(tRad) * gaugeRadius);
-      this.aimArrowGraphics.stroke({ width: 0.8, color: 0xffffff, alpha: tickAlpha });
+      this.aimArrowGraphics.stroke({ width: 0.85, color: 0xffffff, alpha: 0.45 * tickFade });
     }
 
     // 2. Valid Angle Sector Wedge (Luminous GunBound Green arc band from minAngle to maxAngle)
@@ -462,18 +492,18 @@ export class MobileEntity extends Container {
 
   public updateHpBar() {
     this.hpBarGraphics.clear();
-    const w = 52;
-    const h = 6;
+    const w = 78;
+    const h = 5.5;
     const x = -w / 2;
-    const y = 0; // Relative to hpBarGraphics which is anchored at y = 14 below treads
+    const y = 0; // Relative to hpBarGraphics which is anchored at y = 10 below treads
 
-    // Dark backdrop with crisp 1.2px solid white border (Image 4 reference)
-    this.hpBarGraphics.rect(x, y, w, h).fill(0x0a0f1d);
-    this.hpBarGraphics.rect(x, y, w, h).stroke({ width: 1.2, color: 0xffffff, alpha: 0.95 });
+    // Dark backdrop with crisp 1.4px solid white border (Image 3 & 4 authentic GunBound reference)
+    this.hpBarGraphics.rect(x, y, w, h).fill(0x111827);
+    this.hpBarGraphics.rect(x, y, w, h).stroke({ width: 1.4, color: 0xffffff, alpha: 0.95 });
 
     // Dynamic HP fill
     const pct = this.maxHp > 0 ? this.hp / this.maxHp : 1;
-    const fillColor = pct > 0.5 ? 0x4ade80 : pct > 0.25 ? 0xfacc15 : 0xef4444;
+    const fillColor = pct > 0.5 ? 0x22c55e : pct > 0.25 ? 0xfacc15 : 0xef4444;
     if (pct > 0) {
       this.hpBarGraphics.rect(x + 1, y + 1, Math.max(1, (w - 2) * pct), h - 2).fill(fillColor);
     }
@@ -645,6 +675,63 @@ export class MobileEntity extends Container {
           }
         }
       }
+
+      // ============================================================
+      // CHISPAS ANIMADAS DE DAÑO CRÍTICO (HP < 35%)
+      // ============================================================
+      // Genera chispas eléctricas y de fuego que saltan vivamente del chasis, torreta y motor
+      if (hpRatio < 0.35) {
+        this.sparkTimer += dt;
+        const sparkInterval = hpRatio < 0.15 ? 2.2 : hpRatio < 0.25 ? 3.8 : 5.8;
+
+        if (this.sparkTimer >= sparkInterval) {
+          this.sparkTimer = 0;
+          const sparkCount = hpRatio < 0.15 ? 2 + Math.floor(Math.random() * 2) : 1 + Math.floor(Math.random() * 2);
+          const cosS = Math.cos(this.slopeAngle);
+          const sinS = Math.sin(this.slopeAngle);
+
+          for (let s = 0; s < sparkCount; s++) {
+            const originRoll = Math.random();
+            let localX = 0;
+            let localY = 0;
+
+            if (originRoll < 0.45) {
+              // Motor / Escape trasero en cortocircuito
+              localX = -this.facing * (13 + Math.random() * 6);
+              localY = -8 + (Math.random() - 0.5) * 6;
+            } else if (originRoll < 0.80) {
+              // Chasis / Torreta averiada
+              localX = (Math.random() - 0.5) * 16;
+              localY = -16 + (Math.random() - 0.5) * 8;
+            } else {
+              // Cañón / Zona frontal chispeando
+              localX = this.facing * (10 + Math.random() * 6);
+              localY = -12 + (Math.random() - 0.5) * 6;
+            }
+
+            const spawnX = localX * cosS - localY * sinS;
+            const spawnY = localX * sinS + localY * cosS;
+
+            const sparkPalette = [0xffffff, 0xfef08a, 0xfde047, 0xfacc15, 0xfbbf24, 0xf97316, 0xef4444];
+            const sparkColor = sparkPalette[Math.floor(Math.random() * sparkPalette.length)];
+
+            this.smokeParticles.push({
+              x: spawnX,
+              y: spawnY,
+              vx: (Math.random() - 0.5) * 3.0 + (originRoll < 0.45 ? -this.facing * 0.7 : 0),
+              vy: -(1.4 + Math.random() * 2.2),
+              ay: 0.08 + Math.random() * 0.04, // Gravedad natural de arco de chispa
+              radius: 1.2 + Math.random() * 1.4,
+              growthRate: -0.018,
+              alpha: 1.0,
+              fadeRate: 0.034 + Math.random() * 0.02, // Vida enérgica y rápida (20-30 frames)
+              color: sparkColor,
+              isSpark: true,
+              life: 0,
+            });
+          }
+        }
+      }
     }
 
     // Step active smoke particles with individual physics & easing
@@ -662,12 +749,15 @@ export class MobileEntity extends Container {
 
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.vy -= 0.009 * dt; // gentle thermal rise
 
         if (p.isSpark) {
+          if (p.ay) p.vy += p.ay * dt;
           p.alpha -= p.fadeRate * dt;
-          p.radius = Math.max(0.5, p.radius + p.growthRate * dt);
+          p.radius = Math.max(0.6, p.radius + p.growthRate * dt);
+          // Vibración / crackle eléctrico sutil
+          p.x += (Math.random() - 0.5) * 0.7 * dt;
         } else {
+          p.vy -= 0.009 * dt; // gentle thermal rise
           p.alpha -= p.fadeRate * dt;
           p.radius += p.growthRate * dt;
         }
@@ -679,6 +769,12 @@ export class MobileEntity extends Container {
 
         this.smokeGraphics.circle(p.x, p.y, Math.max(0.5, p.radius));
         this.smokeGraphics.fill({ color: p.color, alpha: Math.max(0, p.alpha) });
+
+        // Núcleo brillante blanco en las chispas intensas
+        if (p.isSpark && p.alpha > 0.35) {
+          this.smokeGraphics.circle(p.x, p.y, Math.max(0.4, p.radius * 0.45));
+          this.smokeGraphics.fill({ color: 0xffffff, alpha: Math.min(1.0, p.alpha * 1.2) });
+        }
       }
     } else {
       this.smokeGraphics.clear();

@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from "pixi.js";
+import { Application, Container, Graphics, Sprite } from "pixi.js";
 
 export class GameEngine {
   public app: Application;
@@ -21,16 +21,17 @@ export class GameEngine {
   private ssOverlay: Graphics;
   private ssTargetAlpha: number = 0;
 
-  // Camera & Zoom (Default 1.2x POV as requested)
-  public cameraX: number = 700;
-  public cameraY: number = 520;
-  public targetCameraX: number = 700;
-  public targetCameraY: number = 520;
-  public cameraZoom: number = 1.20;
-  public targetZoom: number = 1.20;
+  // Camera & Zoom (Authentic GunBound battlefield framing at 1.2x, centered on bridge)
+  public cameraX: number = 704.5;
+  public cameraY: number = 495;
+  public targetCameraX: number = 704.5;
+  public targetCameraY: number = 495;
+  public cameraZoom: number = 1.2;
+  public targetZoom: number = 1.2;
 
-  // Mouse pan controls
-  private isDraggingCamera: boolean = false;
+  // Mouse pan controls (Right-click Glove Hand)
+  public isDraggingCamera: boolean = false;
+  public userHasManualCamera: boolean = false;
   private dragStartPos: { x: number; y: number } = { x: 0, y: 0 };
 
   public parallaxContainer: Container;
@@ -75,8 +76,8 @@ export class GameEngine {
     this.app.stage.addChild(this.worldContainer);
     this.app.stage.addChild(this.uiContainer);
 
-    // Initial camera placement framed nicely across the battlefield
-    this.panTo(700, 520, true);
+    // Initial camera placement framed nicely across the battlefield at 1.2x
+    this.panTo(704.5, 495, true);
 
     // Frame Ticker
     this.app.ticker.add((ticker) => {
@@ -89,6 +90,10 @@ export class GameEngine {
     window.addEventListener("pointerdown", (e) => {
       if (e.button === 2) {
         this.isDraggingCamera = true;
+        this.userHasManualCamera = true;
+        // Synchronize target camera to current camera to prevent any sudden teleport/jump
+        this.targetCameraX = this.cameraX;
+        this.targetCameraY = this.cameraY;
         this.dragStartPos = { x: e.clientX, y: e.clientY };
         document.body.classList.add("is-grabbing");
       }
@@ -106,6 +111,8 @@ export class GameEngine {
     window.addEventListener("pointerup", (e) => {
       if (e.button === 2) {
         this.isDraggingCamera = false;
+        // Clearing manual camera state allows the camera to seamlessly resume tracking active projectiles
+        this.userHasManualCamera = false;
         document.body.classList.remove("is-grabbing");
       }
     });
@@ -133,10 +140,19 @@ export class GameEngine {
   }
 
   public panBy(dx: number, dy: number) {
-    this.targetCameraX = Math.max(100, Math.min(this.worldWidth - 100, this.targetCameraX + dx));
-    this.targetCameraY = Math.max(100, Math.min(this.worldHeight - 100, this.targetCameraY + dy));
-    this.cameraX = this.targetCameraX;
-    this.cameraY = this.targetCameraY;
+    this.userHasManualCamera = true;
+    // Smooth panoramic panning limits across the extended battlefield
+    const minCamX = 150;
+    const maxCamX = Math.max(minCamX + 10, this.worldWidth - 150);
+    // Allow panning up into the sky (-400) and down to the terrain base (860)
+    const minCamY = -400;
+    const maxCamY = 860;
+
+    // Direct delta from current camera position avoids any disparity with flying bullet targets
+    this.cameraX = Math.max(minCamX, Math.min(maxCamX, this.cameraX + dx));
+    this.cameraY = Math.max(minCamY, Math.min(maxCamY, this.cameraY + dy));
+    this.targetCameraX = this.cameraX;
+    this.targetCameraY = this.cameraY;
   }
 
   public setPresetZoom(zoom: number) {
@@ -195,14 +211,68 @@ export class GameEngine {
     this.worldContainer.position.set(viewX, viewY);
     this.worldContainer.scale.set(this.cameraZoom);
 
-    // Parallax background bounded so edges are never revealed during panoramic drag
-    const parallaxFactor = 0.18;
-    const maxShiftX = 220;
-    const maxShiftY = 140;
-    const px = Math.max(-maxShiftX, Math.min(maxShiftX, viewX * parallaxFactor));
-    const py = Math.max(-maxShiftY, Math.min(maxShiftY, viewY * parallaxFactor));
-    this.parallaxContainer.position.set(px, py);
-    this.parallaxContainer.scale.set(this.cameraZoom);
+    // Dynamic Panoramic Parallax Engine (Widescreen 16:9 Adapted)
+    // 100% Edge-Proof: Mathematically guarantees zero visible borders/margins on any monitor resolution
+    if (this.parallaxContainer.children.length > 0) {
+      const bg = this.parallaxContainer.children[0] as Sprite;
+      if (bg.texture && bg.texture.width > 0) {
+        const texW = bg.texture.width;
+        const texH = bg.texture.height;
+        const texAspect = texW / texH;
+
+        // Ensure background is at least 45% wider and 55% taller than viewport
+        // to guarantee ample travel room for high sky shots, deep bottom panning, and widescreen
+        const minW = Math.max(screenW * 1.45, 2752);
+        const minH = Math.max(screenH * 1.55, 1536);
+
+        let bgW = minW;
+        let bgH = bgW / texAspect;
+        if (bgH < minH) {
+          bgH = minH;
+          bgW = bgH * texAspect;
+        }
+
+        bg.width = bgW;
+        bg.height = bgH;
+
+        // Total available parallax travel slack
+        const slackX = bgW - screenW;
+        const slackY = bgH - screenH;
+
+        // World anchor references
+        const worldCenterX = this.worldWidth / 2; // 704.5
+        const worldCenterY = 495; // Metamine bridge surface
+
+        // Smooth Proportional Parallax
+        // 1. Horizontal: Far-distance parallax factor (0.28). Centered at worldCenterX
+        const dx = this.cameraX - worldCenterX;
+        const targetBgX = -slackX * 0.5 - dx * 0.28;
+
+        // 2. Vertical: High-sky & abyss tracking factor (0.22).
+        // At battlefield center view (cameraY = 495), background rests at ~70% vertical travel,
+        // showcasing the Clock Tower in the upper half and the courtyard in the lower half.
+        const dy = this.cameraY - worldCenterY;
+        const targetBgY = -slackY * 0.70 - dy * 0.22;
+
+        // STRICT INVIOLABLE SCREEN BOUNDS CLAMP:
+        // Guaranteed: bgX <= 0 and bgX + bgW >= screenW
+        // Guaranteed: bgY <= 0 and bgY + bgH >= screenH
+        // Under ALL conditions (high bullets, manual panning, resizing), zero background borders are EVER exposed!
+        let bgX = Math.max(-slackX, Math.min(0, targetBgX));
+        let bgY = Math.max(-slackY, Math.min(0, targetBgY));
+
+        // Subtle shake transfer during explosions/screenshake
+        if (this.shakeTimer > 0) {
+          bgX += (Math.random() - 0.5) * this.shakeIntensity * 0.20;
+          bgY += (Math.random() - 0.5) * this.shakeIntensity * 0.20;
+          // Re-clamp so shake never reveals borders
+          bgX = Math.max(-slackX, Math.min(0, bgX));
+          bgY = Math.max(-slackY, Math.min(0, bgY));
+        }
+
+        bg.position.set(bgX, bgY);
+      }
+    }
 
     // 2. Smooth Battlefield Darkness during SS
     this.ssOverlay.alpha += (this.ssTargetAlpha - this.ssOverlay.alpha) * Math.min(1.0, 0.14 * dt);

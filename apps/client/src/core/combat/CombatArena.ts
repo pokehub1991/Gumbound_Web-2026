@@ -11,6 +11,8 @@ import { MAPS } from "../constants/maps.js";
 import { AudioManager } from "../audio/AudioManager.js";
 import { DestructionParticles } from "../effects/DestructionParticles.js";
 import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
+import { AutumnLeavesEngine } from "../effects/AutumnLeavesEngine.js";
+import { ThorEntity } from "../effects/ThorEntity.js";
 
 export class CombatArena {
   public engine: GameEngine;
@@ -22,6 +24,8 @@ export class CombatArena {
   public backgroundSprite?: Sprite;
   public destructionParticles: DestructionParticles;
   public dynamicExplosionEngine: DynamicExplosionEngine;
+  public leavesEngine: AutumnLeavesEngine;
+  public thor: ThorEntity;
 
   public windPower: number = 8;
   public windAngle: number = 45;
@@ -52,6 +56,8 @@ export class CombatArena {
   public isDraggingAim: boolean = false;
   private dragStartPos: { x: number; y: number } = { x: 0, y: 0 };
   private dragSmoothedPower: number = 0;
+  private dragStaticDuration: number = 0;
+  private dragLastPointerPos: { x: number; y: number } = { x: 0, y: 0 };
 
   constructor(engine: GameEngine) {
     this.engine = engine;
@@ -61,15 +67,19 @@ export class CombatArena {
 
     const mapDef = MAPS["metamine"];
 
+    // 0. Autumn Leaves (Ambient system layered between background and terrain)
+    this.leavesEngine = new AutumnLeavesEngine(undefined, mapDef.width, mapDef.height, 22);
+    this.engine.worldContainer.addChildAt(this.leavesEngine.container, 0);
+
     // 1. Initialize Metamine Terrain (1800x904 px)
     this.terrain = new TerrainRenderer(mapDef.width, mapDef.height);
     this.terrain.onLoadedCallback = () => {
       // Reposition player and bot to true ground surface once map mask finishes loading
       this.respawnPlayer();
       this.resetBot();
-      this.engine.panTo(700, 520, true);
+      this.engine.panTo(704.5, 495, true);
     };
-    this.engine.worldContainer.addChildAt(this.terrain, 0);
+    this.engine.worldContainer.addChildAt(this.terrain, 1);
 
     // 2. Load Parallax Background
     this.loadBackground(mapDef.bg);
@@ -100,6 +110,10 @@ export class CombatArena {
     // 5. Orbital Laser & Satellite effects container
     this.engine.worldContainer.addChild(this.orbitalEffectsContainer);
 
+    // Initialize authentic Thor Orbital Satellite in sky
+    this.thor = new ThorEntity();
+    this.engine.worldContainer.addChild(this.thor);
+
     // 6. Connect AimController
     this.aimController = new AimController(this.terrain);
     this.aimController.setActiveMobile(this.player);
@@ -124,8 +138,8 @@ export class CombatArena {
     this.windPower = 0;
     this.windAngle = 0;
 
-    // 8. Center Camera across the battlefield with authentic framing
-    this.engine.panTo(700, 520, true);
+    // 8. Center Camera across the battlefield with authentic framing (centering Metamine bridge and framing clock tower at 1.2x)
+    this.engine.panTo(704.5, 495, true);
 
     // 9. Play Battle Music
     AudioManager.playMusic("dbBattleMiramoTown.mp3");
@@ -138,18 +152,26 @@ export class CombatArena {
     // 11. Mouse Drag Shoot Listeners (Slice Shoot mode)
     window.addEventListener("pointerdown", (e) => {
       if (e.button === 0 && this.shootMode === "drag" && !this.isSimulating) {
-        // Only trigger if click targets canvas or background (not interactive buttons)
+        // Only trigger if click targets the game canvas directly (not HUD overlays, buttons or menus)
         const target = e.target as HTMLElement;
-        if (target && target.tagName === "BUTTON") return;
+        if (!target || target.tagName !== "CANVAS") return;
         this.isDraggingAim = true;
         this.dragStartPos = { x: e.clientX, y: e.clientY };
+        this.dragLastPointerPos = { x: e.clientX, y: e.clientY };
         this.dragSmoothedPower = 0;
+        this.dragStaticDuration = 0;
         this.aimController.startCharging();
       }
     });
 
     window.addEventListener("pointermove", (e) => {
       if (this.isDraggingAim && this.shootMode === "drag" && !this.isSimulating) {
+        const moveDist = Math.hypot(e.clientX - this.dragLastPointerPos.x, e.clientY - this.dragLastPointerPos.y);
+        if (moveDist > 1.2) {
+          this.dragStaticDuration = 0;
+          this.dragLastPointerPos = { x: e.clientX, y: e.clientY };
+        }
+
         const dx = this.dragStartPos.x - e.clientX;
         const dy = this.dragStartPos.y - e.clientY;
         const dist = Math.hypot(dx, dy);
@@ -162,9 +184,12 @@ export class CombatArena {
     });
 
     window.addEventListener("pointerup", () => {
-      if (this.isDraggingAim && this.shootMode === "drag" && !this.isSimulating) {
+      if (this.isDraggingAim) {
         this.isDraggingAim = false;
-        this.aimController.releaseFire();
+        this.dragStaticDuration = 0;
+        if (this.shootMode === "drag" && !this.isSimulating) {
+          this.aimController.releaseFire();
+        }
       }
     });
   }
@@ -173,10 +198,6 @@ export class CombatArena {
     try {
       const texture = await Assets.load<Texture>(bgPath);
       this.backgroundSprite = new Sprite(texture);
-      // Stretch background and elevate higher (-500) so clock tower and castle align with bridge like DragonBound
-      this.backgroundSprite.width = Math.max(this.engine.worldWidth + 800, 2400);
-      this.backgroundSprite.height = Math.max(this.engine.worldHeight + 600, 1600);
-      this.backgroundSprite.position.set(-400, -500);
       this.engine.parallaxContainer.addChild(this.backgroundSprite);
     } catch (e) {
       console.warn("[CombatArena] Could not load background image, using ambient clear:", e);
@@ -187,9 +208,24 @@ export class CombatArena {
     this.aimController.update(dt);
     this.player.update(dt);
     this.bot.update(dt);
-    this.bot.checkGroundFall();
+    this.bot.checkGroundFall(dt);
     this.destructionParticles.update(dt);
     this.dynamicExplosionEngine.update(dt * 16.66);
+    this.leavesEngine.update(dt);
+    this.thor.update(dt);
+
+    // Authentic Gunbound Slice/Drag mechanic:
+    // If user holds cursor static without releasing left click, power indicator oscillates/vibrates
+    if (this.isDraggingAim && this.shootMode === "drag" && !this.isSimulating) {
+      this.dragStaticDuration += dt * 16.66;
+      if (this.dragStaticDuration > 80 && this.dragSmoothedPower > 0) {
+        const intensity = Math.min(1.0, (this.dragStaticDuration - 80) / 120);
+        // Multi-frequency tremor: makes pinpoint pixel-perfect static holding difficult
+        const tremor = (Math.sin(Date.now() * 0.038) * 1.8 + Math.cos(Date.now() * 0.083) * 0.9) * intensity;
+        const vibratedPower = Math.max(0, Math.min(100, this.dragSmoothedPower + tremor));
+        this.aimController.updateCharging(vibratedPower);
+      }
+    }
 
     // Instant ground fall: whenever terrain beneath is destroyed, mobile falls immediately!
     const pPlacement = this.terrain.getMobileSurfacePlacement(this.player.x, this.player.y);
@@ -237,20 +273,23 @@ export class CombatArena {
 
     // Camera follow active projectile: continuously track bullet horizontally (X) and vertically (Y)
     // Follows high sky arcs up to -1600 Y, and frames battlefield edges so bullet visibly flies off screen
+    // PRIORITY: If the user uses right-click drag ("la manito"), manual camera control overrides bullet tracking!
     if (this.activeProjectiles.length > 0) {
       const leadProj = this.activeProjectiles.find((p) => !p.isExploding) || this.activeProjectiles[0];
 
-      // Smooth horizontal panning: clamp camera near map edges so camera stops and bullet flies off screen
-      const minCamX = 220;
-      const maxCamX = Math.max(1409, this.terrain.mapWidth) - 220;
-      const targetX = Math.max(minCamX, Math.min(maxCamX, leadProj.currentX));
+      if (!this.engine.isDraggingCamera && !this.engine.userHasManualCamera) {
+        // Smooth horizontal panning: clamp camera near map edges so camera stops and bullet flies off screen
+        const minCamX = 220;
+        const maxCamX = Math.max(1409, this.terrain.mapWidth) - 220;
+        const targetX = Math.max(minCamX, Math.min(maxCamX, leadProj.currentX));
 
-      // Vertical panning: track high sky shots up to -1600 and down into lower abyss
-      const minCamY = -1600;
-      const maxCamY = this.terrain.mapHeight - 140;
-      const targetY = Math.max(minCamY, Math.min(maxCamY, leadProj.currentY));
+        // Vertical panning: track high sky shots up to -1600 and down into lower abyss
+        const minCamY = -1600;
+        const maxCamY = this.terrain.mapHeight - 140;
+        const targetY = Math.max(minCamY, Math.min(maxCamY, leadProj.currentY));
 
-      this.engine.panTo(targetX, targetY);
+        this.engine.panTo(targetX, targetY);
+      }
 
       // If an out-of-bounds bullet has physically exited the visible screen, declare it lost and conclude turn
       for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
@@ -343,7 +382,8 @@ export class CombatArena {
       this.engine.setSSOverlay(true);
     }
 
-    // Camera firmly holds on mobile during firing animation
+    // Camera firmly holds on mobile during firing animation and resets manual camera override
+    this.engine.userHasManualCamera = false;
     this.engine.panTo(this.player.x, this.player.y);
 
     // Compute firing sound
@@ -373,17 +413,24 @@ export class CombatArena {
 
     const trajectories = BallisticsEngine.simulateShot(params);
 
-    // 1. Immediately trigger cannon fire recoil animation (fire1 / fire2 / sfire)
+    // 1. Transition pause: 0ms for Shot 1 (fires instantly), 70ms for Shot 2, 80ms for SS (+10ms)
     const fireAnim = shotType === 2 ? "sfire" : shotType === 1 ? "fire2" : "fire1";
-    this.player.playAnimation(fireAnim, false, () => {
-      this.player.playAnimation("normal");
-    });
+    const chargeToFireDelayMs = shotType === 0 ? 0 : shotType === 1 ? 70 : 80;
 
-    // 2. Projectile ejection blast timing (with requested delays: S1 +100ms, S2 +200ms, SS +300ms):
-    // Shot 1: frame blast (~200ms) + 100ms = 300ms
-    // Shot 2: frame blast (~420ms) + 200ms = 620ms
-    // SS: frame blast (~480ms) + 300ms = 780ms
-    const blastDelayMs = shotType === 2 ? 780 : shotType === 1 ? 620 : 300;
+    if (chargeToFireDelayMs > 0) {
+      setTimeout(() => {
+        this.player.playAnimation(fireAnim, false, () => {
+          this.player.playAnimation("normal");
+        });
+      }, chargeToFireDelayMs);
+    } else {
+      this.player.playAnimation(fireAnim, false, () => {
+        this.player.playAnimation("normal");
+      });
+    }
+
+    // 2. Projectile ejection blast timing (transition delay + recoil animation timing)
+    const blastDelayMs = chargeToFireDelayMs + (shotType === 2 ? 780 : shotType === 1 ? 620 : 300);
 
     setTimeout(() => {
       // 3. Firing blast audio and projectile trajectory launch
@@ -533,9 +580,13 @@ export class CombatArena {
     const { x, y } = traj.finalPos;
 
     if (traj.subType === "aduka_thor_tracker" || this.player.mobileType === 2) {
-      // Aduka: Thor Satellite Orbital Laser descending from ion altitude
-      this.drawDescendingLaser(x, y, 0x38bdf8, 10, 360);
-      AudioManager.play("82blast", 0.85);
+      // Aduka: Authentic Thor Satellite Orbital Laser strike
+      if (this.thor) {
+        this.thor.fireBeam(x, y, traj.damage);
+      } else {
+        this.drawDescendingLaser(x, y, 0x38bdf8, 10, 360);
+        AudioManager.play("82blast", 0.85);
+      }
     } else if (traj.subType === "asate_ion_beacon" || this.player.mobileType === 6) {
       // ASate: High Ion Laser Strike
       this.drawDescendingLaser(x, y, 0x60a5fa, 12, 420);
@@ -584,6 +635,7 @@ export class CombatArena {
 
     // Pan camera back to player and re-enable aim
     setTimeout(() => {
+      this.engine.userHasManualCamera = false;
       this.aimController.enabled = true;
       this.aimController.setActiveMobile(this.player);
       this.engine.panTo(this.player.x + 80, this.player.y - 40);
@@ -604,7 +656,7 @@ export class CombatArena {
   }
 
   public resetCamera() {
-    this.engine.panTo(700, 520);
+    this.engine.panTo(704.5, 495);
     this.engine.setZoom(1.20);
   }
 
@@ -612,6 +664,7 @@ export class CombatArena {
     this.destructionParticles.clear();
     this.dynamicExplosionEngine.clear();
     await this.terrain.loadMap("metamine");
+    this.leavesEngine.setMapBounds(this.terrain.mapWidth, this.terrain.mapHeight);
     this.respawnPlayer();
     this.resetBot();
     this.resetCamera();
@@ -626,5 +679,7 @@ export class CombatArena {
     this.aimController.destroy();
     this.dynamicExplosionEngine.clear();
     this.destructionParticles.clear();
+    this.leavesEngine.destroy();
+    this.thor.destroy();
   }
 }

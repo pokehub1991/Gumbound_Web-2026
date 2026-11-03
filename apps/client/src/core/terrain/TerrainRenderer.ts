@@ -65,9 +65,8 @@ export class TerrainRenderer extends Container {
       // 5. Extract pixel buffer into in-memory collisionMask for instantaneous collision checks
       const imgData = this.ctx.getImageData(0, 0, this.mapWidth, this.mapHeight);
 
-      // Ensure sky region above bridge road (Y < 475) is clean transparent air in collision mask
-      // so bullets flying high or through suspension arches never collide in mid-air
-      const clearSkyY = Math.min(this.mapHeight, 475);
+      // Ensure sky region above map offset_y is clean transparent air in collision mask
+      const clearSkyY = Math.min(this.mapHeight, offsetY);
       for (let y = 0; y < clearSkyY; y++) {
         const rowStart = y * this.mapWidth * 4;
         for (let x = 0; x < this.mapWidth; x++) {
@@ -154,7 +153,6 @@ export class TerrainRenderer extends Container {
   }
 
   public isGround(x: number, y: number): boolean {
-    if (y < 475) return false;
     return this.collisionMask.isPixelSolid(x, y);
   }
 

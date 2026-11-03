@@ -72,22 +72,30 @@ export class BotDummy extends Container {
     }
   }
 
-  public checkGroundFall() {
-    if (this.isDead) return;
+  public checkGroundFall(dt: number = 1.0) {
+    if (this.isDead) {
+      // If dead by bunge, allow mobile to smoothly finish falling down into the abyss
+      if (this.mobile.y < this.terrain.mapHeight + 120) {
+        this.botFallVy = Math.min(6.5, this.botFallVy + 0.25 * dt);
+        this.mobile.y += this.botFallVy * dt;
+      }
+      return;
+    }
 
     const placement = this.terrain.getMobileSurfacePlacement(this.mobile.x, this.mobile.y);
     const currentSurfaceY = placement.y;
     const dropDist = currentSurfaceY - this.mobile.y;
 
-    // Instant gravity fall whenever terrain beneath is destroyed
+    // Instant gravity fall whenever terrain beneath is destroyed (identical physics to player precipice fall)
     if (dropDist > 3) {
       if (!this.isBotAirborne) {
         this.isBotAirborne = true;
         this.mobile.playAnimation("drop", true);
       }
-      this.botFallVy = Math.min(8.0, this.botFallVy + 0.35);
-      this.mobile.y = Math.min(currentSurfaceY, this.mobile.y + this.botFallVy);
-      this.mobile.setTilt(placement.slope.angle);
+      this.botFallVy = Math.min(6.5, this.botFallVy + 0.25 * dt);
+      this.mobile.y = Math.min(currentSurfaceY, this.mobile.y + this.botFallVy * dt);
+      const targetFallTilt = this.mobile.facing * 0.10;
+      this.mobile.setTilt(targetFallTilt);
     } else {
       if (this.isBotAirborne) {
         this.isBotAirborne = false;

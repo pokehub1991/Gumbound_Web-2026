@@ -1,6 +1,7 @@
 import { MobileEntity } from "../entities/MobileEntity.js";
 import { TerrainRenderer } from "../terrain/TerrainRenderer.js";
 import { AudioManager } from "../audio/AudioManager.js";
+import { MOBILE_WALK_SPEEDS } from "../constants/mobiles.js";
 
 export class AimController {
   public terrain: TerrainRenderer;
@@ -51,17 +52,21 @@ export class AimController {
     if (!this.enabled || !this.activeMobile) return;
 
     // 1. Mobile Movement along terrain contour with WASD standard (A = Left, D = Right)
+    // Dynamic per-vehicle mobility speed matching GunBound / DragonBound statmov
+    const mobType = this.activeMobile.mobileType ?? 0;
+    const speedRate = MOBILE_WALK_SPEEDS[mobType] ?? 0.85;
+
     const isLeft = !!this.keysPressed["KeyA"];
     const isRight = !!this.keysPressed["KeyD"];
 
     if (isLeft && !isRight) {
-      this.walkAccumulator += dt * 0.833;
+      this.walkAccumulator += dt * speedRate;
       while (this.walkAccumulator >= 1) {
         this.stepMobile(-1);
         this.walkAccumulator -= 1;
       }
     } else if (isRight && !isLeft) {
-      this.walkAccumulator += dt * 0.833;
+      this.walkAccumulator += dt * speedRate;
       while (this.walkAccumulator >= 1) {
         this.stepMobile(1);
         this.walkAccumulator -= 1;
@@ -90,8 +95,8 @@ export class AimController {
       this.angleAccumulator = 0;
     }
 
-    // 3. Power Charging
-    if (this.isCharging) {
+    // 3. Power Charging (Automatic timer increment strictly reserved for Spacebar mode; Drag mode uses pointermove)
+    if (this.isCharging && this.shootMode === "space") {
       this.power += this.chargeSpeed * (dt / 60);
       if (this.power >= 100) {
         this.power = 100;

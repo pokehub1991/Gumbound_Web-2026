@@ -38,6 +38,52 @@ interface FireballLobe {
   expansionSpeed: number;
 }
 
+function lerpColor(c1: number, c2: number, t: number): number {
+  const clampedT = Math.max(0, Math.min(1, t));
+  const r1 = (c1 >> 16) & 0xff;
+  const g1 = (c1 >> 8) & 0xff;
+  const b1 = c1 & 0xff;
+  const r2 = (c2 >> 16) & 0xff;
+  const g2 = (c2 >> 8) & 0xff;
+  const b2 = c2 & 0xff;
+  const r = Math.round(r1 + (r2 - r1) * clampedT);
+  const g = Math.round(g1 + (g2 - g1) * clampedT);
+  const b = Math.round(b1 + (b2 - b1) * clampedT);
+  return (r << 16) | (g << 8) | b;
+}
+
+const MANTLE_GRADIENT: Array<{ t: number; color: number }> = [
+  { t: 0.00, color: 0xfef08a }, // Flash pale yellow
+  { t: 0.15, color: 0xfde047 }, // Sunburst yellow
+  { t: 0.35, color: 0xf97316 }, // Fiery orange
+  { t: 0.58, color: 0xe11d48 }, // Crimson flame
+  { t: 0.78, color: 0x881337 }, // Deep ember wine
+  { t: 1.00, color: 0x334155 }, // Soft atmospheric soot
+];
+
+const CORE_GRADIENT: Array<{ t: number; color: number }> = [
+  { t: 0.00, color: 0xffffff }, // Incandescent white
+  { t: 0.22, color: 0xfffbeb }, // Warm white
+  { t: 0.45, color: 0xfde047 }, // Golden core
+  { t: 0.68, color: 0xf59e0b }, // Molten amber
+  { t: 0.88, color: 0xd97706 }, // Deep red-amber
+  { t: 1.00, color: 0x1e293b }, // Cooling charcoal
+];
+
+function sampleColorGradient(palette: Array<{ t: number; color: number }>, t: number): number {
+  if (t <= palette[0].t) return palette[0].color;
+  if (t >= palette[palette.length - 1].t) return palette[palette.length - 1].color;
+  for (let i = 0; i < palette.length - 1; i++) {
+    const p1 = palette[i];
+    const p2 = palette[i + 1];
+    if (t >= p1.t && t <= p2.t) {
+      const segT = (t - p1.t) / (p2.t - p1.t);
+      return lerpColor(p1.color, p2.color, segT);
+    }
+  }
+  return palette[palette.length - 1].color;
+}
+
 interface ActiveDynamicExplosion {
   container: Container;
   fireballGroup: Container;
@@ -111,14 +157,14 @@ export class DynamicExplosionEngine {
       // ============================================================
       powerScale = 1.65;
       effectiveRadius = Math.max(46, Math.min(54, radius * 1.15));
-      fireballDuration = 950;
-      shockwaveDuration = 480;
-      maxDuration = 2400;
-      turnAdvanceMs = 800;
+      fireballDuration = 1250;
+      shockwaveDuration = 520;
+      maxDuration = 3200;
+      turnAdvanceMs = 850;
       sparkCount = 42;
       rubbleCount = 16;
       smokeCount = 18;
-      smokeMaxLifeBase = 2200;
+      smokeMaxLifeBase = 2600;
       smokeAlphaBase = 0.65;
       smokeColors = [0x0f172a, 0x1e293b, 0x334155]; // Volcanic heavy soot
     } else if (shotType === 1 || damage >= 220) {
@@ -127,14 +173,14 @@ export class DynamicExplosionEngine {
       // ============================================================
       powerScale = 1.15;
       effectiveRadius = Math.max(32, Math.min(38, radius * 0.85));
-      fireballDuration = 720;
-      shockwaveDuration = 360;
-      maxDuration = 1800;
-      turnAdvanceMs = 580;
+      fireballDuration = 920;
+      shockwaveDuration = 380;
+      maxDuration = 2400;
+      turnAdvanceMs = 620;
       sparkCount = 26;
       rubbleCount = 10;
       smokeCount = 12;
-      smokeMaxLifeBase = 1650;
+      smokeMaxLifeBase = 1950;
       smokeAlphaBase = 0.50;
       smokeColors = [0x1e293b, 0x334155, 0x475569]; // Dense combat smoke
     } else {
@@ -143,14 +189,14 @@ export class DynamicExplosionEngine {
       // ============================================================
       powerScale = 0.75;
       effectiveRadius = Math.max(22, Math.min(27, radius * 0.62));
-      fireballDuration = 500;
-      shockwaveDuration = 260;
-      maxDuration = 1400;
-      turnAdvanceMs = 450;
+      fireballDuration = 680;
+      shockwaveDuration = 280;
+      maxDuration = 1800;
+      turnAdvanceMs = 480;
       sparkCount = 14;
       rubbleCount = 5;
       smokeCount = 7;
-      smokeMaxLifeBase = 1250;
+      smokeMaxLifeBase = 1500;
       smokeAlphaBase = 0.35;
       smokeColors = [0x475569, 0x64748b];
     }
@@ -340,34 +386,43 @@ export class DynamicExplosionEngine {
         for (const lobe of exp.lobes) {
           lobe.gfx.clear();
 
-          const expandDuration = exp.fireballDuration * 0.30;
+          const expandDuration = exp.fireballDuration * 0.28;
           let currentR: number;
           if (exp.elapsed < expandDuration) {
             const expandP = exp.elapsed / expandDuration;
             currentR = lobe.maxRadius * Math.sin((expandP * Math.PI) / 2);
           } else {
             const rollP = (exp.elapsed - expandDuration) / (exp.fireballDuration - expandDuration);
-            currentR = lobe.maxRadius * (1.0 + rollP * 0.28); // Billows slightly larger
+            currentR = lobe.maxRadius * (1.0 + rollP * 0.32); // Billows slightly larger
           }
 
-          // Smooth cubic fade-out
-          const alpha = Math.max(0, 1 - Math.pow(fbNorm, 1.4));
+          // Slow, gentle cubic-exponential fade-out matching authentic visual smoke
+          const alpha = Math.max(0, Math.pow(1 - fbNorm, 1.55));
 
-          // Multi-layer volumetric color gradations matching GunBound explosion frames
-          if (fbNorm < 0.22) {
-            // Ultra-hot initial flash: blinding incandescent white core + bright yellow aura
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 1.05).fill({ color: 0xfde047, alpha: alpha * 0.95 });
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.75).fill({ color: 0xffffff, alpha: alpha * 0.98 });
-          } else if (fbNorm < 0.55) {
-            // Churning dense fireball: crimson outline + fiery orange mantle + golden core
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR).fill({ color: 0xe11d48, alpha: alpha * 0.88 });
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.78).fill({ color: 0xf97316, alpha: alpha * 0.94 });
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.48).fill({ color: 0xfde047, alpha: alpha * 0.98 });
-          } else {
-            // Cooling smoke & embers: dark volcanic soot + deep red embers
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR).fill({ color: 0x1e293b, alpha: alpha * 0.70 });
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.65).fill({ color: 0x991b1b, alpha: alpha * 0.60 });
-            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.35).fill({ color: 0xd97706, alpha: alpha * 0.65 });
+          // Continuous RGB color interpolation (Zero abrupt steps or layer pops!)
+          const mantleColor = sampleColorGradient(MANTLE_GRADIENT, fbNorm);
+          const coreColor = sampleColorGradient(CORE_GRADIENT, fbNorm);
+
+          // Layer 1: Soft atmospheric thermal glow (outer halo)
+          lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 1.10)
+            .fill({ color: mantleColor, alpha: alpha * 0.38 });
+
+          // Layer 2: Primary churning flame mantle
+          lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR)
+            .fill({ color: mantleColor, alpha: alpha * 0.82 });
+
+          // Layer 3: High-temperature combustion core (smoothly transitions into molten amber)
+          if (fbNorm < 0.85) {
+            const coreAlpha = alpha * Math.max(0, 1 - fbNorm / 0.85);
+            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.62)
+              .fill({ color: coreColor, alpha: coreAlpha * 0.92 });
+          }
+
+          // Layer 4: Incandescent flash hotspot (intense blinding flash during first ~25%)
+          if (fbNorm < 0.26) {
+            const flashAlpha = alpha * (1 - fbNorm / 0.26);
+            lobe.gfx.circle(lobe.offsetX, lobe.offsetY, currentR * 0.38)
+              .fill({ color: 0xffffff, alpha: flashAlpha * 0.98 });
           }
         }
       } else {
