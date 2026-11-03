@@ -194,8 +194,8 @@ func SimulateProjectileAdv(
 				break
 			}
 
-			// 3. Out of bounds check
-			if checkPos.X < -150 || checkPos.X > float64(terrain.Width)+150 || checkPos.Y > float64(terrain.Height)+50 {
+			// 3. Out of bounds check: wide margins allow full high arcs and off-screen exits
+			if checkPos.X < -1000 || checkPos.X > float64(terrain.Width)+1000 || checkPos.Y > float64(terrain.Height)+400 {
 				hitType = HitOOB
 				impactPos = checkPos
 				collided = true

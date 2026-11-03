@@ -30,7 +30,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
   // Audio and Graphics enhancements
   const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
-  const [isHighContrast, setIsHighContrast] = useState<boolean>(true);
+  const [currentZoom, setCurrentZoom] = useState<number>(1.2);
   const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
   const [isDynamicExplosion, setIsDynamicExplosion] = useState<boolean>(true);
 
@@ -134,15 +134,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     AudioManager.play("click", 0.7);
   };
 
-  const handleToggleContrast = () => {
-    if (arena) {
-      const next = !isHighContrast;
-      setIsHighContrast(next);
-      arena.engine.setSpriteContrast(next);
-      AudioManager.play("click", 0.7);
-    }
-  };
-
   const handleToggleExplosionMode = () => {
     if (arena) {
       const next = !isDynamicExplosion;
@@ -174,133 +165,127 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       boxSizing: "border-box",
     }}>
       {/* ============================================================ */}
-      {/* TOP HEADER HUD */}
+      {/* TOP HEADER HUD (COMPACT & MODERN CLEAN ICONS) */}
       {/* ============================================================ */}
       <div style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         pointerEvents: "none",
-        gap: "12px",
+        gap: "10px",
+        width: "100%",
       }}>
-        {/* Game Title, Map & Reset Bar (Compact) */}
-        <div style={{
-          background: "rgba(15, 23, 42, 0.88)",
-          border: "1px solid rgba(56, 189, 248, 0.3)",
-          borderRadius: "8px",
-          padding: "5px 10px",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
-          pointerEvents: "auto",
-        }}>
-          <span style={{
-            fontSize: "13px",
-            fontWeight: 900,
-            letterSpacing: "0.5px",
-            background: "linear-gradient(90deg, #38bdf8, #818cf8)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
+        {/* Left: Map & Reset & Segmented Zoom Pill */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Map Pill */}
+          <div style={{
+            background: "rgba(15, 23, 42, 0.88)",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            borderRadius: "8px",
+            padding: "4px 8px",
+            height: "32px",
+            boxSizing: "border-box",
+            backdropFilter: "blur(10px)",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+            pointerEvents: "auto",
           }}>
-            GB
-          </span>
-          <span style={{
-            fontSize: "10px",
-            background: "rgba(56, 189, 248, 0.2)",
-            color: "#38bdf8",
-            padding: "2px 6px",
-            borderRadius: "4px",
-            fontWeight: 800,
-          }}>
-            METAMINE
-          </span>
-
-          <button
-            onClick={() => {
-              if (arena) {
-                arena.resetMap();
-                AudioManager.play("click", 0.7);
-              }
-            }}
-            style={{
-              background: "linear-gradient(135deg, #0284c7, #2563eb)",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "4px",
-              padding: "3px 7px",
-              fontSize: "12px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              boxShadow: "0 2px 6px rgba(2, 132, 199, 0.4)",
-            }}
-            title="Resetear mapa y móviles"
-          >
-            🔄
-          </button>
-        </div>
-
-        {/* Preset Zoom Control Widget */}
-        <div style={{
-          background: "rgba(15, 23, 42, 0.88)",
-          border: "1px solid rgba(56, 189, 248, 0.3)",
-          borderRadius: "8px",
-          padding: "4px 8px",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          gap: "4px",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
-          pointerEvents: "auto",
-        }}>
-          <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700, marginRight: "2px" }}>🔍</span>
-          {[
-            { label: "1.2x", val: 1.2, title: "Zoom normal (1.2x por defecto)" },
-            { label: "0.85x", val: 0.85, title: "Vista amplia (0.85x)" },
-            { label: "0.55x", val: 0.55, title: "Vista panorámica máxima (0.55x)" },
-          ].map((item) => (
+            <span style={{ fontSize: "11px", fontWeight: 900, color: "#38bdf8", letterSpacing: "0.5px" }}>
+              METAMINE
+            </span>
             <button
-              key={item.label}
               onClick={() => {
-                if (arena) arena.engine.setPresetZoom(item.val);
-                AudioManager.play("click", 0.6);
+                if (arena) {
+                  arena.resetMap();
+                  AudioManager.play("click", 0.7);
+                }
               }}
               style={{
-                background: "#1e293b",
-                border: "1px solid #334155",
+                background: "#0284c7",
+                color: "#ffffff",
+                border: "none",
                 borderRadius: "4px",
-                padding: "2px 7px",
-                color: item.val === 1.2 ? "#38bdf8" : "#94a3b8",
-                fontSize: "10px",
-                fontWeight: 800,
+                width: "22px",
+                height: "22px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
                 cursor: "pointer",
               }}
-              title={item.title}
+              title="Reiniciar mapa y posiciones"
             >
-              {item.label}
+              🔄
             </button>
-          ))}
+          </div>
+
+          {/* Compact Segmented Zoom Pill */}
+          <div style={{
+            background: "rgba(15, 23, 42, 0.88)",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            borderRadius: "8px",
+            padding: "2px 4px",
+            height: "32px",
+            boxSizing: "border-box",
+            backdropFilter: "blur(10px)",
+            display: "flex",
+            alignItems: "center",
+            gap: "2px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+            pointerEvents: "auto",
+          }}>
+            <span style={{ fontSize: "11px", color: "#64748b", margin: "0 4px" }}>🔍</span>
+            {[
+              { label: "1.2x", val: 1.2, title: "Zoom normal (1.2x)" },
+              { label: "0.85x", val: 0.85, title: "Vista amplia (0.85x)" },
+              { label: "0.55x", val: 0.55, title: "Vista panorámica (0.55x)" },
+            ].map((item) => (
+              <button
+                key={item.label}
+                onClick={() => {
+                  if (arena) arena.engine.setPresetZoom(item.val);
+                  setCurrentZoom(item.val);
+                  AudioManager.play("click", 0.6);
+                }}
+                style={{
+                  background: currentZoom === item.val ? "rgba(56, 189, 248, 0.25)" : "transparent",
+                  border: currentZoom === item.val ? "1px solid #38bdf8" : "1px solid transparent",
+                  borderRadius: "4px",
+                  padding: "2px 6px",
+                  color: currentZoom === item.val ? "#38bdf8" : "#94a3b8",
+                  fontSize: "11px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  height: "24px",
+                }}
+                title={item.title}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Wind Compass Indicator & Toggle Widget */}
+        {/* Center: Wind & Compass Capsule */}
         <div style={{
           background: isWindEnabled ? "rgba(15, 23, 42, 0.88)" : "rgba(30, 41, 59, 0.70)",
           border: isWindEnabled ? "1px solid rgba(56, 189, 248, 0.45)" : "1px solid rgba(148, 163, 184, 0.25)",
           borderRadius: "8px",
-          padding: "4px 10px",
-          backdropFilter: "blur(8px)",
+          padding: "3px 8px",
+          height: "32px",
+          boxSizing: "border-box",
+          backdropFilter: "blur(10px)",
           display: "flex",
           alignItems: "center",
-          gap: "8px",
-          boxShadow: isWindEnabled ? "0 4px 14px rgba(56, 189, 248, 0.2)" : "none",
+          gap: "6px",
+          boxShadow: isWindEnabled ? "0 4px 12px rgba(56, 189, 248, 0.2)" : "none",
           pointerEvents: "auto",
         }}>
-          {/* Compass Graphic */}
-          <div style={{ position: "relative", width: "30px", height: "30px", opacity: isWindEnabled ? 1 : 0.45 }}>
-            <svg width="30" height="30" viewBox="0 0 36 36">
+          {/* Rotating Compass Icon */}
+          <div style={{ position: "relative", width: "22px", height: "22px", opacity: isWindEnabled ? 1 : 0.45 }}>
+            <svg width="22" height="22" viewBox="0 0 36 36">
               <circle cx="18" cy="18" r="16" fill="#1e293b" stroke="#334155" strokeWidth="2" />
               <g transform={`rotate(${windAngle}, 18, 18)`}>
                 <polygon points="18,5 23,26 18,21 13,26" fill={isWindEnabled ? "#38bdf8" : "#94a3b8"} />
@@ -309,16 +294,16 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             </svg>
           </div>
 
-          <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
-            <span style={{ color: isWindEnabled ? "#38bdf8" : "#94a3b8", fontSize: "16px", fontWeight: 900 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: "2px" }}>
+            <span style={{ color: isWindEnabled ? "#38bdf8" : "#94a3b8", fontSize: "14px", fontWeight: 900 }}>
               {isWindEnabled ? windPower : 0}
             </span>
-            <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700 }}>
-              {isWindEnabled ? `(${windAngle}°)` : "OFF"}
+            <span style={{ fontSize: "10px", color: "#64748b", fontWeight: 700 }}>
+              {isWindEnabled ? `${windAngle}°` : "OFF"}
             </span>
           </div>
 
-          {/* Toggle Button for Wind ON/OFF */}
+          {/* Toggle Wind Button */}
           <button
             onClick={handleToggleWind}
             style={{
@@ -326,14 +311,17 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               border: "none",
               color: "#ffffff",
               borderRadius: "4px",
-              padding: "3px 8px",
-              fontSize: "11px",
-              fontWeight: 800,
+              width: "24px",
+              height: "24px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "12px",
               cursor: "pointer",
             }}
             title={isWindEnabled ? "Desactivar viento (0 por defecto)" : "Activar viento"}
           >
-            🌬️ {isWindEnabled ? "ON" : "OFF"}
+            🌬️
           </button>
 
           {isWindEnabled && (
@@ -344,194 +332,194 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 border: "1px solid #334155",
                 color: "#38bdf8",
                 borderRadius: "4px",
-                padding: "2px 6px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
                 fontSize: "12px",
                 cursor: "pointer",
               }}
-              title="Generar viento aleatorio"
+              title="Aleatorizar dirección y fuerza de viento"
             >
               🎲
             </button>
           )}
         </div>
 
-        {/* Bot Dummy Status with Immortality Toggle */}
-        <div style={{
-          background: "rgba(15, 23, 42, 0.88)",
-          border: isBotImmortal ? "1px solid rgba(16, 185, 129, 0.35)" : "1px solid rgba(239, 68, 68, 0.4)",
-          borderRadius: "8px",
-          padding: "5px 10px",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
-          pointerEvents: "auto",
-        }}>
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-              <span style={{ color: "#ef4444", fontSize: "11px", fontWeight: 800 }}>
-                [{botMob.name}]
-              </span>
-              <span style={{ color: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444", fontSize: "11px", fontWeight: 800 }}>
-                {isBotImmortal ? "∞ HP (Inmortal)" : `${botHp}/${botMaxHp} HP`}
-              </span>
-            </div>
-            {/* Health Bar */}
-            <div style={{
-              width: "110px",
-              height: "5px",
-              background: "#0f172a",
-              borderRadius: "3px",
-              overflow: "hidden",
-              marginTop: "3px",
-            }}>
+        {/* Right: Bot Dummy Status & Settings Pill */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Bot Dummy Status Capsule */}
+          <div style={{
+            background: "rgba(15, 23, 42, 0.88)",
+            border: isBotImmortal ? "1px solid rgba(16, 185, 129, 0.35)" : "1px solid rgba(239, 68, 68, 0.4)",
+            borderRadius: "8px",
+            padding: "3px 8px",
+            height: "32px",
+            boxSizing: "border-box",
+            backdropFilter: "blur(10px)",
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+            pointerEvents: "auto",
+          }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span style={{ color: "#f87171", fontSize: "10px", fontWeight: 800 }}>
+                  [{botMob.name}]
+                </span>
+                <span style={{ color: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444", fontSize: "10px", fontWeight: 800 }}>
+                  {isBotImmortal ? "∞ HP" : `${botHp}/${botMaxHp}`}
+                </span>
+              </div>
               <div style={{
-                width: isBotImmortal ? "100%" : `${Math.max(0, Math.min(100, (botHp / (botMaxHp || 1)) * 100))}%`,
-                height: "100%",
-                background: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444",
-                transition: "width 0.2s ease",
-              }} />
+                width: "65px",
+                height: "4px",
+                background: "#0f172a",
+                borderRadius: "2px",
+                overflow: "hidden",
+                marginTop: "2px",
+              }}>
+                <div style={{
+                  width: isBotImmortal ? "100%" : `${Math.max(0, Math.min(100, (botHp / (botMaxHp || 1)) * 100))}%`,
+                  height: "100%",
+                  background: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444",
+                  transition: "width 0.2s ease",
+                }} />
+              </div>
             </div>
+
+            {/* Immortal / Mortal Toggle Icon */}
+            <button
+              onClick={() => {
+                if (arena) {
+                  const next = arena.toggleBotImmortality();
+                  setIsBotImmortal(next);
+                  AudioManager.play("click", 0.7);
+                }
+              }}
+              style={{
+                background: isBotImmortal ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                border: isBotImmortal ? "1px solid #10b981" : "1px solid #ef4444",
+                color: isBotImmortal ? "#34d399" : "#f87171",
+                borderRadius: "4px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title={isBotImmortal ? "Bot Inmortal (click para hacerlo mortal)" : "Bot Mortal (click para hacerlo inmortal)"}
+            >
+              {isBotImmortal ? "🛡️" : "⚔️"}
+            </button>
+
+            {/* Change Bot Mobile Button */}
+            <button
+              onClick={() => {
+                setSelectorTarget("bot");
+                setIsSelectorOpen(true);
+                AudioManager.play("click", 0.7);
+              }}
+              style={{
+                background: "#b91c1c",
+                border: "1px solid #f87171",
+                color: "#ffffff",
+                borderRadius: "4px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title="Cambiar móvil del bot"
+            >
+              🚗
+            </button>
+
+            {/* Reset Bot Position Button */}
+            <button
+              onClick={handleResetBot}
+              style={{
+                background: "#1e293b",
+                border: "1px solid #334155",
+                color: "#94a3b8",
+                borderRadius: "4px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title="Reubicar bot en posición segura"
+            >
+              🔄
+            </button>
           </div>
 
-          {/* Toggle Inmortal / Mortal */}
-          <button
-            onClick={() => {
-              if (arena) {
-                const next = arena.toggleBotImmortality();
-                setIsBotImmortal(next);
-                AudioManager.play("click", 0.7);
-              }
-            }}
-            style={{
-              background: isBotImmortal ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
-              border: isBotImmortal ? "1px solid #10b981" : "1px solid #ef4444",
-              color: isBotImmortal ? "#34d399" : "#f87171",
-              borderRadius: "4px",
-              padding: "3px 7px",
-              fontSize: "10px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-            title={isBotImmortal ? "Modo Inmortal activado (bot nunca muere). Haz clic para hacerlo mortal." : "Modo Mortal activado (puedes bajarle vida y hacerle K.O.). Haz clic para hacerlo inmortal."}
-          >
-            {isBotImmortal ? "🛡️ INMORTAL" : "⚔️ MORTAL"}
-          </button>
+          {/* Quick Settings: Music & Dynamic Explosion Mode */}
+          <div style={{
+            background: "rgba(15, 23, 42, 0.88)",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            borderRadius: "8px",
+            padding: "3px 6px",
+            height: "32px",
+            boxSizing: "border-box",
+            backdropFilter: "blur(10px)",
+            display: "flex",
+            alignItems: "center",
+            gap: "5px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+            pointerEvents: "auto",
+          }}>
+            {/* Music Toggle */}
+            <button
+              onClick={handleToggleMusic}
+              style={{
+                background: isMusicActive ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
+                border: isMusicActive ? "1px solid #10b981" : "1px solid #ef4444",
+                borderRadius: "4px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title={isMusicActive ? "Silenciar música" : "Activar música"}
+            >
+              {isMusicActive ? "🔊" : "🔇"}
+            </button>
 
-          {/* Button to change enemy bot mobile */}
-          <button
-            onClick={() => {
-              setSelectorTarget("bot");
-              setIsSelectorOpen(true);
-              AudioManager.play("click", 0.7);
-            }}
-            style={{
-              background: "linear-gradient(135deg, #ef4444, #b91c1c)",
-              border: "1px solid #f87171",
-              color: "#ffffff",
-              borderRadius: "4px",
-              padding: "3px 8px",
-              fontSize: "10px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "3px",
-              boxShadow: "0 2px 6px rgba(239, 68, 68, 0.4)",
-            }}
-            title="Cambiar móvil del bot enemigo"
-          >
-            🚗 Móvil
-          </button>
-
-          <button
-            onClick={handleResetBot}
-            style={{
-              background: "#1e293b",
-              border: "1px solid #334155",
-              color: "#ef4444",
-              borderRadius: "4px",
-              padding: "3px 6px",
-              fontSize: "10px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-            title="Respawnear bot en posición válida"
-          >
-            🔄
-          </button>
-        </div>
-
-        {/* Floating Controls: Music Toggle & Sprite Contrast Widget */}
-        <div style={{
-          background: "rgba(15, 23, 42, 0.88)",
-          border: "1px solid rgba(56, 189, 248, 0.3)",
-          borderRadius: "8px",
-          padding: "4px 8px",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.5)",
-          pointerEvents: "auto",
-        }}>
-          {/* Music Mute / Unmute Button */}
-          <button
-            onClick={handleToggleMusic}
-            style={{
-              background: isMusicActive ? "rgba(16, 185, 129, 0.2)" : "rgba(239, 68, 68, 0.2)",
-              border: isMusicActive ? "1px solid #10b981" : "1px solid #ef4444",
-              color: isMusicActive ? "#34d399" : "#f87171",
-              borderRadius: "4px",
-              padding: "4px 8px",
-              fontSize: "11px",
-              fontWeight: 800,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-            title={isMusicActive ? "Silenciar música de fondo" : "Activar música de fondo"}
-          >
-            {isMusicActive ? "🔊 Música: ON" : "🔇 Música: OFF"}
-          </button>
-
-          {/* Sprite Contrast Toggle */}
-          <button
-            onClick={handleToggleContrast}
-            style={{
-              background: isHighContrast ? "rgba(56, 189, 248, 0.2)" : "#1e293b",
-              border: isHighContrast ? "1px solid #38bdf8" : "1px solid #334155",
-              color: isHighContrast ? "#38bdf8" : "#94a3b8",
-              borderRadius: "4px",
-              padding: "4px 8px",
-              fontSize: "11px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-            title="Mejorar contraste de los sprites para estilo retro nítido"
-          >
-            {isHighContrast ? "✨ Contraste: ALTO" : "🎨 Contraste: NORMAL"}
-          </button>
-
-          {/* Dynamic Real-Time Explosion Toggle */}
-          <button
-            onClick={handleToggleExplosionMode}
-            style={{
-              background: isDynamicExplosion ? "rgba(249, 115, 22, 0.2)" : "#1e293b",
-              border: isDynamicExplosion ? "1px solid #f97316" : "1px solid #334155",
-              color: isDynamicExplosion ? "#fb923c" : "#94a3b8",
-              borderRadius: "4px",
-              padding: "4px 8px",
-              fontSize: "11px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-            title="Alternar entre explosiones dinámicas en tiempo real (GPU) y sprites retro clásicos"
-          >
-            {isDynamicExplosion ? "💥 Explosión: DINÁMICA" : "🎞️ Explosión: SPRITE"}
-          </button>
+            {/* Dynamic Explosion Mode Toggle */}
+            <button
+              onClick={handleToggleExplosionMode}
+              style={{
+                background: isDynamicExplosion ? "rgba(249, 115, 22, 0.2)" : "#1e293b",
+                border: isDynamicExplosion ? "1px solid #f97316" : "1px solid #334155",
+                color: isDynamicExplosion ? "#fb923c" : "#94a3b8",
+                borderRadius: "4px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title={isDynamicExplosion ? "Explosión Dinámica en tiempo real (GPU)" : "Explosión retro con Spritesheet"}
+            >
+              {isDynamicExplosion ? "💥" : "🎞️"}
+            </button>
+          </div>
         </div>
       </div>
 

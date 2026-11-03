@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React from "react";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
 import { AudioManager } from "../../core/audio/AudioManager.js";
 
@@ -15,12 +15,7 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
   title = "SELECCIONAR MÓVIL",
   onClose,
 }) => {
-  const [searchQuery, setSearchQuery] = useState<string>("");
-
-  const mobiles = Object.values(MOBILES_DATA).filter((m) => {
-    const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
+  const mobiles = Object.values(MOBILES_DATA);
 
   const handleSelect = (id: number) => {
     AudioManager.play("click", 0.7);
@@ -58,16 +53,15 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
 
   return (
     <div style={{
-      background: "rgba(11, 17, 33, 0.96)",
+      background: "rgba(11, 17, 33, 0.97)",
       border: "1px solid rgba(56, 189, 248, 0.35)",
-      borderRadius: "12px",
-      padding: "16px",
-      boxShadow: "0 20px 40px rgba(0,0,0,0.8), 0 0 25px rgba(56, 189, 248, 0.15)",
+      borderRadius: "10px",
+      padding: "12px 14px",
+      boxShadow: "0 16px 36px rgba(0,0,0,0.85), 0 0 20px rgba(56, 189, 248, 0.15)",
       color: "#f8fafc",
       fontFamily: "Inter, sans-serif",
-      maxWidth: "760px",
-      width: "100%",
-      maxHeight: "85vh",
+      maxWidth: "520px",
+      width: "92vw",
       display: "flex",
       flexDirection: "column",
       backdropFilter: "blur(12px)",
@@ -77,70 +71,55 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        marginBottom: "12px",
+        marginBottom: "10px",
         borderBottom: "1px solid rgba(255,255,255,0.08)",
-        paddingBottom: "10px",
+        paddingBottom: "8px",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "18px" }}>🚀</span>
-          <h2 style={{ margin: 0, fontSize: "16px", letterSpacing: "1px", color: "#38bdf8", fontWeight: 800 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "16px" }}>🚀</span>
+          <h2 style={{ margin: 0, fontSize: "14px", letterSpacing: "0.5px", color: "#38bdf8", fontWeight: 800 }}>
             {title}
           </h2>
           <span style={{
-            fontSize: "11px",
+            fontSize: "10px",
             background: "rgba(56, 189, 248, 0.15)",
             color: "#38bdf8",
-            padding: "2px 8px",
-            borderRadius: "12px",
+            padding: "2px 6px",
+            borderRadius: "10px",
             fontWeight: 700,
           }}>
             {mobiles.length} Disponibles
           </span>
         </div>
 
-        <div style={{ display: "flex", gap: "8px" }}>
-          <input
-            type="text"
-            placeholder="Buscar móvil..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+        {onClose && (
+          <button
+            onClick={onClose}
             style={{
-              background: "#1e293b",
-              border: "1px solid #334155",
+              background: "rgba(51, 65, 85, 0.7)",
+              border: "none",
               borderRadius: "6px",
-              padding: "4px 10px",
               color: "#fff",
+              cursor: "pointer",
+              padding: "4px 8px",
               fontSize: "12px",
-              outline: "none",
+              fontWeight: 700,
+              lineHeight: 1,
             }}
-          />
-          {onClose && (
-            <button
-              onClick={onClose}
-              style={{
-                background: "#334155",
-                border: "none",
-                borderRadius: "6px",
-                color: "#fff",
-                cursor: "pointer",
-                padding: "4px 10px",
-                fontSize: "12px",
-                fontWeight: 700,
-              }}
-            >
-              ✕
-            </button>
-          )}
-        </div>
+          >
+            ✕
+          </button>
+        )}
       </div>
 
-      {/* Grid of 25 Mobiles */}
+      {/* Compact Grid of 25 Mobiles (5 columns x 5 rows) */}
       <div style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
-        gap: "10px",
+        gridTemplateColumns: "repeat(5, 1fr)",
+        gap: "6px",
+        maxHeight: "68vh",
         overflowY: "auto",
-        paddingRight: "4px",
+        paddingRight: "2px",
       }}>
         {mobiles.map((m) => {
           const isSelected = m.id === selectedMobileId;
@@ -152,97 +131,75 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
               onClick={() => handleSelect(m.id)}
               style={{
                 background: isSelected
-                  ? "linear-gradient(135deg, rgba(56, 189, 248, 0.25), rgba(15, 23, 42, 0.9))"
-                  : "rgba(30, 41, 59, 0.6)",
-                border: isSelected ? "2px solid #38bdf8" : "1px solid rgba(51, 65, 85, 0.8)",
-                borderRadius: "8px",
-                padding: "8px",
+                  ? "linear-gradient(135deg, rgba(56, 189, 248, 0.3), rgba(15, 23, 42, 0.95))"
+                  : "rgba(22, 30, 49, 0.75)",
+                border: isSelected ? "1.5px solid #38bdf8" : "1px solid rgba(51, 65, 85, 0.7)",
+                borderRadius: "6px",
+                padding: "6px 4px",
                 cursor: "pointer",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: "6px",
-                transition: "all 0.15s ease",
-                position: "relative",
+                justifyContent: "center",
+                gap: "2px",
+                transition: "all 0.12s ease",
                 outline: "none",
                 textAlign: "center",
+                boxShadow: isSelected ? `0 0 10px ${badgeColor}50` : "none",
               }}
               onMouseEnter={(e) => {
                 if (!isSelected) {
                   e.currentTarget.style.borderColor = "#60a5fa";
-                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.background = "rgba(30, 41, 59, 0.9)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isSelected) {
-                  e.currentTarget.style.borderColor = "rgba(51, 65, 85, 0.8)";
+                  e.currentTarget.style.borderColor = "rgba(51, 65, 85, 0.7)";
+                  e.currentTarget.style.background = "rgba(22, 30, 49, 0.75)";
                   e.currentTarget.style.transform = "translateY(0)";
                 }
               }}
             >
-              {/* Badge ID */}
+              {/* Mini Color Tag with 3-letter abbreviation */}
               <div style={{
-                position: "absolute",
-                top: "4px",
-                left: "4px",
-                fontSize: "9px",
-                fontWeight: 800,
-                color: "#94a3b8",
-              }}>
-                #{m.id}
-              </div>
-
-              {/* Mobile Avatar Icon */}
-              <div style={{
-                width: "44px",
-                height: "32px",
-                background: badgeColor,
-                borderRadius: "6px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#030712",
+                background: `${badgeColor}25`,
+                border: `1px solid ${badgeColor}60`,
+                color: badgeColor,
+                borderRadius: "3px",
+                fontSize: "8.5px",
                 fontWeight: 900,
-                fontSize: "13px",
+                padding: "1px 4px",
                 letterSpacing: "0.5px",
-                boxShadow: `0 4px 10px ${badgeColor}40`,
-                marginTop: "4px",
+                lineHeight: 1.1,
               }}>
                 {m.name.slice(0, 3).toUpperCase()}
               </div>
 
-              {/* Mobile Name & Angles */}
-              <div>
-                <div style={{ color: "#ffffff", fontWeight: 800, fontSize: "13px" }}>
-                  {m.name}
-                </div>
-                <div style={{ color: "#94a3b8", fontSize: "10px", marginTop: "2px" }}>
-                  {m.minAngle}° - {m.maxAngle}°
-                </div>
-              </div>
-
-              {/* Special mechanics hint */}
+              {/* Mobile Name */}
               <div style={{
-                fontSize: "9px",
-                color: isSelected ? "#38bdf8" : "#64748b",
+                color: "#ffffff",
+                fontWeight: 700,
+                fontSize: "11px",
+                lineHeight: 1.2,
+                marginTop: "1px",
+                maxWidth: "100%",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                width: "100%",
               }}>
-                {m.id === 13 && "Helix Láser"}
-                {m.id === 14 && "TimeBomb"}
-                {m.id === 2 && "Satélite Thor"}
-                {m.id === 11 && "Taladro Subterráneo"}
-                {m.id === 19 && "Minas Caminantes"}
-                {m.id === 4 && "Salvas Múltiples"}
-                {m.id === 15 && "Curva Viento"}
-                {m.id === 3 && "Rayo Ionosférico"}
-                {m.id === 6 && "Haz Orbital"}
-                {m.id === 8 && "Sables de Energía"}
-                {m.id === 0 && "Cañón Balístico"}
-                {m.id === 1 && "Congelación"}
-                {![13, 14, 2, 11, 19, 4, 15, 3, 6, 8, 0, 1].includes(m.id) && "Proyectil Balístico"}
+                {m.name}
+              </div>
+
+              {/* Compact Angle Range */}
+              <div style={{
+                color: "#94a3b8",
+                fontSize: "9px",
+                fontWeight: 600,
+                lineHeight: 1,
+              }}>
+                {m.minAngle}°-{m.maxAngle}°
               </div>
             </button>
           );

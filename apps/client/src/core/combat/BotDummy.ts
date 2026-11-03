@@ -75,7 +75,8 @@ export class BotDummy extends Container {
   public checkGroundFall() {
     if (this.isDead) return;
 
-    const currentSurfaceY = this.terrain.findSurfaceY(this.mobile.x, this.mobile.y);
+    const placement = this.terrain.getMobileSurfacePlacement(this.mobile.x, this.mobile.y);
+    const currentSurfaceY = placement.y;
     const dropDist = currentSurfaceY - this.mobile.y;
 
     // Instant gravity fall whenever terrain beneath is destroyed
@@ -86,8 +87,7 @@ export class BotDummy extends Container {
       }
       this.botFallVy = Math.min(8.0, this.botFallVy + 0.35);
       this.mobile.y = Math.min(currentSurfaceY, this.mobile.y + this.botFallVy);
-      const slope = this.terrain.getSlopeAngle(this.mobile.x, this.mobile.y);
-      this.mobile.setTilt(slope.angle);
+      this.mobile.setTilt(placement.slope.angle);
     } else {
       if (this.isBotAirborne) {
         this.isBotAirborne = false;
@@ -95,12 +95,11 @@ export class BotDummy extends Container {
         this.mobile.playAnimation("normal", true);
       }
       this.mobile.y = currentSurfaceY;
-      const slope = this.terrain.getSlopeAngle(this.mobile.x, this.mobile.y);
-      this.mobile.setTilt(slope.angle);
+      this.mobile.setTilt(placement.slope.angle);
     }
 
-    // Knocked completely off map bottom
-    if (this.mobile.y >= this.terrain.mapHeight - 30) {
+    // Knocked completely off map bottom or sides (bunge)
+    if (this.mobile.y >= this.terrain.mapHeight - 30 || this.mobile.x < -30 || this.mobile.x > this.terrain.mapWidth + 30) {
       if (!this.isImmortal) {
         this.handleDeath("BUNGE!");
       } else {
@@ -147,15 +146,14 @@ export class BotDummy extends Container {
     this.mobile.hp = this.mobile.maxHp;
     this.mobile.updateHpBar();
 
-    const groundY = this.terrain.getFirstSolidY(x) ?? y;
+    const placement = this.terrain.getMobileSurfacePlacement(x, y);
     this.spawnX = x;
-    this.spawnY = groundY;
+    this.spawnY = placement.y;
     this.mobile.x = x;
-    this.mobile.y = groundY;
+    this.mobile.y = placement.y;
     this.mobile.setFacing(-1);
 
-    const slope = this.terrain.getSlopeAngle(x, groundY);
-    this.mobile.setTilt(slope.angle);
+    this.mobile.setTilt(placement.slope.angle);
     this.mobile.playAnimation("normal");
   }
 

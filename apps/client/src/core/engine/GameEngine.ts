@@ -1,4 +1,4 @@
-import { Application, Container, Graphics, ColorMatrixFilter } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 
 export class GameEngine {
   public app: Application;
@@ -74,9 +74,6 @@ export class GameEngine {
     this.app.stage.addChild(this.parallaxContainer);
     this.app.stage.addChild(this.worldContainer);
     this.app.stage.addChild(this.uiContainer);
-
-    // Apply retro contrast & saturation boost on mobile sprites
-    this.setSpriteContrast(true);
 
     // Initial camera placement framed nicely across the battlefield
     this.panTo(700, 520, true);
@@ -160,6 +157,14 @@ export class GameEngine {
     this.ssTargetAlpha = active ? 0.75 : 0;
   }
 
+  public isPointOnScreen(worldX: number, worldY: number, margin: number = 40): boolean {
+    const screenW = this.app.screen.width;
+    const screenH = this.app.screen.height;
+    const sx = screenW / 2 + (worldX - this.cameraX) * this.cameraZoom;
+    const sy = screenH / 2 + (worldY - this.cameraY) * this.cameraZoom;
+    return sx >= -margin && sx <= screenW + margin && sy >= -margin && sy <= screenH + margin;
+  }
+
   public update(dt: number) {
     // 1. Smooth Camera Tracking with Viewport Bounds Clamping
     const lerpSpeed = Math.min(1.0, 0.12 * dt);
@@ -201,20 +206,6 @@ export class GameEngine {
 
     // 2. Smooth Battlefield Darkness during SS
     this.ssOverlay.alpha += (this.ssTargetAlpha - this.ssOverlay.alpha) * Math.min(1.0, 0.14 * dt);
-  }
-
-  public isContrastBoosted: boolean = true;
-
-  public setSpriteContrast(enabled: boolean) {
-    this.isContrastBoosted = enabled;
-    if (enabled) {
-      const filter = new ColorMatrixFilter();
-      filter.contrast(0.24, true); // +24% contrast boost for sharp retro outlines
-      filter.saturate(0.20, true); // +20% saturation boost for vibrant pixel art colors
-      this.mobilesContainer.filters = [filter];
-    } else {
-      this.mobilesContainer.filters = [];
-    }
   }
 
   public destroy() {

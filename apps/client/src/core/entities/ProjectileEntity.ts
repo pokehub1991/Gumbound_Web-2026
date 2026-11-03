@@ -20,7 +20,7 @@ export class ProjectileEntity extends Container {
   private mobileType: number;
   private shotType: number;
   private subType?: string;
-  private hitType: "ground" | "player" | "oob";
+  public hitType: "ground" | "player" | "oob";
   private bungeRadius: number;
   private damage: number;
   private progress: number = 0;
@@ -425,7 +425,8 @@ export class ProjectileEntity extends Container {
           this.damage,
           () => {
             if (this.onCompleteCallback) this.onCompleteCallback();
-          }
+          },
+          this.shotType
         );
       } else {
         setTimeout(() => {
@@ -473,5 +474,9 @@ export class ProjectileEntity extends Container {
     if (this.onImpactCallback) {
       this.onImpactCallback();
     }
+  }
+
+  public forceFinish() {
+    this.triggerImpact();
   }
 }

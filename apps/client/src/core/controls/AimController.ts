@@ -136,8 +136,9 @@ export class AimController {
       return;
     }
 
-    const slope = this.terrain.getSlopeAngle(this.activeMobile.x, this.activeMobile.y);
-    this.activeMobile.setTilt(slope.angle);
+    const placement = this.terrain.getMobileSurfacePlacement(this.activeMobile.x, this.activeMobile.y);
+    this.activeMobile.y = placement.y;
+    this.activeMobile.setTilt(placement.slope.angle);
 
     this.activeMobile.playAnimation("move");
 

@@ -76,7 +76,7 @@ export class CombatArena {
 
     // 3. Initialize Local Player on Metamine spawn
     const playerSpawn = mapDef.player1Spawn;
-    const playerGroundY = this.terrain.findSurfaceY(playerSpawn.x, playerSpawn.y);
+    const playerPlacement = this.terrain.getMobileSurfacePlacement(playerSpawn.x, playerSpawn.y);
 
     this.player = new MobileEntity({
       id: "player_local",
@@ -86,11 +86,10 @@ export class CombatArena {
       maxHp: 1000,
       hp: 1000,
       x: playerSpawn.x,
-      y: playerGroundY,
+      y: playerPlacement.y,
     });
     this.player.setFacing(1); // Face right toward enemy
-    const pSlope = this.terrain.getSlopeAngle(this.player.x, this.player.y);
-    this.player.setTilt(pSlope.angle);
+    this.player.setTilt(playerPlacement.slope.angle);
     this.engine.mobilesContainer.addChild(this.player);
 
     // 4. Initialize Bot Dummy on Metamine right side
@@ -193,8 +192,8 @@ export class CombatArena {
     this.dynamicExplosionEngine.update(dt * 16.66);
 
     // Instant ground fall: whenever terrain beneath is destroyed, mobile falls immediately!
-    const pSurface = this.terrain.findSurfaceY(this.player.x, this.player.y);
-    const dropDistance = pSurface - this.player.y;
+    const pPlacement = this.terrain.getMobileSurfacePlacement(this.player.x, this.player.y);
+    const dropDistance = pPlacement.y - this.player.y;
 
     if (dropDistance > 3) {
       // Airborne gravity fall with authentic 'drop' animation
@@ -203,8 +202,8 @@ export class CombatArena {
         this.aimController.isAirborne = true;
         this.player.playAnimation("drop", true);
       }
-      this.playerFallVy = Math.min(5.5, this.playerFallVy + 0.22 * dt);
-      this.player.y = Math.min(pSurface, this.player.y + this.playerFallVy * dt);
+      this.playerFallVy = Math.min(6.5, this.playerFallVy + 0.25 * dt);
+      this.player.y = Math.min(pPlacement.y, this.player.y + this.playerFallVy * dt);
 
       // Subtle natural tilt during air fall
       const targetFallTilt = this.player.facing * 0.10;
@@ -221,13 +220,12 @@ export class CombatArena {
         this.playerFallVy = 0;
         this.player.playAnimation("normal", true);
       }
-      this.player.y = pSurface;
-      const slope = this.terrain.getSlopeAngle(this.player.x, this.player.y);
-      this.player.setTilt(slope.angle);
+      this.player.y = pPlacement.y;
+      this.player.setTilt(pPlacement.slope.angle);
     }
 
-    // Check player fall off map bottom (bunge)
-    if (this.player.y >= this.terrain.mapHeight - 30 && this.player.hp > 0) {
+    // Check player fall off map bottom or sides (bunge / suicide)
+    if ((this.player.y >= this.terrain.mapHeight - 30 || this.player.x < -30 || this.player.x > this.terrain.mapWidth + 30) && this.player.hp > 0) {
       this.damagePlayer(this.player.hp, this.player.x, this.player.y);
     }
 
@@ -238,16 +236,29 @@ export class CombatArena {
     }
 
     // Camera follow active projectile: continuously track bullet horizontally (X) and vertically (Y)
-    // When bullet climbs into the high sky or beyond background bounds, clamp camera Y to sky ceiling
-    // while maintaining horizontal (X) tracking until the bullet descends back into view
+    // Follows high sky arcs up to -1600 Y, and frames battlefield edges so bullet visibly flies off screen
     if (this.activeProjectiles.length > 0) {
       const leadProj = this.activeProjectiles.find((p) => !p.isExploding) || this.activeProjectiles[0];
-      const screenH = this.engine.app.screen.height || 600;
-      const zoom = this.engine.cameraZoom || 1.2;
-      // Top background boundary is -500; keep camera Y above the void
-      const minCamY = Math.max(120, -460 + (screenH / 2) / zoom);
-      const targetY = Math.max(minCamY, leadProj.currentY);
-      this.engine.panTo(leadProj.currentX, targetY);
+
+      // Smooth horizontal panning: clamp camera near map edges so camera stops and bullet flies off screen
+      const minCamX = 220;
+      const maxCamX = Math.max(1409, this.terrain.mapWidth) - 220;
+      const targetX = Math.max(minCamX, Math.min(maxCamX, leadProj.currentX));
+
+      // Vertical panning: track high sky shots up to -1600 and down into lower abyss
+      const minCamY = -1600;
+      const maxCamY = this.terrain.mapHeight - 140;
+      const targetY = Math.max(minCamY, Math.min(maxCamY, leadProj.currentY));
+
+      this.engine.panTo(targetX, targetY);
+
+      // If an out-of-bounds bullet has physically exited the visible screen, declare it lost and conclude turn
+      for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
+        const proj = this.activeProjectiles[i];
+        if (proj.hitType === "oob" && !this.engine.isPointOnScreen(proj.currentX, proj.currentY, 60)) {
+          proj.forceFinish();
+        }
+      }
     }
 
     if (this.onBotHpUpdate) {
@@ -507,15 +518,14 @@ export class CombatArena {
   public respawnPlayer() {
     const mapDef = MAPS["metamine"];
     const spawn = mapDef.player1Spawn;
-    const groundY = this.terrain.getFirstSolidY(spawn.x) ?? spawn.y;
+    const placement = this.terrain.getMobileSurfacePlacement(spawn.x, spawn.y);
     this.player.x = spawn.x;
-    this.player.y = groundY;
+    this.player.y = placement.y;
     this.player.hp = this.player.maxHp;
     this.player.alpha = 1.0;
     this.player.updateHpBar();
     this.player.setFacing(1);
-    const slope = this.terrain.getSlopeAngle(spawn.x, groundY);
-    this.player.setTilt(slope.angle);
+    this.player.setTilt(placement.slope.angle);
     this.player.playAnimation("normal");
   }
 

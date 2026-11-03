@@ -28,6 +28,8 @@ export class TerrainMask {
     const ix = Math.floor(x);
     const iy = Math.floor(y);
     if (ix < 0 || ix >= this.width || iy < 0 || iy >= this.height) return false;
+    // Sky above bridge deck (Y < 475) is strictly non-solid (bridge surface is at ~492)
+    if (iy < 475) return false;
     const index = (iy * this.width + ix) * 4 + 3; // Alpha channel
     return this.maskData[index] > 64;
   }
@@ -38,7 +40,8 @@ export class TerrainMask {
    */
   public findSurfaceY(x: number, startY: number): number {
     const ix = Math.floor(x);
-    if (ix < 0 || ix >= this.width) return startY;
+    // Beyond map bounds: abyss / bunge void
+    if (ix < 0 || ix >= this.width) return this.height + 200;
 
     const sy = Math.floor(startY);
 
@@ -149,6 +152,42 @@ export class TerrainMask {
   }
 
   /**
+   * Surface contact & slope calculation for vehicles.
+   * Tests the vehicle's dual wheel base (left: x - 14, right: x + 14) and center point.
+   * Lifts the vehicle by the authentic tread offset (~4.5px) and accounts for slope tilt
+   * so that wheels rest cleanly on top of the terrain contour without sinking into solid rock.
+   */
+  public getMobileSurfacePlacement(x: number, currentY: number): { y: number; slope: SlopeInfo } {
+    const slope = this.getSlopeAngle(x, currentY);
+    const halfBase = 14;
+    const sinTilt = Math.sin(slope.angle);
+
+    const yCenter = this.findSurfaceY(x, currentY);
+    const yLeft = this.findSurfaceY(x - halfBase, currentY);
+    const yRight = this.findSurfaceY(x + halfBase, currentY);
+
+    // If all points are in the void/abyss:
+    if (yCenter >= this.height && yLeft >= this.height && yRight >= this.height) {
+      return { y: this.height + 200, slope };
+    }
+
+    // Baseline wheel tread offset below sprite anchor cy (~4.5px at 1.25 scale)
+    const baseWheelOffset = 4.5;
+
+    // Contact clearance: ensure neither the downhill wheel, center, nor uphill wheel penetrates the surface
+    const maxYForCenter = yCenter - baseWheelOffset;
+    const maxYForLeft = yLeft < this.height ? yLeft - (baseWheelOffset - halfBase * sinTilt) : maxYForCenter;
+    const maxYForRight = yRight < this.height ? yRight - (baseWheelOffset + halfBase * sinTilt) : maxYForCenter;
+
+    const contactY = Math.min(maxYForCenter, Math.min(maxYForLeft, maxYForRight));
+
+    return {
+      y: contactY,
+      slope,
+    };
+  }
+
+  /**
    * Authentic DragonBound walking physics (GetPosForWalking):
    * Moves left (dir < 0) or right (dir > 0) by 1 step.
    * Can climb up to 12 pixels uphill.
@@ -158,8 +197,17 @@ export class TerrainMask {
    */
   public walk(x: number, y: number, dir: number): WalkResult {
     const targetX = dir < 0 ? Math.floor(x - 1) : Math.floor(x + 1);
+
+    // Stepping off the map boundaries into the void (suicide / bunge):
+    // Allows stepping off any edge or precipice without getting stuck!
     if (targetX < 0 || targetX >= this.width) {
-      return { x, y, stuck: true, fallAndDie: false };
+      return {
+        x: targetX,
+        y: Math.floor(y),
+        stuck: false,
+        isAirborne: true,
+        fallAndDie: true,
+      };
     }
 
     const currentY = Math.floor(y);

@@ -18,10 +18,16 @@ interface DamageSmokeParticle {
   y: number;
   vx: number;
   vy: number;
+  ax?: number;
+  ay?: number;
   radius: number;
+  growthRate: number;
   alpha: number;
+  fadeRate: number;
   color: number;
   isSpark?: boolean;
+  turbulence?: number;
+  life: number;
 }
 
 export class MobileEntity extends Container {
@@ -102,7 +108,7 @@ export class MobileEntity extends Container {
     this.aimContainer.addChild(this.aimAngleText);
 
     // HP Bar placed fixed below mobile treads (horizontal, never tilted with slope)
-    this.hpBarGraphics.y = 14;
+    this.hpBarGraphics.y = 9;
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
@@ -114,7 +120,7 @@ export class MobileEntity extends Container {
     });
     this.nameText = new Text({ text: this.nickname, style: textStyle });
     this.nameText.anchor.set(0.5, 0);
-    this.nameText.y = 22;
+    this.nameText.y = 17;
 
     // Crucial: smokeContainer is placed at index 0 behind the mobile body and wheels
     this.addChild(this.smokeContainer);
@@ -191,8 +197,9 @@ export class MobileEntity extends Container {
     const minAng = data.minAngle ?? data.minang ?? 10;
     const maxAng = data.maxAngle ?? data.maxang ?? 55;
 
-    // Authentic GunBound Aiming Protractor Gauge (Radius 48px, attached to mobile tilt)
+    // Authentic GunBound Aiming Protractor Gauge (Radius 48px, concentric with green gauge)
     const gaugeRadius = 48;
+    const innerRadius = 22;
 
     let rotRad: number;
     let minRad: number;
@@ -218,54 +225,79 @@ export class MobileEntity extends Container {
     const noseY = localMountX * sinS + localMountY * cosS;
     this.aimContainer.position.set(noseX, noseY);
 
-    // Forward-half angle bounds (rear half remains 100% transparent so mobile body is fully visible)
+    // Forward direction base angle (0 rad when facing right, PI rad when facing left)
     const forwardBase = this.facing === 1 ? 0 : Math.PI;
-    const semiStart = forwardBase - Math.PI / 2;
-    const semiEnd = forwardBase + Math.PI / 2;
 
-    // 1. Forward-Half Translucent White Disc
-    this.aimArrowGraphics.beginPath();
-    this.aimArrowGraphics.arc(0, 0, gaugeRadius, semiStart, semiEnd);
-    this.aimArrowGraphics.lineTo(0, 0);
-    this.aimArrowGraphics.closePath();
-    this.aimArrowGraphics.fill({ color: 0xffffff, alpha: 0.24 });
-    this.aimArrowGraphics.stroke({ width: 1.0, color: 0xffffff, alpha: 0.45 });
+    // 1. White Protractor Disc fading smoothly from the front of the mobile towards the rear
+    const numSlices = 28;
+    const sliceStep = Math.PI / numSlices;
+    const halfPi = Math.PI / 2;
 
-    // Subtle inner concentric ring guideline on forward half
-    this.aimArrowGraphics.beginPath();
-    this.aimArrowGraphics.arc(0, 0, 24, semiStart, semiEnd);
-    this.aimArrowGraphics.stroke({ width: 0.8, color: 0xffffff, alpha: 0.25 });
+    for (let i = 0; i < numSlices; i++) {
+      const relStart = -halfPi + i * sliceStep;
+      const relEnd = relStart + sliceStep;
+      const midRel = (relStart + relEnd) / 2;
 
-    // Subtle radial tick guidelines at 0°, 30°, 60°, 90°
+      // cos(midRel) is 1.0 at front (midRel = 0) and fades smoothly to 0 at ±90° (midRel = ±PI/2)
+      const fadeFactor = Math.max(0, Math.cos(midRel));
+      const fillAlpha = 0.35 * Math.pow(fadeFactor, 1.15);
+      const strokeAlpha = 0.45 * Math.pow(fadeFactor, 1.15);
+
+      if (fillAlpha > 0.01) {
+        const aStart = forwardBase + relStart;
+        const aEnd = forwardBase + relEnd;
+
+        // Outer sector band (innerRadius -> gaugeRadius)
+        this.aimArrowGraphics.beginPath();
+        this.aimArrowGraphics.arc(0, 0, gaugeRadius, aStart, aEnd);
+        this.aimArrowGraphics.lineTo(Math.cos(aEnd) * innerRadius, Math.sin(aEnd) * innerRadius);
+        this.aimArrowGraphics.arc(0, 0, innerRadius, aEnd, aStart, true);
+        this.aimArrowGraphics.closePath();
+        this.aimArrowGraphics.fill({ color: 0xffffff, alpha: fillAlpha });
+
+        // Outer border arc segment
+        this.aimArrowGraphics.beginPath();
+        this.aimArrowGraphics.arc(0, 0, gaugeRadius, aStart, aEnd);
+        this.aimArrowGraphics.stroke({ width: 1.0, color: 0xffffff, alpha: strokeAlpha });
+
+        // Inner concentric guideline arc segment
+        this.aimArrowGraphics.beginPath();
+        this.aimArrowGraphics.arc(0, 0, innerRadius, aStart, aEnd);
+        this.aimArrowGraphics.stroke({ width: 0.7, color: 0xffffff, alpha: strokeAlpha * 0.65 });
+      }
+    }
+
+    // Subtle radial tick guidelines at 0°, 30°, 60°, 90° fading with angle
     const ticks = [0, 30, 60, 90];
     for (const deg of ticks) {
       const tRad = this.facing === 1 ? -(deg * Math.PI) / 180 : -((180 - deg) * Math.PI) / 180;
-      this.aimArrowGraphics.moveTo(0, 0);
+      const radDiff = Math.abs(deg);
+      const tickAlpha = Math.max(0.08, 0.45 * Math.cos((radDiff * Math.PI) / 180));
+      this.aimArrowGraphics.beginPath();
+      this.aimArrowGraphics.moveTo(Math.cos(tRad) * innerRadius, Math.sin(tRad) * innerRadius);
       this.aimArrowGraphics.lineTo(Math.cos(tRad) * gaugeRadius, Math.sin(tRad) * gaugeRadius);
-      this.aimArrowGraphics.stroke({ width: 0.8, color: 0xffffff, alpha: 0.32 });
+      this.aimArrowGraphics.stroke({ width: 0.8, color: 0xffffff, alpha: tickAlpha });
     }
 
-    // 2. Valid Angle Sector Wedge (Luminous GunBound Green arc band from minAngle to maxAngle - Image 4 reference)
+    // 2. Valid Angle Sector Wedge (Luminous GunBound Green arc band from minAngle to maxAngle)
+    // PERFECTLY ALIGNED with the protractor (same innerRadius 22, same outer gaugeRadius 48)
     const arcStart = Math.min(minRad, maxRad);
     const arcEnd = Math.max(minRad, maxRad);
-    const innerR = 24;
-    const outerR = 52;
 
     this.aimArrowGraphics.beginPath();
-    this.aimArrowGraphics.moveTo(Math.cos(arcStart) * innerR, Math.sin(arcStart) * innerR);
-    this.aimArrowGraphics.arc(0, 0, outerR, arcStart, arcEnd);
-    this.aimArrowGraphics.lineTo(Math.cos(arcEnd) * innerR, Math.sin(arcEnd) * innerR);
-    this.aimArrowGraphics.arc(0, 0, innerR, arcEnd, arcStart, true);
+    this.aimArrowGraphics.arc(0, 0, gaugeRadius, arcStart, arcEnd);
+    this.aimArrowGraphics.lineTo(Math.cos(arcEnd) * innerRadius, Math.sin(arcEnd) * innerRadius);
+    this.aimArrowGraphics.arc(0, 0, innerRadius, arcEnd, arcStart, true);
     this.aimArrowGraphics.closePath();
-    this.aimArrowGraphics.fill({ color: 0x22c55e, alpha: 0.58 });
-    this.aimArrowGraphics.stroke({ width: 1.0, color: 0x15803d, alpha: 0.85 });
+    this.aimArrowGraphics.fill({ color: 0x22c55e, alpha: 0.62 });
+    this.aimArrowGraphics.stroke({ width: 1.0, color: 0x15803d, alpha: 0.90 });
 
     // 3. Active Pointer Needle (Sleek tapered red needle matching GunBound reference)
-    // Tapers from 3.2px base at inner radius (12) to a sharp 1.2px tip at radius 50
-    const tipR = 50;
-    const baseR = 12;
-    const baseHalfW = 1.6;
-    const tipHalfW = 0.6;
+    // Tapers from 3.0px base at inner radius (10) to a sharp 1.0px tip at radius 46
+    const tipR = 46;
+    const baseR = 10;
+    const baseHalfW = 1.5;
+    const tipHalfW = 0.5;
 
     const tipMidX = Math.cos(rotRad) * tipR;
     const tipMidY = Math.sin(rotRad) * tipR;
@@ -466,65 +498,178 @@ export class MobileEntity extends Container {
   }
 
   /**
-   * Update subtle damage breakdown smoke particles emitted behind vehicle when HP is low.
+   * Dynamic damage smoke & spark breakdown system:
+   * 1. Leve (HP 40% - 70%): Slow, gentle puffs of light translucent gray smoke from rear exhaust.
+   * 2. Intenso (HP 20% - 40%): Dense dark soot smoke rising fast with occasional glowing embers.
+   * 3. Múltiples humos con distintas físicas (HP < 20%):
+   *    - Emitter 1 (Exhaust): Thick billowing black plume with rear momentum.
+   *    - Emitter 2 (Turret/Chassis): Violent turbulent smoke with fiery sparks and oscillation.
+   *    - Emitter 3 (Treads): Ground-level friction smoke dragging horizontally along terrain.
    */
   public update(dt: number) {
-    const isDamaged = this.hp < this.maxHp * 0.45;
-    const isCritical = this.hp < this.maxHp * 0.20;
+    const hpRatio = this.maxHp > 0 ? this.hp / this.maxHp : 1.0;
 
-    if (isDamaged && this.hp > 0) {
+    if (hpRatio < 0.70 && this.hp > 0) {
       this.smokeTimer += dt;
-      const spawnInterval = isCritical ? 5 : 10;
+
+      // Multi-tier spawn intervals based on vehicle health
+      let spawnInterval = 14; // Default: Leve
+      if (hpRatio < 0.20) {
+        spawnInterval = 3.5; // Crítico: fast, multi-emitter emission
+      } else if (hpRatio < 0.40) {
+        spawnInterval = 7.0; // Intenso: dense continuous soot
+      }
 
       if (this.smokeTimer >= spawnInterval) {
         this.smokeTimer = 0;
 
-        // Exhaust point at the rear of the tank, rotated with terrain slope
         const cosS = Math.cos(this.slopeAngle);
         const sinS = Math.sin(this.slopeAngle);
-        const rearLocalX = -this.facing * (14 + Math.random() * 4);
-        const rearLocalY = -8 + (Math.random() - 0.5) * 4;
-        const spawnX = rearLocalX * cosS - rearLocalY * sinS;
-        const spawnY = rearLocalX * sinS + rearLocalY * cosS;
 
-        // Subtle smoke puff
-        const color = isCritical
-          ? Math.random() < 0.25
-            ? 0xf59e0b // Occasional spark ember
-            : 0x1e293b // Dark breakdown smoke
-          : 0x64748b; // Wispy gray smoke
+        if (hpRatio >= 0.40) {
+          // ============================================================
+          // ESTADO 1: HUMO LEVE (Daño normal / moderado)
+          // ============================================================
+          const rearLocalX = -this.facing * (14 + Math.random() * 3);
+          const rearLocalY = -7 + (Math.random() - 0.5) * 3;
+          const spawnX = rearLocalX * cosS - rearLocalY * sinS;
+          const spawnY = rearLocalX * sinS + rearLocalY * cosS;
 
-        const isSpark = color === 0xf59e0b;
+          this.smokeParticles.push({
+            x: spawnX,
+            y: spawnY,
+            vx: -this.facing * (0.15 + Math.random() * 0.2) + (Math.random() - 0.5) * 0.15,
+            vy: -(0.35 + Math.random() * 0.3),
+            radius: 2.8 + Math.random() * 1.5,
+            growthRate: 0.07,
+            alpha: 0.26 + Math.random() * 0.08,
+            fadeRate: 0.007,
+            color: 0x94a3b8, // Light wispy slate gray
+            isSpark: false,
+            life: 0,
+          });
+        } else if (hpRatio >= 0.20) {
+          // ============================================================
+          // ESTADO 2: HUMO INTENSO (Daño severo)
+          // ============================================================
+          const rearLocalX = -this.facing * (15 + Math.random() * 4);
+          const rearLocalY = -8 + (Math.random() - 0.5) * 4;
+          const spawnX = rearLocalX * cosS - rearLocalY * sinS;
+          const spawnY = rearLocalX * sinS + rearLocalY * cosS;
 
-        this.smokeParticles.push({
-          x: spawnX,
-          y: spawnY,
-          vx: -this.facing * (0.2 + Math.random() * 0.3) + (Math.random() - 0.5) * 0.2,
-          vy: -(0.5 + Math.random() * 0.6),
-          radius: isSpark ? 1.5 : 3.5 + Math.random() * 2,
-          alpha: isSpark ? 0.9 : 0.38,
-          color,
-          isSpark,
-        });
+          const isEmber = Math.random() < 0.22;
+          this.smokeParticles.push({
+            x: spawnX,
+            y: spawnY,
+            vx: -this.facing * (0.35 + Math.random() * 0.3) + (Math.random() - 0.5) * 0.2,
+            vy: isEmber ? -(0.8 + Math.random() * 0.8) : -(0.7 + Math.random() * 0.6),
+            radius: isEmber ? 1.6 : 3.8 + Math.random() * 2.2,
+            growthRate: isEmber ? -0.015 : 0.14,
+            alpha: isEmber ? 0.95 : 0.48,
+            fadeRate: isEmber ? 0.025 : 0.009,
+            color: isEmber ? 0xf59e0b : 0x1e293b, // Dense dark soot or glowing ember
+            isSpark: isEmber,
+            life: 0,
+          });
+        } else {
+          // ============================================================
+          // ESTADO 3: MÚLTIPLES HUMOS CON DISTINTAS FÍSICAS (Crítico)
+          // ============================================================
+          const emitterRoll = Math.random();
+
+          if (emitterRoll < 0.40) {
+            // Emisor 1: Motor / Escape Trasero (Pluma gruesa de humo negro con inercia)
+            const rearLocalX = -this.facing * (16 + Math.random() * 4);
+            const rearLocalY = -9 + (Math.random() - 0.5) * 3;
+            const spawnX = rearLocalX * cosS - rearLocalY * sinS;
+            const spawnY = rearLocalX * sinS + rearLocalY * cosS;
+
+            this.smokeParticles.push({
+              x: spawnX,
+              y: spawnY,
+              vx: -this.facing * (0.6 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.25,
+              vy: -(0.85 + Math.random() * 0.7),
+              radius: 4.2 + Math.random() * 2.5,
+              growthRate: 0.18,
+              alpha: 0.62,
+              fadeRate: 0.008,
+              color: Math.random() < 0.5 ? 0x0f172a : 0x1e293b,
+              isSpark: false,
+              life: 0,
+            });
+          } else if (emitterRoll < 0.75) {
+            // Emisor 2: Torreta / Chasis Dañado (Humo turbulento vertical con chispas de fuego)
+            const midLocalX = (Math.random() - 0.5) * 12;
+            const midLocalY = -18 + (Math.random() - 0.5) * 4;
+            const spawnX = midLocalX * cosS - midLocalY * sinS;
+            const spawnY = midLocalX * sinS + midLocalY * cosS;
+
+            const isFierySpark = Math.random() < 0.35;
+            const sparkColors = [0xef4444, 0xf97316, 0xfbbf24];
+            const sparkColor = sparkColors[Math.floor(Math.random() * sparkColors.length)];
+
+            this.smokeParticles.push({
+              x: spawnX,
+              y: spawnY,
+              vx: (Math.random() - 0.5) * 0.6,
+              vy: isFierySpark ? -(1.1 + Math.random() * 1.0) : -(0.9 + Math.random() * 0.5),
+              radius: isFierySpark ? 1.8 : 3.5 + Math.random() * 2.0,
+              growthRate: isFierySpark ? -0.02 : 0.15,
+              alpha: isFierySpark ? 1.0 : 0.55,
+              fadeRate: isFierySpark ? 0.03 : 0.009,
+              color: isFierySpark ? sparkColor : 0x334155,
+              isSpark: isFierySpark,
+              turbulence: 0.8,
+              life: 0,
+            });
+          } else {
+            // Emisor 3: Oruga / Tracción Dañada (Humo a ras de suelo con fricción y dispersión)
+            const treadLocalX = this.facing * (Math.random() - 0.5) * 18;
+            const treadLocalY = 2 + Math.random() * 2;
+            const spawnX = treadLocalX * cosS - treadLocalY * sinS;
+            const spawnY = treadLocalX * sinS + treadLocalY * cosS;
+
+            this.smokeParticles.push({
+              x: spawnX,
+              y: spawnY,
+              vx: (Math.random() - 0.5) * 0.8 - this.facing * 0.2,
+              vy: -(0.25 + Math.random() * 0.3),
+              radius: 3.0 + Math.random() * 1.8,
+              growthRate: 0.12,
+              alpha: 0.40,
+              fadeRate: 0.012,
+              color: 0x475569, // Gray friction soot
+              isSpark: false,
+              life: 0,
+            });
+          }
+        }
       }
     }
 
-    // Step active smoke particles
+    // Step active smoke particles with individual physics & easing
     if (this.smokeParticles.length > 0) {
       this.smokeGraphics.clear();
 
       for (let i = this.smokeParticles.length - 1; i >= 0; i--) {
         const p = this.smokeParticles[i];
+        p.life += dt;
+
+        // Turbulence sinusoidal drift
+        if (p.turbulence) {
+          p.x += Math.sin(p.life * 0.12) * p.turbulence * dt;
+        }
+
         p.x += p.vx * dt;
         p.y += p.vy * dt;
-        p.vy -= 0.008 * dt; // gentle rise
+        p.vy -= 0.009 * dt; // gentle thermal rise
 
         if (p.isSpark) {
-          p.alpha -= 0.035 * dt;
-          p.radius = Math.max(0.5, p.radius - 0.02 * dt);
+          p.alpha -= p.fadeRate * dt;
+          p.radius = Math.max(0.5, p.radius + p.growthRate * dt);
         } else {
-          p.alpha -= 0.010 * dt; // soft, subtle fading
-          p.radius += 0.14 * dt;  // gentle puff expansion
+          p.alpha -= p.fadeRate * dt;
+          p.radius += p.growthRate * dt;
         }
 
         if (p.alpha <= 0.01) {
@@ -532,7 +677,7 @@ export class MobileEntity extends Container {
           continue;
         }
 
-        this.smokeGraphics.circle(p.x, p.y, p.radius);
+        this.smokeGraphics.circle(p.x, p.y, Math.max(0.5, p.radius));
         this.smokeGraphics.fill({ color: p.color, alpha: Math.max(0, p.alpha) });
       }
     } else {

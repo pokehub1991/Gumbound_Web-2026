@@ -238,8 +238,8 @@ export class BallisticsEngine {
         if (hitMobile) break;
       }
 
-      // 2. Out of bounds check (wide sky margins allow extreme high shots)
-      if (x < -300 || x > params.mapWidth + 300 || y > params.mapHeight + 100) {
+      // 2. Out of bounds check: wide margins allow shots to fly high into sky and completely off screen
+      if (x < -1200 || x > params.mapWidth + 1200 || y > params.mapHeight + 450) {
         hitType = "oob";
         finalPos = { x, y };
         break;

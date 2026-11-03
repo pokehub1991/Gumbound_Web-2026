@@ -25,6 +25,7 @@ interface DynamicParticle {
   life: number;
   maxLife: number;
   initialSize: number;
+  initialAlpha: number;
   rotSpeed?: number;
   type: "debris" | "smoke";
 }
@@ -46,8 +47,13 @@ interface ActiveDynamicExplosion {
   particles: DynamicParticle[];
   elapsed: number;
   maxDuration: number;
+  fireballDuration: number;
+  shockwaveDuration: number;
+  turnAdvanceMs: number;
+  hasTriggeredComplete: boolean;
   baseRadius: number;
   powerScale: number;
+  shotType: number;
   onComplete?: () => void;
 }
 
@@ -68,21 +74,86 @@ export class DynamicExplosionEngine {
   }
 
   /**
-   * Spawn a massive, high-energy procedural dynamic explosion matching the GunBound sprite silhouette.
+   * Spawn a dynamic procedural explosion calibrated by shot type & magnitude:
+   * - Tiro 1 (Suave, shotType = 0): Compact blast, light smoke, soft quick fade.
+   * - Tiro 2 (Fuerte, shotType = 1): Energetic fiery burst, dense smoke billows, glowing sparks.
+   * - Tiro 3 / SS (Superfuerte, shotType = 2): Massive thermonuclear flash, heavy shockwave, lingering billowing mushroom smoke & violent sparks.
    */
   public triggerExplosion(
     x: number,
     y: number,
     radius: number = 44,
     damage: number = 200,
-    onComplete?: () => void
+    onComplete?: () => void,
+    shotType: number = 0
   ) {
     const explosionGroup = new Container();
     explosionGroup.position.set(x, y);
     this.parentContainer.addChild(explosionGroup);
 
-    const powerScale = Math.max(1.0, Math.min(2.8, (radius / 36) * 0.75 + (damage / 180) * 0.35));
-    const effectiveRadius = radius * (1.35 + powerScale * 0.32); // 70px - 105px radius (140 - 210px diameter!)
+    // Dynamic calibration based on shotType: 0 = Shot 1, 1 = Shot 2, 2 = SS
+    let powerScale = 0.75;
+    let effectiveRadius = 24;
+    let fireballDuration = 520;
+    let shockwaveDuration = 260;
+    let maxDuration = 1400;
+    let turnAdvanceMs = 450;
+    let sparkCount = 14;
+    let rubbleCount = 6;
+    let smokeCount = 7;
+    let smokeMaxLifeBase = 1200;
+    let smokeAlphaBase = 0.35;
+    let smokeColors = [0x64748b, 0x94a3b8]; // Gentle slate gray
+
+    if (shotType === 2 || damage >= 380) {
+      // ============================================================
+      // TIRO 3 / SS: SUPERFUERTE
+      // ============================================================
+      powerScale = 1.65;
+      effectiveRadius = Math.max(46, Math.min(54, radius * 1.15));
+      fireballDuration = 950;
+      shockwaveDuration = 480;
+      maxDuration = 2400;
+      turnAdvanceMs = 800;
+      sparkCount = 42;
+      rubbleCount = 16;
+      smokeCount = 18;
+      smokeMaxLifeBase = 2200;
+      smokeAlphaBase = 0.65;
+      smokeColors = [0x0f172a, 0x1e293b, 0x334155]; // Volcanic heavy soot
+    } else if (shotType === 1 || damage >= 220) {
+      // ============================================================
+      // TIRO 2: FUERTE
+      // ============================================================
+      powerScale = 1.15;
+      effectiveRadius = Math.max(32, Math.min(38, radius * 0.85));
+      fireballDuration = 720;
+      shockwaveDuration = 360;
+      maxDuration = 1800;
+      turnAdvanceMs = 580;
+      sparkCount = 26;
+      rubbleCount = 10;
+      smokeCount = 12;
+      smokeMaxLifeBase = 1650;
+      smokeAlphaBase = 0.50;
+      smokeColors = [0x1e293b, 0x334155, 0x475569]; // Dense combat smoke
+    } else {
+      // ============================================================
+      // TIRO 1: SUAVE
+      // ============================================================
+      powerScale = 0.75;
+      effectiveRadius = Math.max(22, Math.min(27, radius * 0.62));
+      fireballDuration = 500;
+      shockwaveDuration = 260;
+      maxDuration = 1400;
+      turnAdvanceMs = 450;
+      sparkCount = 14;
+      rubbleCount = 5;
+      smokeCount = 7;
+      smokeMaxLifeBase = 1250;
+      smokeAlphaBase = 0.35;
+      smokeColors = [0x475569, 0x64748b];
+    }
 
     // 1. Fireball Group (Multi-lobed billowing cauliflower flame clouds)
     const fireballGroup = new Container();
@@ -96,23 +167,23 @@ export class DynamicExplosionEngine {
       gfx: centerGfx,
       offsetX: 0,
       offsetY: 0,
-      maxRadius: effectiveRadius * 1.05,
+      maxRadius: effectiveRadius * 1.0,
       expansionSpeed: 1.0,
     });
 
-    // 10 Radial billowing plume lobes forming the iconic GunBound jagged mushroom silhouette
-    const lobeCount = 10;
+    // Radial billowing plume lobes forming the iconic GunBound jagged silhouette
+    const lobeCount = shotType === 2 ? 10 : 8;
     for (let i = 0; i < lobeCount; i++) {
       const angle = (i / lobeCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-      const dist = effectiveRadius * (0.38 + Math.random() * 0.3);
+      const dist = effectiveRadius * (0.35 + Math.random() * 0.22);
       const lobeGfx = new Graphics();
       fireballGroup.addChild(lobeGfx);
 
       lobes.push({
         gfx: lobeGfx,
         offsetX: Math.cos(angle) * dist,
-        offsetY: Math.sin(angle) * dist - 6, // Slight upward thermal bias
-        maxRadius: effectiveRadius * (0.62 + Math.random() * 0.38),
+        offsetY: Math.sin(angle) * dist - (shotType === 2 ? 5 : 3), // Thermal upward bias
+        maxRadius: effectiveRadius * (0.55 + Math.random() * 0.25),
         expansionSpeed: 0.85 + Math.random() * 0.35,
       });
     }
@@ -121,16 +192,20 @@ export class DynamicExplosionEngine {
     const shockwaveRing = new Graphics();
     explosionGroup.addChild(shockwaveRing);
 
-    // 3. Dense High-Velocity Directional Spark Tracers (Streak lines)
+    // 3. Dense High-Velocity Directional Spark Tracers
     const sparks: DynamicSpark[] = [];
-    const sparkCount = Math.floor(65 + powerScale * 35); // 70 - 130 fiery sparks!
-    const sparkColors = [0xffffff, 0xfef08a, 0xfde047, 0xf97316, 0xef4444, 0xb91c1c];
+    const sparkColors =
+      shotType === 2
+        ? [0xffffff, 0xfef08a, 0xfde047, 0xf97316, 0xef4444, 0xb91c1c]
+        : shotType === 1
+        ? [0xffffff, 0xfde047, 0xf97316, 0xef4444]
+        : [0xffffff, 0xfef08a, 0xfde047, 0xf97316];
 
     for (let i = 0; i < sparkCount; i++) {
       const gfx = new Graphics();
       const angle = Math.random() * Math.PI * 2;
-      const speed = (Math.random() * 16 + 7.0) * (0.85 + powerScale * 0.3);
-      const width = Math.random() * 2.2 + 1.4;
+      const speed = (Math.random() * 6.0 + 2.5) * powerScale;
+      const width = Math.random() * 1.4 + 0.9 * powerScale;
 
       explosionGroup.addChild(gfx);
 
@@ -139,25 +214,24 @@ export class DynamicExplosionEngine {
         x: 0,
         y: 0,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 1.5, // Upward burst bias
-        gravity: 0.24,
-        drag: 0.94,
+        vy: Math.sin(angle) * speed - (0.6 + powerScale * 0.4),
+        gravity: 0.16 + powerScale * 0.06,
+        drag: 0.95,
         life: 0,
-        maxLife: Math.random() * 360 + 440, // 440 - 800ms
+        maxLife: Math.random() * 300 + 400 * powerScale,
         width,
         colors: sparkColors,
       });
     }
 
-    // 4. Heavy Jagged Terrain Crater Rubble Chunks
+    // 4. Terrain Crater Rubble Chunks
     const particles: DynamicParticle[] = [];
-    const rubbleCount = Math.floor(20 + powerScale * 14);
     const rubbleColors = [0x78716c, 0xa8a29e, 0x57534e, 0xd97706, 0x92400e, 0x451a03];
 
     for (let i = 0; i < rubbleCount; i++) {
       const gfx = new Graphics();
       const color = rubbleColors[Math.floor(Math.random() * rubbleColors.length)];
-      const size = (Math.random() * 5.5 + 3.0) * powerScale;
+      const size = (Math.random() * 2.2 + 1.4) * powerScale;
 
       gfx.beginPath();
       const verts = 5 + Math.floor(Math.random() * 3);
@@ -171,11 +245,10 @@ export class DynamicExplosionEngine {
       }
       gfx.closePath();
       gfx.fill({ color, alpha: 0.95 });
-      gfx.stroke({ width: 1.0, color: 0x1c1917, alpha: 0.9 });
+      gfx.stroke({ width: 0.8, color: 0x1c1917, alpha: 0.9 });
 
-      // Expelled upward and outward in explosive spray
       const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.95;
-      const speed = (Math.random() * 12 + 4.5) * powerScale;
+      const speed = (Math.random() * 4.8 + 2.2) * powerScale;
 
       explosionGroup.addChild(gfx);
 
@@ -185,25 +258,27 @@ export class DynamicExplosionEngine {
         y: 0,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        gravity: 0.38,
+        gravity: 0.28,
         drag: 0.98,
         life: 0,
-        maxLife: Math.random() * 650 + 850,
+        maxLife: Math.random() * 400 + 500 * powerScale,
         initialSize: size,
-        rotSpeed: (Math.random() - 0.5) * 0.45,
+        initialAlpha: 0.95,
+        rotSpeed: (Math.random() - 0.5) * 0.4,
         type: "debris",
       });
     }
 
-    // 5. Volumetric Billowing Smoke Clouds
-    const smokeCount = 18;
+    // 5. Volumetric Billowing Smoke Clouds with gentle lingering fade
     for (let i = 0; i < smokeCount; i++) {
       const gfx = new Graphics();
       const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 3.5 + 0.8;
-      const size = Math.random() * 18 + 16;
+      const speed = (Math.random() * 1.6 + 0.5) * powerScale;
+      const size = (Math.random() * 8 + 6) * powerScale;
+      const color = smokeColors[Math.floor(Math.random() * smokeColors.length)];
+      const initialAlpha = (smokeAlphaBase + (Math.random() - 0.5) * 0.1);
 
-      gfx.circle(0, 0, size).fill({ color: 0x334155, alpha: 0.5 });
+      gfx.circle(0, 0, size).fill({ color, alpha: initialAlpha });
       explosionGroup.addChild(gfx);
 
       particles.push({
@@ -211,12 +286,13 @@ export class DynamicExplosionEngine {
         x: 0,
         y: 0,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed - 1.2, // Natural thermal updraft
-        gravity: -0.07, // Floats upward
-        drag: 0.92,
+        vy: Math.sin(angle) * speed - (0.5 + powerScale * 0.3), // Natural thermal updraft
+        gravity: -0.04, // Softly floats upward
+        drag: 0.93,
         life: 0,
-        maxLife: Math.random() * 500 + 850,
+        maxLife: smokeMaxLifeBase + Math.random() * 400,
         initialSize: size,
+        initialAlpha,
         type: "smoke",
       });
     }
@@ -229,9 +305,14 @@ export class DynamicExplosionEngine {
       sparks,
       particles,
       elapsed: 0,
-      maxDuration: 1150,
+      maxDuration,
+      fireballDuration,
+      shockwaveDuration,
+      turnAdvanceMs,
+      hasTriggeredComplete: false,
       baseRadius: effectiveRadius,
       powerScale,
+      shotType,
       onComplete,
     });
   }
@@ -242,29 +323,35 @@ export class DynamicExplosionEngine {
       exp.elapsed += dtMs;
       const progress = exp.elapsed / exp.maxDuration;
 
+      // Trigger turn advancement smoothly at peak impact without waiting for lingering smoke
+      if (!exp.hasTriggeredComplete && exp.elapsed >= exp.turnAdvanceMs) {
+        exp.hasTriggeredComplete = true;
+        if (exp.onComplete) {
+          exp.onComplete();
+        }
+      }
+
       // -------------------------------------------------------------
-      // 1. Update Volumetric Billowing Fireball Lobes (0 to 720ms)
+      // 1. Update Volumetric Billowing Fireball Lobes
       // -------------------------------------------------------------
-      const fireballDuration = 720;
-      if (exp.elapsed < fireballDuration) {
-        const fbNorm = exp.elapsed / fireballDuration; // 0 -> 1
+      if (exp.elapsed < exp.fireballDuration) {
+        const fbNorm = exp.elapsed / exp.fireballDuration; // 0 -> 1
 
         for (const lobe of exp.lobes) {
           lobe.gfx.clear();
 
-          // Phase 1: Rapid outward expansion (0 -> 210ms)
-          // Phase 2: Rolling and billowing (210ms -> 480ms)
-          // Phase 3: Dissolving to smoke & embers (480ms -> 720ms)
+          const expandDuration = exp.fireballDuration * 0.30;
           let currentR: number;
-          if (exp.elapsed < 210) {
-            const expandP = exp.elapsed / 210;
+          if (exp.elapsed < expandDuration) {
+            const expandP = exp.elapsed / expandDuration;
             currentR = lobe.maxRadius * Math.sin((expandP * Math.PI) / 2);
           } else {
-            const rollP = (exp.elapsed - 210) / (fireballDuration - 210);
-            currentR = lobe.maxRadius * (1.0 + rollP * 0.25); // Billows slightly larger
+            const rollP = (exp.elapsed - expandDuration) / (exp.fireballDuration - expandDuration);
+            currentR = lobe.maxRadius * (1.0 + rollP * 0.28); // Billows slightly larger
           }
 
-          const alpha = Math.max(0, 1 - Math.pow(fbNorm, 1.6));
+          // Smooth cubic fade-out
+          const alpha = Math.max(0, 1 - Math.pow(fbNorm, 1.4));
 
           // Multi-layer volumetric color gradations matching GunBound explosion frames
           if (fbNorm < 0.22) {
@@ -292,22 +379,21 @@ export class DynamicExplosionEngine {
       // -------------------------------------------------------------
       // 2. Update Double Kinetic Shockwave Ring
       // -------------------------------------------------------------
-      const shockwaveDuration = 380;
-      if (exp.elapsed < shockwaveDuration) {
-        const swProgress = exp.elapsed / shockwaveDuration;
-        const swRadius = exp.baseRadius * 1.85 * Math.pow(swProgress, 0.65);
+      if (exp.elapsed < exp.shockwaveDuration) {
+        const swProgress = exp.elapsed / exp.shockwaveDuration;
+        const swRadius = exp.baseRadius * 1.35 * Math.pow(swProgress, 0.65);
         const swAlpha = Math.max(0, (1 - swProgress) * 0.9);
 
         exp.shockwaveRing.clear();
         // Primary shockwave
         exp.shockwaveRing.circle(0, 0, swRadius).stroke({
-          width: Math.max(1, 3.8 * (1 - swProgress)),
+          width: Math.max(1, 2.2 * (1 - swProgress)),
           color: 0xfef08a,
           alpha: swAlpha,
         });
         // Secondary kinetic wave
         exp.shockwaveRing.circle(0, 0, swRadius * 0.86).stroke({
-          width: Math.max(1, 2.0 * (1 - swProgress)),
+          width: Math.max(1, 1.4 * (1 - swProgress)),
           color: 0xffffff,
           alpha: swAlpha * 0.75,
         });
@@ -316,7 +402,7 @@ export class DynamicExplosionEngine {
       }
 
       // -------------------------------------------------------------
-      // 3. Update High-Velocity Spark Tracers (Streak lines)
+      // 3. Update High-Velocity Spark Tracers (Streak lines with soft easing)
       // -------------------------------------------------------------
       for (let sIdx = exp.sparks.length - 1; sIdx >= 0; sIdx--) {
         const s = exp.sparks[sIdx];
@@ -335,13 +421,14 @@ export class DynamicExplosionEngine {
         s.x += s.vx;
         s.y += s.vy;
 
-        const fade = Math.max(0, 1 - Math.pow(sRatio, 1.3));
+        // Soft exponential fade out
+        const fade = Math.max(0, Math.pow(1 - sRatio, 1.5));
         const cIdx = Math.min(s.colors.length - 1, Math.floor(sRatio * s.colors.length));
         const color = s.colors[cIdx];
 
         // Draw directional spark streak
         s.gfx.clear();
-        const streakLength = Math.max(2.5, Math.hypot(s.vx, s.vy) * 2.2);
+        const streakLength = Math.max(2.0, Math.hypot(s.vx, s.vy) * 2.0);
         const tailX = s.x - (s.vx / (Math.hypot(s.vx, s.vy) || 1)) * streakLength;
         const tailY = s.y - (s.vy / (Math.hypot(s.vx, s.vy) || 1)) * streakLength;
 
@@ -355,7 +442,7 @@ export class DynamicExplosionEngine {
       }
 
       // -------------------------------------------------------------
-      // 4. Update Rubble Debris & Volumetric Smoke Particles
+      // 4. Update Rubble Debris & Volumetric Smoke Particles (Gentle Lingering)
       // -------------------------------------------------------------
       for (let pIdx = exp.particles.length - 1; pIdx >= 0; pIdx--) {
         const p = exp.particles[pIdx];
@@ -376,21 +463,22 @@ export class DynamicExplosionEngine {
         p.gfx.position.set(p.x, p.y);
 
         if (p.type === "debris") {
-          p.gfx.alpha = Math.max(0, 1 - pLifeRatio * 0.85);
+          p.gfx.alpha = Math.max(0, (1 - pLifeRatio) * p.initialAlpha);
           if (p.rotSpeed) p.gfx.rotation += p.rotSpeed;
         } else if (p.type === "smoke") {
-          // Smoke billows and rises smoothly
-          const scale = 1.0 + pLifeRatio * 2.4;
+          // Volumetric smoke gently billows, expands and lingers with soft exponential decay
+          const scale = 1.0 + Math.pow(pLifeRatio, 0.65) * 2.4;
           p.gfx.scale.set(scale);
-          p.gfx.alpha = Math.max(0, (1 - pLifeRatio) * 0.38);
+          p.gfx.alpha = Math.max(0, Math.pow(1 - pLifeRatio, 1.35) * p.initialAlpha);
         }
       }
 
       // -------------------------------------------------------------
       // 5. Completion & Cleanup
       // -------------------------------------------------------------
-      if (progress >= 1.0 || (exp.sparks.length === 0 && exp.particles.length === 0 && exp.elapsed >= fireballDuration)) {
-        if (exp.onComplete) {
+      const allParticlesDone = exp.sparks.length === 0 && exp.particles.length === 0;
+      if (progress >= 1.0 || (allParticlesDone && exp.elapsed >= exp.fireballDuration)) {
+        if (!exp.hasTriggeredComplete && exp.onComplete) {
           exp.onComplete();
         }
         this.parentContainer.removeChild(exp.container);
