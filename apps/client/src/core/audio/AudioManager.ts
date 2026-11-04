@@ -5,6 +5,20 @@ export class AudioManager {
   public static isMusicMuted: boolean = false;
   public static volume: number = 0.7;
 
+  public static preload(soundNames: string[]) {
+    for (const soundName of soundNames) {
+      const path = soundName.endsWith(".mp3") || soundName.endsWith(".wav") || soundName.endsWith(".ogg")
+        ? `/audio/${soundName}`
+        : `/audio/${soundName}.wav`;
+      if (!this.audioCache.has(path)) {
+        const audio = new Audio(path);
+        audio.preload = "auto";
+        audio.load();
+        this.audioCache.set(path, audio);
+      }
+    }
+  }
+
   public static play(soundName: string, volScale: number = 1.0) {
     if (this.isMuted) return;
 
@@ -19,10 +33,19 @@ export class AudioManager {
       let audio = this.audioCache.get(path);
       if (!audio) {
         audio = new Audio(path);
+        audio.preload = "auto";
         this.audioCache.set(path, audio);
       }
 
-      const playInstance = audio.cloneNode() as HTMLAudioElement;
+      // Reuse original instance if idle for instant zero-latency trigger, or clone for rapid overlap
+      let playInstance: HTMLAudioElement;
+      if (audio.paused || audio.ended) {
+        audio.currentTime = 0;
+        playInstance = audio;
+      } else {
+        playInstance = audio.cloneNode(true) as HTMLAudioElement;
+      }
+
       playInstance.volume = Math.max(0, Math.min(1, this.volume * volScale));
       playInstance.play().catch(() => {
         // Fallback to .mp3 if .wav was not found

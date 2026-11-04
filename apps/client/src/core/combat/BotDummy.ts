@@ -56,6 +56,11 @@ export class BotDummy extends Container {
       this.mobile.updateHpBar();
     }
 
+    if (!this.isImmortal && this.mobile.hp <= 0) {
+      this.handleDeath("K.O.!");
+      return;
+    }
+
     // Damage animation
     const isFrontHit = impactX <= this.mobile.x;
     this.mobile.playAnimation(isFrontHit ? "fdamage" : "bdamage", false, () => {
@@ -66,16 +71,12 @@ export class BotDummy extends Container {
 
     // Spawn floating damage text with authentic hit impact
     this.spawnFloatingDamage(damage, impactX, impactY);
-
-    if (!this.isImmortal && this.mobile.hp <= 0) {
-      this.handleDeath("K.O.!");
-    }
   }
 
   public checkGroundFall(dt: number = 1.0) {
     if (this.isDead) {
-      // If dead by bunge, allow mobile to smoothly finish falling down into the abyss
-      if (this.mobile.y < this.terrain.mapHeight + 120) {
+      // Only if dead by bunge (fell off into abyss/void) should it continue falling down
+      if (this.isBotAirborne && this.mobile.y < this.terrain.mapHeight + 120) {
         this.botFallVy = Math.min(6.5, this.botFallVy + 0.25 * dt);
         this.mobile.y += this.botFallVy * dt;
       }
@@ -121,6 +122,17 @@ export class BotDummy extends Container {
     this.isDead = true;
 
     this.mobile.playAnimation("dead", false);
+
+    if (reason === "BUNGE!") {
+      this.isBotAirborne = true;
+    } else {
+      // Solid ground defeat: stay firmly resting on ground with dead sprite
+      this.isBotAirborne = false;
+      this.botFallVy = 0;
+      const placement = this.terrain.getMobileSurfacePlacement(this.mobile.x, this.mobile.y);
+      this.mobile.y = placement.y;
+      this.mobile.setTilt(placement.slope.angle);
+    }
 
     this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, reason);
 

@@ -5,12 +5,13 @@ import { AudioManager } from "../audio/AudioManager";
  * ThorEntity
  * 
  * Authentic GunBound Thor orbital satellite weapon.
- * - 20-Frame animated core from /sprites/effects/thor.png.
- * - Floating celestial sky physics above the battlefield.
- * - Level & damage text displays.
- * - High-energy directed orbital laser beam strike.
+ * - 20-Frame animated core from /sprites/effects/thor.png (160px stride, 159x99 px frame).
+ * - True celestial pendulum harmonic physics swaying above the battlefield.
+ * - Smooth lerped aiming & orbital laser beam strike without teleports or snapping.
+ * - Retro level & accumulated damage text displays matching GunBound.
  */
 export class ThorEntity extends Container {
+  private spriteContainer: Container;
   private thorSprite?: AnimatedSprite;
   private levelText: Text;
   private damageText: Text;
@@ -19,12 +20,15 @@ export class ThorEntity extends Container {
   public level: number = 1;
   public accumulatedDamage: number = 0;
 
-  public baseX: number = 705;
-  public baseY: number = 115;
-  private hoverTime: number = 0;
+  // Positioned higher up in the celestial sky as requested (baseY = 68)
+  public baseX: number = 720;
+  public baseY: number = 68;
+  private time: number = 0;
 
   private isFiringBeam: boolean = false;
   private beamTimer: number = 0;
+  private targetAngle: number = 0;
+  private currentRotation: number = 0;
 
   constructor() {
     super();
@@ -34,28 +38,32 @@ export class ThorEntity extends Container {
     this.laserGraphic = new Graphics();
     this.addChild(this.laserGraphic);
 
-    // Retro text styles matching GunBound / DragonBound
+    this.spriteContainer = new Container();
+    this.addChild(this.spriteContainer);
+
+    // Retro text styles matching GunBound / DragonBound (Verdana / Inter Bold with black outline)
     const lvlStyle = new TextStyle({
-      fontFamily: "Inter, Arial, sans-serif",
-      fontSize: 13,
+      fontFamily: "Verdana, Arial, sans-serif",
+      fontSize: 14,
       fontWeight: "900",
       fill: "#f73918",
-      stroke: { color: "#000000", width: 3 },
+      stroke: { color: "#000000", width: 3.5 },
     });
 
     const dmgStyle = new TextStyle({
-      fontFamily: "Inter, Arial, sans-serif",
-      fontSize: 11,
+      fontFamily: "Verdana, Arial, sans-serif",
+      fontSize: 12,
       fontWeight: "800",
       fill: "#ff5a42",
-      stroke: { color: "#000000", width: 3 },
+      stroke: { color: "#000000", width: 3.5 },
     });
 
     this.levelText = new Text({ text: `Lv. ${this.level}`, style: lvlStyle });
     this.damageText = new Text({ text: `${this.accumulatedDamage}`, style: dmgStyle });
 
-    this.levelText.position.set(45, -20);
-    this.damageText.position.set(45, -4);
+    // Positioned beside/below the satellite body matching reference screenshot
+    this.levelText.position.set(22, 18);
+    this.damageText.position.set(28, 34);
 
     this.addChild(this.levelText);
     this.addChild(this.damageText);
@@ -68,13 +76,18 @@ export class ThorEntity extends Container {
       const texture = await Assets.load<Texture>("/sprites/effects/thor.png");
       const baseTex = texture.source;
 
+      // Authentic GunBound spritesheet:
+      // Total width: 3199px across 20 frames.
+      // Each frame is 159x99 px, separated by 1px spacing (stride = 160px).
+      // Center anchor: cx = 98, cy = 59.
+      const frameStride = 160;
       const frameWidth = 159;
       const frameHeight = 99;
       const frameCount = 20;
 
       const frames: Texture[] = [];
       for (let i = 0; i < frameCount; i++) {
-        const rect = new Rectangle(i * frameWidth, 0, frameWidth, frameHeight);
+        const rect = new Rectangle(i * frameStride, 0, frameWidth, frameHeight);
         const t = new Texture({
           source: baseTex,
           frame: rect,
@@ -87,12 +100,12 @@ export class ThorEntity extends Container {
       }
 
       this.thorSprite = new AnimatedSprite(frames);
-      this.thorSprite.animationSpeed = 0.32; // ~19 FPS authentic GunBound rate
-      this.thorSprite.play();
+      this.thorSprite.animationSpeed = 0.32; // ~19 FPS authentic GunBound breathing rate
+      this.thorSprite.loop = true;
       this.thorSprite.anchor.set(98 / frameWidth, 59 / frameHeight);
+      this.thorSprite.play();
 
-      // Insert sprite behind texts and laser
-      this.addChildAt(this.thorSprite, 0);
+      this.spriteContainer.addChild(this.thorSprite);
     } catch (e) {
       console.warn("[ThorEntity] Failed to load thor.png sprite:", e);
     }
@@ -106,22 +119,21 @@ export class ThorEntity extends Container {
   }
 
   /**
-   * Fires the Thor satellite laser beam directly down towards (targetX, targetY)
+   * Fires the Thor satellite laser beam directly down towards (targetX, targetY).
+   * Smoothly aims and rotates without abrupt teleporting or snapping!
    */
   public fireBeam(targetX: number, targetY: number, damage: number = 180): Promise<void> {
     return new Promise((resolve) => {
       this.isFiringBeam = true;
-      this.beamTimer = 220; // Beam duration in ms
+      this.beamTimer = 260; // Beam duration in ms
 
       // Calculate relative vector from Thor to target
       const dx = targetX - this.x;
       const dy = targetY - this.y;
-      const angle = Math.atan2(dy, dx);
+      const rawAngle = Math.atan2(dy, dx);
 
-      // Rotate Thor sprite towards firing vector
-      if (this.thorSprite) {
-        this.thorSprite.rotation = angle + Math.PI / 2;
-      }
+      // Antennas point towards target when rotated
+      this.targetAngle = rawAngle + Math.PI / 2;
 
       // Draw high-energy orbital laser beam
       this.laserGraphic.clear();
@@ -129,7 +141,7 @@ export class ThorEntity extends Container {
       // Outer golden/cyan halo
       this.laserGraphic.moveTo(0, 0);
       this.laserGraphic.lineTo(dx, dy);
-      this.laserGraphic.stroke({ width: 14, color: 0x38bdf8, alpha: 0.6 });
+      this.laserGraphic.stroke({ width: 14, color: 0x38bdf8, alpha: 0.65 });
 
       // Core energetic beam
       this.laserGraphic.moveTo(0, 0);
@@ -137,8 +149,8 @@ export class ThorEntity extends Container {
       this.laserGraphic.stroke({ width: 6, color: 0xffffff, alpha: 0.95 });
 
       // Impact blast flare at target ground
-      this.laserGraphic.circle(dx, dy, 22).fill({ color: 0x38bdf8, alpha: 0.5 });
-      this.laserGraphic.circle(dx, dy, 12).fill({ color: 0xffffff, alpha: 0.9 });
+      this.laserGraphic.circle(dx, dy, 24).fill({ color: 0x38bdf8, alpha: 0.55 });
+      this.laserGraphic.circle(dx, dy, 13).fill({ color: 0xffffff, alpha: 0.95 });
 
       // Sound effect
       AudioManager.play("12blast", 0.85);
@@ -153,29 +165,45 @@ export class ThorEntity extends Container {
       setTimeout(() => {
         this.laserGraphic.clear();
         this.isFiringBeam = false;
-        if (this.thorSprite) {
-          this.thorSprite.rotation = 0; // Return to neutral
-        }
         resolve();
-      }, 220);
+      }, 260);
     });
   }
 
+  /**
+   * Harmonic celestial pendulum update:
+   * Sways continuously like a hanging pendulum with fluid harmonic oscillation.
+   */
   public update(dt: number) {
-    this.hoverTime += dt * 0.05;
+    this.time += dt * 0.035;
 
-    // Smooth celestial hover floating across the sky
-    if (!this.isFiringBeam) {
-      const hoverY = Math.sin(this.hoverTime * 1.6) * 5.5;
-      const hoverX = Math.cos(this.hoverTime * 0.8) * 10;
-      this.y = this.baseY + hoverY;
-      this.x = this.baseX + hoverX;
+    // Harmonic pendulum sway calculations
+    // Horizontal sway: ±32 pixels
+    const swayX = Math.sin(this.time) * 32;
+    // True pendulum vertical dip: slightly drops at maximum swing amplitude
+    const swayY = (1 - Math.cos(this.time * 2)) * 6;
+    // Pendulum rocking tilt: tilts in synchronization with the swing (±0.22 rad / ~12.5 deg)
+    const naturalPendulumAngle = Math.sin(this.time) * 0.22;
+
+    this.x = this.baseX + swayX;
+    this.y = this.baseY + swayY;
+
+    if (this.thorSprite) {
+      if (this.isFiringBeam) {
+        // Smoothly lerp towards target aim angle while firing
+        this.currentRotation += (this.targetAngle - this.currentRotation) * 0.25 * dt;
+      } else {
+        // Smoothly lerp back to the natural pendulum rocking angle (zero snapping / teleporting!)
+        this.currentRotation += (naturalPendulumAngle - this.currentRotation) * 0.08 * dt;
+      }
+
+      this.spriteContainer.rotation = this.currentRotation;
     }
 
-    // Beam decay
+    // Laser beam fade out
     if (this.isFiringBeam && this.beamTimer > 0) {
       this.beamTimer -= dt * 16.66;
-      this.laserGraphic.alpha = Math.max(0, this.beamTimer / 220);
+      this.laserGraphic.alpha = Math.max(0, this.beamTimer / 260);
     }
   }
 

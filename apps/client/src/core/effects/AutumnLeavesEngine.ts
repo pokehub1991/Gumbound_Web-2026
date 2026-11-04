@@ -11,42 +11,63 @@ interface AutumnLeaf {
   rotSpeed: number;
   baseScale: number;
   color: number;
+  isForeground: boolean;
 }
 
 /**
  * AutumnLeavesEngine
  * 
- * Ambient system of falling autumn leaves with realistic aerodynamic drift:
- * - Gravity fall.
- * - Dynamic wind blow towards the left.
- * - Sinusoidal flutter & 3D tumbling rotation.
- * - Layered between the panoramic background and foreground terrain.
+ * Ambient system of falling autumn leaves with multi-layer depth & realistic aerodynamic drift:
+ * - Edge-to-edge trajectory: Spawns from the far background border and drifts all the way across until reaching the opposite background border.
+ * - Dual-layer depth: Majority of leaves drift behind the terrain, while dynamic foreground leaves occasionally drift in front of the terrain and vehicles.
+ * - Sinusoidal flutter & 3D tumbling rotation with gravity descent and dynamic wind.
  */
 export class AutumnLeavesEngine {
-  public container: Container;
+  public backgroundContainer: Container;
+  public foregroundContainer: Container;
+  public get container(): Container {
+    return this.backgroundContainer;
+  }
+
   private leaves: AutumnLeaf[] = [];
   private mapWidth: number;
   private mapHeight: number;
 
-  // Warm autumn palette: Golden Yellow, Amber Orange, Rust Red, Warm Maple
+  // Extended outer background boundaries to ensure edge-to-edge entry & exit without pop-ins
+  private minX: number = -500;
+  private maxX: number = 1950;
+  private minY: number = -350;
+  private maxY: number = 1350;
+
+  // Warm autumn palette: Amber Gold, Deep Autumn Orange, Rust Crimson, Warm Maple, Earthy Ochre
   private readonly leafColors = [
-    0xf59e0b, // Amber Gold
-    0xea580c, // Deep Autumn Orange
-    0xdc2626, // Rust Crimson
-    0xfb923c, // Warm Maple
-    0xb45309, // Earthy Ochre
+    0xf59e0b,
+    0xea580c,
+    0xdc2626,
+    0xfb923c,
+    0xb45309,
   ];
 
-  constructor(parent?: Container, mapWidth: number = 1409, mapHeight: number = 1210, count: number = 24) {
-    this.container = new Container();
+  constructor(parent?: Container, mapWidth: number = 1409, mapHeight: number = 1210, count: number = 28) {
+    this.backgroundContainer = new Container();
+    this.foregroundContainer = new Container();
+
     this.mapWidth = mapWidth;
     this.mapHeight = mapHeight;
+    this.updateBounds();
 
     if (parent) {
-      parent.addChild(this.container);
+      parent.addChild(this.backgroundContainer);
     }
 
     this.spawnLeaves(count);
+  }
+
+  private updateBounds() {
+    this.minX = -500;
+    this.maxX = this.mapWidth + 550;
+    this.minY = -350;
+    this.maxY = this.mapHeight + 250;
   }
 
   private spawnLeaves(count: number) {
@@ -55,24 +76,28 @@ export class AutumnLeavesEngine {
       const color = this.leafColors[Math.floor(Math.random() * this.leafColors.length)];
       this.drawLeafShape(g, color);
 
-      this.container.addChild(g);
+      // ~25% of leaves fall in front of terrain for depth perception
+      const isForeground = Math.random() < 0.28;
+      const targetContainer = isForeground ? this.foregroundContainer : this.backgroundContainer;
+      targetContainer.addChild(g);
 
-      // Random initial distribution across battlefield sky
-      const x = Math.random() * (this.mapWidth + 300) - 100;
-      const y = Math.random() * (this.mapHeight * 0.85) - 80;
-      const baseScale = 0.85 + Math.random() * 0.45;
+      // Distribute across the entire wide background space
+      const x = this.minX + Math.random() * (this.maxX - this.minX);
+      const y = this.minY + Math.random() * (this.maxY - this.minY);
+      const baseScale = isForeground ? (1.15 + Math.random() * 0.35) : (0.80 + Math.random() * 0.35);
 
       this.leaves.push({
         graphic: g,
         x,
         y,
-        vx: -(1.4 + Math.random() * 1.6), // Dynamic leftward wind draft
-        vy: 0.6 + Math.random() * 0.65,  // Gentle gravity descent
+        vx: -(1.4 + Math.random() * 1.6), // Leftward wind draft
+        vy: 0.65 + Math.random() * 0.65, // Gentle gravity fall
         wobbleTime: Math.random() * 10,
-        wobbleSpeed: 0.04 + Math.random() * 0.035,
-        rotSpeed: (Math.random() - 0.5) * 0.035,
+        wobbleSpeed: 0.035 + Math.random() * 0.035,
+        rotSpeed: (Math.random() - 0.5) * 0.03,
         baseScale,
         color,
+        isForeground,
       });
 
       g.position.set(x, y);
@@ -125,15 +150,38 @@ export class AutumnLeavesEngine {
 
       // 3D tumbling perspective effect in the wind
       const tumble = Math.sin(leaf.wobbleTime * 1.8);
-      leaf.graphic.scale.x = leaf.baseScale * (0.4 + 0.6 * Math.abs(tumble));
+      leaf.graphic.scale.x = leaf.baseScale * (0.35 + 0.65 * Math.abs(tumble));
       leaf.graphic.scale.y = leaf.baseScale;
 
       leaf.graphic.position.set(leaf.x, leaf.y);
 
-      // Wrap around when exiting left or bottom
-      if (leaf.x < -80 || leaf.y > this.mapHeight + 40) {
-        leaf.x = this.mapWidth + 60 + Math.random() * 180;
-        leaf.y = Math.random() * (this.mapHeight * 0.5) - 60;
+      // Edge-to-edge wrap around: only reset once completely past outer background borders
+      if (leaf.x < this.minX || leaf.y > this.maxY) {
+        // Respawn along top border or right border
+        if (Math.random() < 0.65) {
+          // Enter from far right background edge
+          leaf.x = this.maxX + Math.random() * 80;
+          leaf.y = this.minY + Math.random() * (this.maxY - this.minY) * 0.7;
+        } else {
+          // Enter from top background edge
+          leaf.x = this.minX + Math.random() * (this.maxX - this.minX);
+          leaf.y = this.minY - Math.random() * 80;
+        }
+
+        // Dynamically alternate layers for natural depth
+        const newIsForeground = Math.random() < 0.28;
+        if (newIsForeground !== leaf.isForeground) {
+          leaf.isForeground = newIsForeground;
+          leaf.baseScale = newIsForeground ? (1.15 + Math.random() * 0.35) : (0.80 + Math.random() * 0.35);
+          if (newIsForeground) {
+            this.backgroundContainer.removeChild(leaf.graphic);
+            this.foregroundContainer.addChild(leaf.graphic);
+          } else {
+            this.foregroundContainer.removeChild(leaf.graphic);
+            this.backgroundContainer.addChild(leaf.graphic);
+          }
+        }
+
         leaf.wobbleTime = Math.random() * 10;
       }
     }
@@ -142,9 +190,11 @@ export class AutumnLeavesEngine {
   public setMapBounds(w: number, h: number) {
     this.mapWidth = w;
     this.mapHeight = h;
+    this.updateBounds();
   }
 
   public destroy() {
-    this.container.destroy({ children: true });
+    this.backgroundContainer.destroy({ children: true });
+    this.foregroundContainer.destroy({ children: true });
   }
 }

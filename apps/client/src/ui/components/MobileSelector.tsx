@@ -52,41 +52,40 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
   };
 
   return (
-    <div style={{
-      background: "rgba(11, 17, 33, 0.97)",
-      border: "1px solid rgba(56, 189, 248, 0.35)",
-      borderRadius: "10px",
-      padding: "12px 14px",
-      boxShadow: "0 16px 36px rgba(0,0,0,0.85), 0 0 20px rgba(56, 189, 248, 0.15)",
+    <div className="pixel-box" style={{
+      borderRadius: "6px",
+      padding: "14px 16px",
       color: "#f8fafc",
-      fontFamily: "Inter, sans-serif",
-      maxWidth: "520px",
+      fontFamily: "'Pixelify Sans', cursive, sans-serif",
+      maxWidth: "540px",
       width: "92vw",
       display: "flex",
       flexDirection: "column",
-      backdropFilter: "blur(12px)",
+      imageRendering: "pixelated",
     }}>
       {/* Header */}
       <div style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        marginBottom: "10px",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        marginBottom: "12px",
+        borderBottom: "2px solid #000000",
         paddingBottom: "8px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "16px" }}>🚀</span>
-          <h2 style={{ margin: 0, fontSize: "14px", letterSpacing: "0.5px", color: "#38bdf8", fontWeight: 800 }}>
+          <span style={{ fontSize: "18px" }}>🚀</span>
+          <h2 style={{ margin: 0, fontSize: "16px", letterSpacing: "0.5px", color: "#38bdf8", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
             {title}
           </h2>
           <span style={{
-            fontSize: "10px",
-            background: "rgba(56, 189, 248, 0.15)",
+            fontSize: "12px",
+            background: "rgba(56, 189, 248, 0.2)",
             color: "#38bdf8",
+            border: "1px solid #000",
             padding: "2px 6px",
-            borderRadius: "10px",
+            borderRadius: "3px",
             fontWeight: 700,
+            textShadow: "1px 1px 0 #000",
           }}>
             {mobiles.length} Disponibles
           </span>
@@ -94,15 +93,15 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
 
         {onClose && (
           <button
+            className="pixel-btn"
             onClick={onClose}
             style={{
-              background: "rgba(51, 65, 85, 0.7)",
-              border: "none",
-              borderRadius: "6px",
+              background: "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
+              borderRadius: "3px",
               color: "#fff",
               cursor: "pointer",
               padding: "4px 8px",
-              fontSize: "12px",
+              fontSize: "13px",
               fontWeight: 700,
               lineHeight: 1,
             }}
@@ -128,51 +127,40 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
           return (
             <button
               key={m.id}
+              className="pixel-btn"
               onClick={() => handleSelect(m.id)}
               style={{
                 background: isSelected
-                  ? "linear-gradient(135deg, rgba(56, 189, 248, 0.3), rgba(15, 23, 42, 0.95))"
-                  : "rgba(22, 30, 49, 0.75)",
-                border: isSelected ? "1.5px solid #38bdf8" : "1px solid rgba(51, 65, 85, 0.7)",
-                borderRadius: "6px",
+                  ? "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)"
+                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+                border: isSelected ? "2px solid #38bdf8" : "2px solid #000000",
+                borderRadius: "4px",
                 padding: "6px 4px",
                 cursor: "pointer",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: "2px",
-                transition: "all 0.12s ease",
+                gap: "3px",
                 outline: "none",
                 textAlign: "center",
-                boxShadow: isSelected ? `0 0 10px ${badgeColor}50` : "none",
-              }}
-              onMouseEnter={(e) => {
-                if (!isSelected) {
-                  e.currentTarget.style.borderColor = "#60a5fa";
-                  e.currentTarget.style.background = "rgba(30, 41, 59, 0.9)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isSelected) {
-                  e.currentTarget.style.borderColor = "rgba(51, 65, 85, 0.7)";
-                  e.currentTarget.style.background = "rgba(22, 30, 49, 0.75)";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }
+                boxShadow: isSelected
+                  ? "0 0 10px #38bdf8, inset 1px 1px 0 #fff"
+                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
               }}
             >
               {/* Mini Color Tag with 3-letter abbreviation */}
               <div style={{
-                background: `${badgeColor}25`,
-                border: `1px solid ${badgeColor}60`,
+                background: `${badgeColor}35`,
+                border: "1px solid #000",
                 color: badgeColor,
                 borderRadius: "3px",
-                fontSize: "8.5px",
-                fontWeight: 900,
-                padding: "1px 4px",
+                fontSize: "10px",
+                fontWeight: 700,
+                padding: "1px 5px",
                 letterSpacing: "0.5px",
                 lineHeight: 1.1,
+                textShadow: "1px 1px 0 #000",
               }}>
                 {m.name.slice(0, 3).toUpperCase()}
               </div>
@@ -181,23 +169,25 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
               <div style={{
                 color: "#ffffff",
                 fontWeight: 700,
-                fontSize: "11px",
+                fontSize: "13px",
                 lineHeight: 1.2,
                 marginTop: "1px",
                 maxWidth: "100%",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                textShadow: "1px 1px 0 #000",
               }}>
                 {m.name}
               </div>
 
               {/* Compact Angle Range */}
               <div style={{
-                color: "#94a3b8",
-                fontSize: "9px",
+                color: isSelected ? "#e0f2fe" : "#94a3b8",
+                fontSize: "11px",
                 fontWeight: 600,
                 lineHeight: 1,
+                textShadow: "1px 1px 0 #000",
               }}>
                 {m.minAngle}°-{m.maxAngle}°
               </div>

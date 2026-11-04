@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gumbound Web 2026</title>
+    <!-- Pixelify Sans Pixel-Art Font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       * {
         box-sizing: border-box;
@@ -15,7 +19,10 @@
         height: 100%;
         overflow: hidden;
         background: #dca04c;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-family: 'Pixelify Sans', cursive, sans-serif;
+        -webkit-font-smoothing: none;
+        -moz-osx-font-smoothing: grayscale;
+        image-rendering: pixelated;
       }
       #app {
         position: relative;
@@ -46,9 +53,42 @@
         height: 100%;
         z-index: 10;
         pointer-events: none;
+        font-family: 'Pixelify Sans', cursive, sans-serif;
+      }
+      button, input, select, textarea {
+        font-family: 'Pixelify Sans', cursive, sans-serif;
       }
       body.is-grabbing, body.is-grabbing * {
         cursor: url('/cursors/hand.png') 9 8, grabbing !important;
+      }
+
+      /* Pixel Art UI Bevels & Buttons */
+      .pixel-box {
+        background: linear-gradient(180deg, #131d38 0%, #0a1020 100%);
+        border: 2px solid #000000;
+        box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.25),
+                    inset -1px -1px 0px rgba(0, 0, 0, 0.7),
+                    0 4px 0px rgba(0, 0, 0, 0.5);
+      }
+
+      .pixel-btn {
+        font-family: 'Pixelify Sans', cursive, sans-serif;
+        border: 2px solid #000000;
+        box-shadow: inset 1px 1px 0px rgba(255, 255, 255, 0.35),
+                    inset -1px -1px 0px rgba(0, 0, 0, 0.6),
+                    0 2px 0px rgba(0, 0, 0, 0.6);
+        transition: transform 0.05s ease, filter 0.05s ease;
+        image-rendering: pixelated;
+      }
+
+      .pixel-btn:hover {
+        filter: brightness(1.12);
+      }
+
+      .pixel-btn:active {
+        transform: translate(1px, 2px);
+        box-shadow: inset -1px -1px 0px rgba(255, 255, 255, 0.2),
+                    inset 1px 1px 0px rgba(0, 0, 0, 0.8);
       }
     </style>
   </head>
@@ -60,4 +100,3 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

@@ -114,9 +114,15 @@ export class CombatArena {
     this.thor = new ThorEntity();
     this.engine.worldContainer.addChild(this.thor);
 
+    // Foreground atmospheric autumn leaves (drifting in front of terrain & mobiles for depth)
+    this.engine.worldContainer.addChild(this.leavesEngine.foregroundContainer);
+
     // 6. Connect AimController
     this.aimController = new AimController(this.terrain);
     this.aimController.setActiveMobile(this.player);
+
+    // Preload firing and impact audio effects so they play with zero network/decoding latency
+    AudioManager.preload(["11fire.wav", "12fire.wav", "11blast.wav", "12blast.wav"]);
 
     this.aimController.onFireCallback = (angle, power, shotType) => {
       this.fireShot(angle, power, shotType);
@@ -227,6 +233,20 @@ export class CombatArena {
       }
     }
 
+    // If dead, do not trigger airborne drop animation on solid ground
+    if (this.player.hp <= 0) {
+      if (this.isPlayerAirborne && this.player.y < this.terrain.mapHeight + 100) {
+        // Only if player was already falling into the abyss (bunge)
+        this.playerFallVy = Math.min(6.5, this.playerFallVy + 0.25 * dt);
+        this.player.y += this.playerFallVy * dt;
+      } else {
+        const pPlacement = this.terrain.getMobileSurfacePlacement(this.player.x, this.player.y);
+        this.player.y = pPlacement.y;
+        this.player.setTilt(pPlacement.slope.angle);
+      }
+      return;
+    }
+
     // Instant ground fall: whenever terrain beneath is destroyed, mobile falls immediately!
     const pPlacement = this.terrain.getMobileSurfacePlacement(this.player.x, this.player.y);
     const dropDistance = pPlacement.y - this.player.y;
@@ -308,6 +328,18 @@ export class CombatArena {
   public setPlayerMobile(mobileId: number) {
     this.player.setMobileType(mobileId);
     this.aimController.setActiveMobile(this.player);
+
+    const mobDef = MOBILES_DATA[mobileId];
+    if (mobDef) {
+      const soundsToPreload: string[] = [];
+      if (mobDef.sound1) soundsToPreload.push(mobDef.sound1);
+      if (mobDef.sound2) soundsToPreload.push(mobDef.sound2);
+      if (mobDef.soundSS) soundsToPreload.push(mobDef.soundSS);
+      if (mobDef.soundExplode) soundsToPreload.push(mobDef.soundExplode);
+      if (soundsToPreload.length > 0) {
+        AudioManager.preload(soundsToPreload);
+      }
+    }
   }
 
   public setBotMobile(mobileId: number) {
@@ -386,11 +418,6 @@ export class CombatArena {
     this.engine.userHasManualCamera = false;
     this.engine.panTo(this.player.x, this.player.y);
 
-    // Compute firing sound
-    const mobileDef = MOBILES_DATA[this.player.mobileType] || MOBILES_DATA[0];
-    const defaultSound = shotType === 2 ? "12fire" : "11fire";
-    const soundFire = (shotType === 2 ? mobileDef.soundSS : shotType === 1 ? mobileDef.sound2 : mobileDef.sound1) || defaultSound;
-
     // Compute ballistics from mobile root coordinates (computeMuzzle calculates exact cannon pivot)
     const params: FireParams = {
       x: this.player.x,
@@ -413,28 +440,27 @@ export class CombatArena {
 
     const trajectories = BallisticsEngine.simulateShot(params);
 
-    // 1. Transition pause: 0ms for Shot 1 (fires instantly), 70ms for Shot 2, 80ms for SS (+10ms)
+    // 1. Transition pause: +10ms delay per shot type (Tiro 1: 10ms, Tiro 2: 80ms, SS: 90ms)
     const fireAnim = shotType === 2 ? "sfire" : shotType === 1 ? "fire2" : "fire1";
-    const chargeToFireDelayMs = shotType === 0 ? 0 : shotType === 1 ? 70 : 80;
+    const chargeToFireDelayMs = shotType === 0 ? 10 : shotType === 1 ? 80 : 90;
 
-    if (chargeToFireDelayMs > 0) {
-      setTimeout(() => {
-        this.player.playAnimation(fireAnim, false, () => {
-          this.player.playAnimation("normal");
-        });
-      }, chargeToFireDelayMs);
-    } else {
+    const startFiringAnimation = () => {
       this.player.playAnimation(fireAnim, false, () => {
         this.player.playAnimation("normal");
       });
+    };
+
+    if (chargeToFireDelayMs > 0) {
+      setTimeout(startFiringAnimation, chargeToFireDelayMs);
+    } else {
+      startFiringAnimation();
     }
 
     // 2. Projectile ejection blast timing (transition delay + recoil animation timing)
-    const blastDelayMs = chargeToFireDelayMs + (shotType === 2 ? 780 : shotType === 1 ? 620 : 300);
+    const blastDelayMs = chargeToFireDelayMs + (shotType === 2 ? 780 : shotType === 1 ? 620 : 220);
 
     setTimeout(() => {
-      // 3. Firing blast audio and projectile trajectory launch
-      AudioManager.play(soundFire, 0.9);
+      // 3. Real shot trigger: Projectiles launch with synchronized firing audio and muzzle blast effect
       this.launchTrajectories(trajectories);
     }, blastDelayMs);
   }
@@ -456,10 +482,17 @@ export class CombatArena {
       const delay = traj.launchDelayMs !== undefined ? traj.launchDelayMs : idx * 60;
 
       setTimeout(() => {
-        // Trigger firing sound on staggered launches (idx > 0)
-        if (idx > 0 && delay > 0) {
-          AudioManager.play(traj.soundFire || soundFire, 0.75);
-        }
+        // Trigger firing sound synchronized EXACTLY when projectile shoots out
+        const soundToPlay = traj.soundFire || soundFire;
+        const volume = idx === 0 ? 0.9 : 0.75;
+        AudioManager.play(soundToPlay, volume);
+
+        // Trigger firing visual effect (muzzle flash, sparks and smoke) synchronized at muzzle position
+        const launchPos = traj.points[0] || { x: this.player.x, y: this.player.y };
+        const launchAngle = traj.points.length > 1
+          ? (Math.atan2(traj.points[1].y - traj.points[0].y, traj.points[1].x - traj.points[0].x) * 180) / Math.PI
+          : this.player.angleDeg;
+        this.destructionParticles.spawnMuzzleBlast(launchPos.x, launchPos.y, launchAngle, this.selectedShotType);
 
         const proj = new ProjectileEntity(
           traj.points,
@@ -543,6 +576,17 @@ export class CombatArena {
     this.player.updateHpBar();
     this.player.showDamagePopup(damage);
 
+    if (this.player.hp <= 0) {
+      this.isPlayerAirborne = false;
+      this.aimController.isAirborne = false;
+      this.player.playAnimation("dead", false);
+      AudioManager.play("result_lose.mp3", 0.6);
+      setTimeout(() => {
+        this.respawnPlayer();
+      }, 2000);
+      return;
+    }
+
     const isFrontHit =
       (this.player.facing === 1 && impactX >= this.player.x) ||
       (this.player.facing === -1 && impactX <= this.player.x);
@@ -552,14 +596,6 @@ export class CombatArena {
         this.player.playAnimation("normal");
       }
     });
-
-    if (this.player.hp <= 0) {
-      this.player.playAnimation("dead", false);
-      AudioManager.play("result_lose.mp3", 0.6);
-      setTimeout(() => {
-        this.respawnPlayer();
-      }, 2000);
-    }
   }
 
   public respawnPlayer() {
