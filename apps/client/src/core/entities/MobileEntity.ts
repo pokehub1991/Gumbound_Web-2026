@@ -64,6 +64,7 @@ export class MobileEntity extends Container {
   // Floating Chat Bubble / Cloud
   private chatBubbleContainer?: Container;
   private chatBubbleTimeout?: number;
+  public activeFontFamily: string = "Silkscreen";
 
   constructor(config: MobileEntityConfig) {
     super();
@@ -100,8 +101,8 @@ export class MobileEntity extends Container {
     this.aimAngleText = new Text({
       text: `${this.angleDeg}°`,
       style: new TextStyle({
-        fontFamily: ["Segoe UI This", "Pixelify Sans", "Arial"],
-        fontSize: 12,
+        fontFamily: ["Silkscreen", "GameFont", "Arial"],
+        fontSize: 11,
         fontWeight: "900",
         fill: "#ffffff",
         stroke: { color: "#000000", width: 3 },
@@ -117,8 +118,8 @@ export class MobileEntity extends Container {
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
-      fontFamily: ["Pixelify Sans", "Segoe UI This", "Arial"],
-      fontSize: 12,
+      fontFamily: ["Silkscreen", "GameFont", "Arial"],
+      fontSize: 11,
       fontWeight: "bold",
       fill: config.team === "A" ? "#f59e0b" : "#38bdf8",
       stroke: { color: "#000000", width: 3 },
@@ -141,6 +142,16 @@ export class MobileEntity extends Container {
 
     // Load authentic mobile EPA spritesheet
     this.loadSprite();
+  }
+
+  public updateFontFamily(fontName: string) {
+    this.activeFontFamily = fontName;
+    if (this.nameText) {
+      this.nameText.style.fontFamily = [fontName, "Silkscreen", "EditUndo", "Pixeboy", "Arial"];
+    }
+    if (this.aimAngleText) {
+      this.aimAngleText.style.fontFamily = [fontName, "Silkscreen", "EditUndo", "Pixeboy", "Arial"];
+    }
   }
 
   public setNickname(name: string, team?: "A" | "B") {
@@ -204,6 +215,17 @@ export class MobileEntity extends Container {
     this.updateAimPointer();
   }
 
+  /**
+   * GunBound Authentic True Aim Angle (Ángulo Real respecto al horizonte):
+   * Calculates the real ballistic firing angle relative to the horizontal world plane,
+   * factoring in terrain ground slope and facing direction.
+   */
+  public getTrueAimAngle(): number {
+    const slopeDeg = (this.slopeAngle * 180) / Math.PI;
+    const tiltDeg = this.facing === 1 ? -slopeDeg : slopeDeg;
+    return Math.round(this.angleDeg + tiltDeg);
+  }
+
   public updateAimPointer() {
     this.aimArrowGraphics.clear();
 
@@ -215,22 +237,32 @@ export class MobileEntity extends Container {
     const gaugeRadius = 48;
     const innerRadius = 22;
 
+    // In GunBound, the protractor is strictly horizontal to the horizon (rotation = 0).
+    // The mobile's tilt on ground slopes shifts the allowable firing arc (green sector) and needle
+    // relative to the horizontal world coordinate frame.
+    const slopeDeg = (this.slopeAngle * 180) / Math.PI;
+    const tiltDeg = this.facing === 1 ? -slopeDeg : slopeDeg;
+
+    const trueMinDeg = minAng + tiltDeg;
+    const trueMaxDeg = maxAng + tiltDeg;
+    const trueNeedleDeg = this.angleDeg + tiltDeg;
+
     let rotRad: number;
     let minRad: number;
     let maxRad: number;
 
     if (this.facing === 1) {
-      rotRad = -(this.angleDeg * Math.PI) / 180;
-      minRad = -(minAng * Math.PI) / 180;
-      maxRad = -(maxAng * Math.PI) / 180;
+      rotRad = -(trueNeedleDeg * Math.PI) / 180;
+      minRad = -(trueMinDeg * Math.PI) / 180;
+      maxRad = -(trueMaxDeg * Math.PI) / 180;
     } else {
-      rotRad = -((180 - this.angleDeg) * Math.PI) / 180;
-      minRad = -((180 - minAng) * Math.PI) / 180;
-      maxRad = -((180 - maxAng) * Math.PI) / 180;
+      rotRad = -((180 - trueNeedleDeg) * Math.PI) / 180;
+      minRad = -((180 - trueMinDeg) * Math.PI) / 180;
+      maxRad = -((180 - trueMaxDeg) * Math.PI) / 180;
     }
 
-    // Protractor tilts with tank body on slopes and anchors precisely at mobile's nose/muzzle
-    this.aimContainer.rotation = this.slopeAngle;
+    // Protractor stays horizontal (level with the horizon) and anchors at mobile's cannon/nose mount
+    this.aimContainer.rotation = 0;
     const cosS = Math.cos(this.slopeAngle);
     const sinS = Math.sin(this.slopeAngle);
     const localMountX = this.facing * 20;
@@ -479,8 +511,8 @@ export class MobileEntity extends Container {
   public showDamagePopup(damage: number) {
     if (damage <= 0) return;
     const style = new TextStyle({
-      fontFamily: ["Segoe UI This", "Pixelify Sans", "Impact", "sans-serif"],
-      fontSize: 22,
+      fontFamily: [this.activeFontFamily, "Silkscreen", "EditUndo", "Pixeboy", "sans-serif"],
+      fontSize: 20,
       fontWeight: "bold",
       fill: damage >= 300 ? "#ff2a5f" : "#fbbf24",
       stroke: { color: "#000000", width: 4 },
@@ -524,14 +556,14 @@ export class MobileEntity extends Container {
     this.chatBubbleContainer = container;
 
     const textStyle = new TextStyle({
-      fontFamily: ["Pixelify Sans", "Segoe UI This", "Arial", "sans-serif"],
-      fontSize: 12,
+      fontFamily: [this.activeFontFamily, "Silkscreen", "EditUndo", "Pixeboy", "sans-serif"],
+      fontSize: 10,
       fontWeight: "bold",
       fill: "#000000",
       wordWrap: true,
       wordWrapWidth: 160,
       align: "center",
-      lineHeight: 15,
+      lineHeight: 14,
     });
 
     const textObj = new Text({ text: message.trim(), style: textStyle });

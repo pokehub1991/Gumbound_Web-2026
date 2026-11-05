@@ -20,45 +20,46 @@ export const ChatBox: React.FC = () => {
   };
 
   return (
-    <div style={{
+    <div className="pixel-box" style={{
       display: "flex",
       flexDirection: "column",
       height: "100%",
-      background: "rgba(18, 25, 33, 0.9)",
-      borderRadius: "8px",
-      border: "1px solid #2a3b4c",
+      borderRadius: "6px",
       overflow: "hidden",
+      fontFamily: "var(--font-game)",
     }}>
       <div style={{
         padding: "8px 12px",
-        background: "#1e293b",
-        fontWeight: "bold",
-        fontSize: "12px",
-        color: "#94a3b8",
-        borderBottom: "1px solid #334155"
+        background: "var(--bg-panel-slate)",
+        fontWeight: 700,
+        fontSize: "11px",
+        color: "var(--color-primary)",
+        borderBottom: "var(--border-subtle)",
+        textShadow: "var(--text-shadow-pixel)",
       }}>
-        CHATEO GLOBAL
+        💬 CHATEO GLOBAL
       </div>
 
-      <div style={{
+      <div className="pixel-scrollbar" style={{
         flex: 1,
         padding: "10px",
         overflowY: "auto",
         display: "flex",
         flexDirection: "column",
         gap: "6px",
-        fontSize: "13px"
+        fontSize: "10px",
+        lineHeight: "1.35",
       }}>
         {chatMessages.map((msg, i) => (
           <div key={i} style={{ wordBreak: "break-word" }}>
-            <span style={{ color: "#60a5fa", fontWeight: "bold" }}>[{msg.sender}]: </span>
-            <span style={{ color: "#f8fafc" }}>{msg.text}</span>
+            <span style={{ color: "var(--color-primary)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>[{msg.sender}]: </span>
+            <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{msg.text}</span>
           </div>
         ))}
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={handleSend} style={{ display: "flex", padding: "8px", borderTop: "1px solid #334155" }}>
+      <form onSubmit={handleSend} style={{ display: "flex", padding: "8px", borderTop: "var(--border-subtle)", gap: "8px" }}>
         <input
           type="text"
           value={text}
@@ -67,26 +68,24 @@ export const ChatBox: React.FC = () => {
           style={{
             flex: 1,
             padding: "8px 12px",
-            background: "#0f172a",
-            border: "1px solid #334155",
+            background: "var(--bg-input-field)",
+            border: "var(--border-pixel-thin)",
             borderRadius: "4px",
-            color: "#fff",
+            color: "var(--color-white)",
             outline: "none",
-            fontSize: "13px",
+            fontSize: "10px",
+            fontFamily: "var(--font-game)",
           }}
         />
         <button
           type="submit"
+          className="pixel-btn pixel-btn-primary"
           style={{
-            marginLeft: "8px",
-            padding: "8px 16px",
-            background: "#2563eb",
-            color: "#fff",
-            border: "none",
+            padding: "6px 14px",
             borderRadius: "4px",
             cursor: "pointer",
-            fontWeight: "bold",
-            fontSize: "13px",
+            fontWeight: 700,
+            fontSize: "11px",
           }}
         >
           Enviar

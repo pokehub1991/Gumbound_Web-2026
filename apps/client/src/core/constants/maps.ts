@@ -27,15 +27,15 @@ export const MAPS: Record<string, MapDef> = {
     bg: "/maps/metamine/metamine_bg.jpg",
     mask: "/maps/metamine/metamine_mask.png",
     width: 1409,
-    height: 1210, // 450 sky + 760 bridge
+    height: 1250, // 360 sky + 760 bridge + 130 bottom abyss clearance
     fgWidth: 1409,
     fgHeight: 760,
-    skyHeight: 450,
+    skyHeight: 360,
     bgcolor: "#634a4a",
     offset_x: 0,
-    offset_y: 450, // Bridge placed below sky
+    offset_y: 360, // Bridge raised by 90px so undercarriage has generous clearance above bottom edge
     bgSize: 1300,
-    player1Spawn: { x: 260, y: 493 },
-    botSpawn: { x: 1140, y: 492 },
+    player1Spawn: { x: 260, y: 403 },
+    botSpawn: { x: 1140, y: 402 },
   },
 };

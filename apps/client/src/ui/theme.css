@@ -1,0 +1,282 @@
+/* ==========================================================================
+   GUMBOUND RETRO PIXEL DESIGN SYSTEM & TOKENS
+   Universal CSS variables, typography, color palettes, bevels & components
+   ========================================================================== */
+
+:root {
+  /* ------------------------------------------------------------------------
+     1. TYPOGRAPHY TOKENS (SILKSCREEN & EDITUNDO RETRO PIXEL ART)
+     ------------------------------------------------------------------------ */
+  --font-game: 'Silkscreen', 'GameFont', monospace, sans-serif;
+  --font-text: 'Silkscreen', 'GameFont', monospace, sans-serif;
+  --font-num: 'Silkscreen', monospace;
+
+  /* ------------------------------------------------------------------------
+     2. COLOR PALETTE TOKENS
+     ------------------------------------------------------------------------ */
+  /* Primary Cyan / Sky Blue (Headers, Active Controls, Accents) */
+  --color-primary: #38bdf8;
+  --color-primary-hover: #7dd3fc;
+  --color-primary-dark: #0284c7;
+  --color-primary-deep: #0369a1;
+  --color-primary-glow: rgba(56, 189, 248, 0.65);
+
+  /* Success Green (Health Bars, Turn Timer Normal, Ready State, Immortal Bot) */
+  --color-success: #4ade80;
+  --color-success-light: #86efac;
+  --color-success-dark: #059669;
+  --color-success-deep: #047857;
+  --color-success-glow: rgba(74, 222, 128, 0.65);
+
+  /* Warning Amber / Gold (Gold Currency, Turn List, Warning Timer, Player Rank) */
+  --color-warning: #f59e0b;
+  --color-warning-light: #facc15;
+  --color-warning-soft: #fde047;
+  --color-warning-dark: #b45309;
+  --color-warning-deep: #78350f;
+  --color-warning-glow: rgba(250, 204, 21, 0.75);
+
+  /* Danger Red (Damage, Silenced Spam, Critical Timer <= 5s, Bot Mortal) */
+  --color-danger: #ef4444;
+  --color-danger-light: #fca5a5;
+  --color-danger-dark: #dc2626;
+  --color-danger-deep: #991b1b;
+  --color-danger-glow: rgba(239, 68, 68, 0.85);
+
+  /* Neutral Slate / Steel (Panels, Borders, Muted Text) */
+  --color-slate-900: #0f172a;
+  --color-slate-800: #1e293b;
+  --color-slate-700: #334155;
+  --color-slate-600: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-400: #94a3b8;
+  --color-slate-300: #cbd5e1;
+  --color-slate-200: #e2e8f0;
+  --color-slate-100: #f1f5f9;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* Mobile Elemental Types */
+  --color-mobile-ice: #f87171;
+  --color-mobile-mechanical: #60a5fa;
+  --color-mobile-bionic: #4ade80;
+
+  /* ------------------------------------------------------------------------
+     3. SURFACE & BACKGROUND TOKENS
+     ------------------------------------------------------------------------ */
+  --bg-panel-dark: linear-gradient(180deg, #131d38 0%, #0a1020 100%);
+  --bg-panel-slate: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  --bg-panel-blue: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+  --bg-panel-green: linear-gradient(180deg, #059669 0%, #047857 100%);
+  --bg-panel-red: linear-gradient(180deg, #dc2626 0%, #991b1b 100%);
+  --bg-panel-critical: linear-gradient(180deg, #450a0a 0%, #1f0404 100%);
+  --bg-panel-amber: linear-gradient(180deg, #b45309 0%, #78350f 100%);
+  --bg-input-field: #030712;
+  --bg-input-muted: #1e1010;
+  --bg-well-dark: #050914;
+
+  /* ------------------------------------------------------------------------
+     4. BORDERS & SHADOWS TOKENS
+     ------------------------------------------------------------------------ */
+  --border-pixel-black: 2px solid #000000;
+  --border-pixel-thin: 1.5px solid #000000;
+  --border-pixel-primary: 2px solid var(--color-primary);
+  --border-pixel-primary-thin: 1.5px solid var(--color-primary);
+  --border-pixel-success: 2px solid var(--color-success);
+  --border-pixel-danger: 2px solid var(--color-danger);
+  --border-pixel-warning: 2px solid var(--color-warning-soft);
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.15);
+  --border-divider: 1px solid var(--color-slate-700);
+
+  /* Retro Bevels (Authentic 90s/2000s GunBound / Windows 98 arcade) */
+  --shadow-bevel-panel: inset 1px 1px 0px rgba(255, 255, 255, 0.25),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.7),
+    0 4px 0px rgba(0, 0, 0, 0.5);
+
+  --shadow-bevel-btn: inset 1px 1px 0px rgba(255, 255, 255, 0.35),
+    inset -1px -1px 0px rgba(0, 0, 0, 0.6),
+    0 2px 0px rgba(0, 0, 0, 0.6);
+
+  --shadow-bevel-active: inset -1px -1px 0px rgba(255, 255, 255, 0.2),
+    inset 1px 1px 0px rgba(0, 0, 0, 0.8);
+
+  --shadow-well-sunken: inset 1px 1px 3px rgba(0, 0, 0, 0.95),
+    0 2px 0 rgba(255, 255, 255, 0.1);
+
+  --shadow-power-well: inset 2px 2px 5px rgba(0, 0, 0, 0.95),
+    0 2px 0 rgba(255, 255, 255, 0.1);
+
+  /* Text Shadows */
+  --text-shadow-pixel: 1px 1px 0 #000000;
+  --text-shadow-pixel-bold: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+}
+
+/* EditUndo Font Variant Override */
+[data-font="editundo"],
+body.font-editundo {
+  --font-game: 'EditUndo', 'GameFont', monospace, sans-serif;
+  --font-text: 'EditUndo', 'GameFont', monospace, sans-serif;
+  --font-num: 'EditUndo', monospace;
+}
+
+/* Pixeboy Font Variant Override */
+[data-font="pixeboy"],
+body.font-pixeboy {
+  --font-game: 'Pixeboy', 'Silkscreen', 'GameFont', monospace, sans-serif;
+  --font-text: 'Pixeboy', 'Silkscreen', 'GameFont', monospace, sans-serif;
+  --font-num: 'Pixeboy', 'Silkscreen', monospace;
+}
+
+/* --------------------------------------------------------------------------
+   5. UNIVERSAL TYPOGRAPHY & ELEMENT DEFAULTS
+   -------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+body,
+html,
+#app,
+#ui-overlay {
+  font-family: var(--font-game);
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  image-rendering: pixelated;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-game) !important;
+}
+
+::placeholder {
+  font-family: var(--font-game) !important;
+  color: var(--color-slate-400);
+}
+
+/* --------------------------------------------------------------------------
+   6. UNIVERSAL UTILITY CLASSES & WIDGET COMPONENTS
+   -------------------------------------------------------------------------- */
+
+/* Dedicated Numbers Font Utility (Crisp arcade pixel digits with tabular alignment) */
+.num-font {
+  font-family: var(--font-num) !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Standard GunBound UI Box Panel */
+.pixel-box {
+  background: var(--bg-panel-dark);
+  border: var(--border-pixel-black);
+  box-shadow: var(--shadow-bevel-panel);
+}
+
+/* Standard GunBound Arcade Button */
+.pixel-btn {
+  font-family: var(--font-game);
+  border: var(--border-pixel-black);
+  box-shadow: var(--shadow-bevel-btn);
+  transition: transform 0.05s ease, filter 0.05s ease;
+  image-rendering: pixelated;
+}
+
+.pixel-btn:hover {
+  filter: brightness(1.12);
+}
+
+.pixel-btn:active {
+  transform: translate(1px, 2px);
+  box-shadow: var(--shadow-bevel-active);
+}
+
+/* Button Variants */
+.pixel-btn-primary {
+  background: var(--bg-panel-blue) !important;
+  color: var(--color-white) !important;
+  border: var(--border-pixel-primary-thin) !important;
+}
+
+.pixel-btn-slate {
+  background: var(--bg-panel-slate) !important;
+  color: var(--color-slate-400) !important;
+  border: var(--border-pixel-thin) !important;
+}
+
+.pixel-btn-success {
+  background: var(--bg-panel-green) !important;
+  color: var(--color-white) !important;
+  border: var(--border-pixel-success) !important;
+}
+
+.pixel-btn-danger {
+  background: var(--bg-panel-red) !important;
+  color: var(--color-white) !important;
+  border: var(--border-pixel-danger) !important;
+}
+
+.pixel-btn-warning {
+  background: var(--bg-panel-amber) !important;
+  color: var(--color-white) !important;
+  border: var(--border-pixel-warning) !important;
+}
+
+/* Text Shadow Utilities */
+.pixel-shadow {
+  text-shadow: var(--text-shadow-pixel);
+}
+
+.pixel-shadow-bold {
+  text-shadow: var(--text-shadow-pixel-bold);
+}
+
+/* Sunken Display Well (for timers, angle boxes, gauges) */
+.pixel-well {
+  background: var(--bg-input-field);
+  border: var(--border-pixel-black);
+  box-shadow: var(--shadow-well-sunken);
+}
+
+/* Retro Pixel Art Scrollbar */
+.pixel-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #1e3a5f #080d1a;
+}
+
+.pixel-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: #060a14;
+}
+
+.pixel-scrollbar::-webkit-scrollbar-track {
+  background: #080d1a;
+  border-left: 1.5px solid #000000;
+  box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.8);
+}
+
+.pixel-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e3a5f;
+  border: 1.5px solid #000000;
+  border-radius: 0px;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.6);
+}
+
+.pixel-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #0284c7;
+  box-shadow: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #000000;
+}
+
+.pixel-scrollbar::-webkit-scrollbar-thumb:active {
+  background: #38bdf8;
+}
+
+.pixel-scrollbar::-webkit-scrollbar-corner {
+  background: #060a14;
+}

@@ -95,14 +95,17 @@ export const RoomList: React.FC = () => {
                     Mapa: {room.map_id.toUpperCase()}
                   </div>
                 </div>
-                <div style={{
-                  padding: "4px 10px",
-                  background: "#334155",
-                  borderRadius: "12px",
-                  fontSize: "12px",
-                  color: "#38bdf8",
-                  fontWeight: "bold"
-                }}>
+                <div
+                  className="num-font"
+                  style={{
+                    padding: "4px 10px",
+                    background: "var(--bg-panel-slate)",
+                    borderRadius: "12px",
+                    fontSize: "12px",
+                    color: "var(--color-primary)",
+                    fontWeight: 700,
+                  }}
+                >
                   {currentPlayers} / {room.max_players}
                 </div>
               </div>

@@ -3,6 +3,7 @@ import { CombatArena } from "../../core/combat/CombatArena.js";
 import { MobileSelector } from "../components/MobileSelector.js";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
 import { AudioManager } from "../../core/audio/AudioManager.js";
+import { useStore } from "../store.js";
 
 interface ArenaScreenProps {
   arena: CombatArena | null;
@@ -15,6 +16,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [shotType, setShotType] = useState<number>(0);
 
   const [angle, setAngle] = useState<number>(45);
+  const [angleMode, setAngleMode] = useState<"true" | "chassis">("true");
+  const [chassisAngle, setChassisAngle] = useState<number>(45);
   const [windPower, setWindPower] = useState<number>(0);
   const [windAngle, setWindAngle] = useState<number>(0);
   const [isWindEnabled, setIsWindEnabled] = useState<boolean>(false);
@@ -31,6 +34,20 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
   const [currentZoom, setCurrentZoom] = useState<number>(1.2);
   const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
+
+  // Global Font Switcher State
+  const { gameFont, toggleGameFont } = useStore();
+
+  const handleToggleFont = () => {
+    toggleGameFont();
+    AudioManager.play("click", 0.7);
+  };
+
+  useEffect(() => {
+    if (arena) {
+      arena.updateGameFont(gameFont);
+    }
+  }, [arena, gameFont]);
 
   // Turn System (Lista de Turnos)
   const [turnNumber, setTurnNumber] = useState<number>(1);
@@ -49,6 +66,53 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatInactivityTimeoutRef = useRef<number | null>(null);
+
+  // Anti-Spam & Chat Cooldown (Max 200 chars, mute 60s if same msg sent > 3 times)
+  const [chatMuteRemaining, setChatMuteRemaining] = useState<number>(0);
+  const lastChatMessageRef = useRef<string>("");
+  const repeatCountRef = useRef<number>(0);
+
+  // Unread Messages Indicator (Pixel-art notification badge)
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const [hasNewChatAlert, setHasNewChatAlert] = useState<boolean>(false);
+  const lastMessageCountRef = useRef<number>(chatMessages.length);
+
+  useEffect(() => {
+    if (chatMessages.length > lastMessageCountRef.current) {
+      const newMessages = chatMessages.slice(lastMessageCountRef.current);
+      // Only notify if chat is closed and the message wasn't sent by local player
+      const incoming = newMessages.filter((m) => m.sender !== "Tú");
+      if (!isChatOpen && incoming.length > 0) {
+        setUnreadChatCount((prev) => prev + incoming.length);
+        setHasNewChatAlert(true);
+      }
+    }
+    lastMessageCountRef.current = chatMessages.length;
+  }, [chatMessages, isChatOpen]);
+
+  // When user opens the chat box, immediately deactivate notifications and return button to normal state
+  useEffect(() => {
+    if (isChatOpen) {
+      setUnreadChatCount(0);
+      setHasNewChatAlert(false);
+    }
+  }, [isChatOpen]);
+
+  useEffect(() => {
+    if (chatMuteRemaining <= 0) return;
+    const interval = window.setInterval(() => {
+      setChatMuteRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          repeatCountRef.current = 0;
+          lastChatMessageRef.current = "";
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [chatMuteRemaining]);
 
   // 20-Second Turn Countdown (GunBound Authentic)
   const [turnCountdown, setTurnCountdown] = useState<number>(20);
@@ -161,7 +225,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
     setPlayerMobileId(arena.player.mobileType);
     setBotMobileId(arena.bot.mobile.mobileType);
-    setAngle(arena.player.angleDeg);
+    setAngle(arena.player.getTrueAimAngle());
+    setChassisAngle(arena.player.angleDeg);
     setWindPower(arena.windPower);
     setWindAngle(arena.windAngle);
     setIsWindEnabled(arena.isWindEnabled);
@@ -190,6 +255,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
     arena.onPlayerAngleUpdate = (ang) => {
       setAngle(ang);
+      if (arena) {
+        setChassisAngle(arena.player.angleDeg);
+      }
     };
 
     arena.onPlayerPowerUpdate = (pw) => {
@@ -274,8 +342,37 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const currentMob = MOBILES_DATA[playerMobileId] || MOBILES_DATA[0];
 
   const handleSendChatMessage = () => {
+    if (chatMuteRemaining > 0) return;
     if (!chatInput.trim()) return;
-    const text = chatInput.trim();
+    const text = chatInput.trim().slice(0, 200);
+    const normalized = text.toLowerCase();
+
+    if (normalized === lastChatMessageRef.current) {
+      repeatCountRef.current += 1;
+    } else {
+      lastChatMessageRef.current = normalized;
+      repeatCountRef.current = 1;
+    }
+
+    // If sent more than 3 times, immediately mute for 60 seconds
+    if (repeatCountRef.current > 3) {
+      setChatMuteRemaining(60);
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: "Sistema",
+          text: "⚠️ ¡Anti-Spam activado! (60s)",
+          isSystem: true,
+        },
+      ]);
+      setChatInput("");
+      resetChatInactivityTimer();
+      setTimeout(() => {
+        chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 40);
+      return;
+    }
+
     setChatMessages((prev) => [...prev, { sender: "Tú", text }]);
     if (arena) {
       arena.player.showChatBubble(text);
@@ -353,7 +450,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       display: "flex",
       flexDirection: "column",
       justifyContent: "space-between",
-      fontFamily: "'Pixelify Sans', cursive, sans-serif",
+      fontFamily: "var(--font-game)",
       userSelect: "none",
       padding: "12px",
       boxSizing: "border-box",
@@ -383,7 +480,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             gap: "3px",
             pointerEvents: "auto",
           }}>
-            <span style={{ fontSize: "13px", color: "#64748b", margin: "0 3px" }}>🔍</span>
+            <span style={{ fontSize: "12px", color: "var(--color-slate-500)", margin: "0 2px" }}>🔍</span>
             {[
               { label: "1.2x", val: 1.2, title: "Zoom normal (1.2x)" },
               { label: "0.85x", val: 0.85, title: "Vista amplia (0.85x)" },
@@ -391,25 +488,20 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             ].map((item) => (
               <button
                 key={item.label}
-                className="pixel-btn"
+                className={`pixel-btn ${currentZoom === item.val ? "pixel-btn-primary" : "pixel-btn-slate"}`}
                 onClick={() => {
                   if (arena) arena.engine.setPresetZoom(item.val);
                   setCurrentZoom(item.val);
                   AudioManager.play("click", 0.6);
                 }}
                 style={{
-                  background: currentZoom === item.val
-                    ? "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)"
-                    : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                  border: currentZoom === item.val ? "1.5px solid #38bdf8" : "1.5px solid #000000",
                   borderRadius: "3px",
-                  padding: "2px 8px",
-                  color: currentZoom === item.val ? "#ffffff" : "#94a3b8",
-                  fontSize: "13px",
+                  padding: "2px 6px",
+                  fontSize: "11px",
                   fontWeight: 700,
                   cursor: "pointer",
                   height: "26px",
-                  textShadow: "1px 1px 0 #000",
+                  textShadow: "var(--text-shadow-pixel)",
                 }}
                 title={item.title}
               >
@@ -429,11 +521,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             gap: "8px",
             pointerEvents: "auto",
           }}>
-            <span style={{ fontSize: "14px", fontWeight: 700, color: "#38bdf8", letterSpacing: "0.5px", textShadow: "1px 1px 0 #000" }}>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-primary)", letterSpacing: "0.5px", textShadow: "var(--text-shadow-pixel)" }}>
               METAMINE
             </span>
             <button
-              className="pixel-btn"
+              className="pixel-btn pixel-btn-primary"
               onClick={() => {
                 if (arena) {
                   arena.resetMap();
@@ -443,8 +535,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 }
               }}
               style={{
-                background: "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)",
-                color: "#ffffff",
                 borderRadius: "3px",
                 width: "24px",
                 height: "24px",
@@ -464,8 +554,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         {/* Center: Wind & Compass Capsule */}
         <div className="pixel-box" style={{
           background: isWindEnabled
-            ? "linear-gradient(180deg, #131f3d 0%, #0a1122 100%)"
-            : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+            ? "var(--bg-panel-dark)"
+            : "var(--bg-panel-slate)",
           borderRadius: "4px",
           padding: "3px 10px",
           height: "36px",
@@ -483,30 +573,26 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             <svg width="24" height="24" viewBox="0 0 36 36">
               <circle cx="18" cy="18" r="16" fill="#0f172a" stroke="#000000" strokeWidth="2.5" />
               <g transform={`rotate(${windAngle}, 18, 18)`}>
-                <polygon points="18,4 24,27 18,21 12,27" fill={isWindEnabled ? "#38bdf8" : "#94a3b8"} stroke="#000000" strokeWidth="1" />
+                <polygon points="18,4 24,27 18,21 12,27" fill={isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)"} stroke="#000000" strokeWidth="1" />
                 <circle cx="18" cy="18" r="3" fill="#ffffff" />
               </g>
             </svg>
           </div>
 
           <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
-            <span className="num-font" style={{ color: isWindEnabled ? "#38bdf8" : "#94a3b8", fontSize: "17px", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
+            <span className="num-font" style={{ color: isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)", fontSize: "15px", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
               {isWindEnabled ? windPower : 0}
             </span>
-            <span className="num-font" style={{ fontSize: "12px", color: isWindEnabled ? "#7dd3fc" : "#64748b", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
+            <span className="num-font" style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
               {isWindEnabled ? `${windAngle}°` : "OFF"}
             </span>
           </div>
 
           {/* Toggle Wind Button */}
           <button
-            className="pixel-btn"
+            className={`pixel-btn ${isWindEnabled ? "pixel-btn-primary" : "pixel-btn-slate"}`}
             onClick={handleToggleWind}
             style={{
-              background: isWindEnabled
-                ? "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)"
-                : "linear-gradient(180deg, #334155 0%, #1e293b 100%)",
-              color: "#ffffff",
               borderRadius: "3px",
               width: "26px",
               height: "26px",
@@ -523,11 +609,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
           {isWindEnabled && (
             <button
-              className="pixel-btn"
+              className="pixel-btn pixel-btn-slate"
               onClick={handleRandomizeWind}
               style={{
-                background: "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                color: "#38bdf8",
+                color: "var(--color-primary)",
                 borderRadius: "3px",
                 width: "26px",
                 height: "26px",
@@ -574,7 +659,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 alignItems: "center",
                 gap: "7px",
                 color: "#ffffff",
-                fontSize: "14px",
+                fontSize: "12px",
                 fontWeight: 700,
                 cursor: "pointer",
                 padding: 0,
@@ -586,32 +671,29 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               <div style={{
                 width: "20px",
                 height: "20px",
-                background: "#050914",
-                border: "1.5px solid #f59e0b",
+                background: "var(--bg-well-dark)",
+                border: "1.5px solid var(--color-warning)",
                 borderRadius: "3px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "12px",
+                fontSize: "11px",
                 boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.25)",
               }}>
                 🐣
               </div>
-              <span style={{ color: "#38bdf8" }}>{currentMob.name}</span>
-              <span style={{ fontSize: "11px", color: "#94a3b8" }}>▾</span>
+              <span style={{ color: "var(--color-primary)" }}>{currentMob.name}</span>
+              <span style={{ fontSize: "10px", color: "var(--color-slate-400)" }}>▾</span>
             </button>
 
             {/* Subtle Vertical Divider */}
-            <div style={{ width: "1px", height: "18px", background: "#334155" }} />
+            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
 
             {/* Integrated Music Toggle Button */}
             <button
-              className="pixel-btn"
+              className={`pixel-btn ${isMusicActive ? "pixel-btn-success" : "pixel-btn-danger"}`}
               onClick={handleToggleMusic}
               style={{
-                background: isMusicActive
-                  ? "linear-gradient(180deg, #059669 0%, #047857 100%)"
-                  : "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
                 borderRadius: "3px",
                 width: "24px",
                 height: "24px",
@@ -620,7 +702,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 justifyContent: "center",
                 fontSize: "12px",
                 cursor: "pointer",
-                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.3), 0 1px 0 #000",
               }}
               title={isMusicActive ? "Silenciar música" : "Activar música"}
             >
@@ -628,11 +709,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             </button>
 
             {/* Subtle Vertical Divider */}
-            <div style={{ width: "1px", height: "18px", background: "#334155" }} />
+            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
 
             {/* Random Bot Respawn Button */}
             <button
-              className="pixel-btn"
+              className="pixel-btn pixel-btn-primary"
               onClick={() => {
                 if (arena) {
                   arena.resetBot(true);
@@ -642,7 +723,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 }
               }}
               style={{
-                background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
                 borderRadius: "3px",
                 width: "24px",
                 height: "24px",
@@ -651,19 +731,45 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 justifyContent: "center",
                 fontSize: "12px",
                 cursor: "pointer",
-                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.3), 0 1px 0 #000",
                 border: "none",
-                color: "#ffffff",
               }}
               title="Reaparecer Bot en terreno aleatorio (Respawn)"
             >
               🎲
             </button>
+
+            {/* Subtle Vertical Divider */}
+            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
+
+            {/* Global Font Switcher Button: Silkscreen <-> EditUndo */}
+            <button
+              className="pixel-btn"
+              onClick={handleToggleFont}
+              style={{
+                borderRadius: "3px",
+                padding: "0 6px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                fontSize: "10px",
+                fontWeight: 700,
+                cursor: "pointer",
+                background: "var(--bg-panel-slate)",
+                color: "var(--color-primary)",
+                border: "var(--border-pixel-thin)",
+                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.3), 0 1px 0 #000",
+              }}
+              title={`Fuente actual: ${gameFont}. Click para alternar fuente (Silkscreen, EditUndo, Pixeboy)`}
+            >
+              <span style={{ fontSize: "11px" }}>🔤</span>
+              <span>{gameFont}</span>
+            </button>
           </div>
 
           {/* Bot Immortal / Mortal Toggle Button */}
           <button
-            className="pixel-btn pixel-box"
+            className={`pixel-btn ${isBotImmortal ? "pixel-btn-success" : "pixel-btn-danger"}`}
             onClick={() => {
               if (arena) {
                 const next = arena.toggleBotImmortality();
@@ -672,10 +778,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               }
             }}
             style={{
-              background: isBotImmortal
-                ? "linear-gradient(180deg, #059669 0%, #047857 100%)"
-                : "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
-              color: "#ffffff",
               borderRadius: "4px",
               width: "36px",
               height: "36px",
@@ -685,10 +787,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               fontSize: "16px",
               cursor: "pointer",
               boxSizing: "border-box",
-              border: isBotImmortal ? "2px solid #34d399" : "2px solid #f87171",
-              boxShadow: isBotImmortal
-                ? "0 0 8px rgba(16, 185, 129, 0.5), inset 1px 1px 0 rgba(255,255,255,0.3)"
-                : "0 0 8px rgba(239, 68, 68, 0.5), inset 1px 1px 0 rgba(255,255,255,0.3)",
+              boxShadow: isBotImmortal ? "var(--shadow-glow-green)" : "var(--shadow-glow-red)",
             }}
             title={isBotImmortal ? "Bot Inmortal (click para hacerlo mortal)" : "Bot Mortal (click para hacerlo inmortal)"}
           >
@@ -700,7 +799,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             className="pixel-box"
             style={{
               borderRadius: "4px",
-              width: "70px",
+              width: "72px",
               height: "36px",
               boxSizing: "border-box",
               display: "flex",
@@ -709,26 +808,23 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               gap: "2px",
               pointerEvents: "auto",
               background: turnCountdown <= 5
-                ? "linear-gradient(180deg, #450a0a 0%, #1f0404 100%)"
-                : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-              border: turnCountdown <= 5 ? "2px solid #ef4444" : "2px solid #000000",
+                ? "var(--bg-panel-critical)"
+                : "var(--bg-panel-slate)",
+              border: turnCountdown <= 5 ? "var(--border-pixel-danger)" : "var(--border-pixel-black)",
               boxShadow: turnCountdown <= 5
-                ? "0 0 12px rgba(239, 68, 68, 0.85), inset 1px 1px 0 rgba(255,255,255,0.25)"
-                : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 rgba(0,0,0,0.6)",
+                ? "var(--shadow-glow-red)"
+                : "var(--shadow-bevel-btn)",
             }}
             title="Tiempo restante de turno (20 segundos)"
           >
             <span
               className="num-font"
               style={{
-                fontSize: "24px",
-                fontWeight: 900,
-                fontFamily: "'Segoe UI This', 'Pixelify Sans', sans-serif",
+                fontSize: "19px",
+                fontWeight: 700,
                 lineHeight: "1",
-                color: turnCountdown <= 5 ? "#ef4444" : turnCountdown <= 10 ? "#facc15" : "#4ade80",
-                textShadow: turnCountdown <= 5
-                  ? "0 0 8px rgba(239, 68, 68, 0.9), 2px 2px 0 #000"
-                  : "2px 2px 0 #000",
+                color: turnCountdown <= 5 ? "var(--color-danger)" : turnCountdown <= 10 ? "var(--color-warning-light)" : "var(--color-success)",
+                textShadow: "var(--text-shadow-pixel-bold)",
                 textAlign: "right",
                 display: "inline-block",
                 fontVariantNumeric: "tabular-nums",
@@ -738,13 +834,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             </span>
             <span
               style={{
-                fontSize: "14px",
+                fontSize: "11px",
                 fontWeight: 700,
-                fontFamily: "'Pixelify Sans', cursive, monospace",
+                fontFamily: "var(--font-game)",
                 lineHeight: "1",
-                color: turnCountdown <= 5 ? "#fca5a5" : turnCountdown <= 10 ? "#fde047" : "#86efac",
-                textShadow: "1px 1px 0 #000",
-                marginTop: "3px",
+                color: turnCountdown <= 5 ? "var(--color-danger-light)" : turnCountdown <= 10 ? "var(--color-warning-soft)" : "var(--color-success-light)",
+                textShadow: "var(--text-shadow-pixel)",
+                marginTop: "2px",
               }}
             >
               s
@@ -808,11 +904,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             borderBottom: "1px solid rgba(0,0,0,0.6)",
             marginBottom: "3px",
           }}>
-            <span style={{ fontSize: "13px", fontWeight: 700, color: "#ffffff", textShadow: "1px 1px 0 #000" }}>
+            <span style={{ fontSize: "11px", fontWeight: 700, color: "#ffffff", textShadow: "var(--text-shadow-pixel)" }}>
               Lista de Turnos
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-              <span className="num-font" style={{ fontSize: "13px", fontWeight: 700, color: "#86efac", textShadow: "1px 1px 0 #000" }}>
+              <span className="num-font" style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-success-light)", textShadow: "var(--text-shadow-pixel)" }}>
                 {turnNumber} / {maxTurns}
               </span>
               <span style={{ fontSize: "12px" }}>⏱️</span>
@@ -874,10 +970,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
                   {/* Player / Bot Nickname */}
                   <span style={{
-                    fontSize: "13px",
+                    fontSize: "11px",
                     fontWeight: 700,
                     color: item.nameColor,
-                    textShadow: "1px 1px 0 #000",
+                    textShadow: "var(--text-shadow-pixel)",
                     maxWidth: "100px",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -889,10 +985,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
                 {/* Right section: Delay points difference */}
                 <span className="num-font" style={{
-                  fontSize: "13px",
+                  fontSize: "11px",
                   fontWeight: 700,
                   color: item.delayColor,
-                  textShadow: "1px 1px 0 #000",
+                  textShadow: "var(--text-shadow-pixel)",
                 }}>
                   {item.delayStr}
                 </span>
@@ -938,14 +1034,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               onClick={() => handleSelectShotType(0)}
               style={{
                 background: shotType === 0
-                  ? "linear-gradient(180deg, #38bdf8 0%, #0284c7 100%)"
-                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                border: shotType === 0 ? "2px solid #ffffff" : "2px solid #000000",
+                  ? "var(--bg-panel-blue)"
+                  : "var(--bg-panel-slate)",
+                border: shotType === 0 ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
                 borderRadius: "4px",
                 padding: "3px 12px",
-                color: shotType === 0 ? "#ffffff" : "#94a3b8",
+                color: shotType === 0 ? "var(--color-white)" : "var(--color-slate-400)",
                 fontWeight: 700,
-                fontSize: "14px",
+                fontSize: "13px",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -953,9 +1049,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 minWidth: "44px",
                 height: "34px",
                 boxShadow: shotType === 0
-                  ? "0 0 10px #38bdf8, inset 1px 1px 0 #fff"
-                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                textShadow: "1px 1px 0 #000",
+                  ? "var(--shadow-glow-cyan)"
+                  : "var(--shadow-bevel-btn)",
+                textShadow: "var(--text-shadow-pixel)",
               }}
               title="Shot 1 [Tecla 1]"
             >
@@ -968,13 +1064,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               style={{
                 background: shotType === 1
                   ? "linear-gradient(180deg, #facc15 0%, #d97706 100%)"
-                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                border: shotType === 1 ? "2px solid #ffffff" : "2px solid #000000",
+                  : "var(--bg-panel-slate)",
+                border: shotType === 1 ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
                 borderRadius: "4px",
                 padding: "3px 12px",
-                color: shotType === 1 ? "#ffffff" : "#94a3b8",
+                color: shotType === 1 ? "var(--color-white)" : "var(--color-slate-400)",
                 fontWeight: 700,
-                fontSize: "14px",
+                fontSize: "13px",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -982,9 +1078,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 minWidth: "44px",
                 height: "34px",
                 boxShadow: shotType === 1
-                  ? "0 0 10px #facc15, inset 1px 1px 0 #fff"
-                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                textShadow: "1px 1px 0 #000",
+                  ? "var(--shadow-glow-gold)"
+                  : "var(--shadow-bevel-btn)",
+                textShadow: "var(--text-shadow-pixel)",
               }}
               title="Shot 2 [Tecla 2]"
             >
@@ -996,14 +1092,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               onClick={() => handleSelectShotType(2)}
               style={{
                 background: shotType === 2
-                  ? "linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)"
-                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                border: shotType === 2 ? "2px solid #fde047" : "2px solid #000000",
+                  ? "var(--bg-panel-red)"
+                  : "var(--bg-panel-slate)",
+                border: shotType === 2 ? "var(--border-pixel-warning)" : "var(--border-pixel-black)",
                 borderRadius: "4px",
                 padding: "3px 12px",
-                color: shotType === 2 ? "#fde047" : "#94a3b8",
+                color: shotType === 2 ? "var(--color-warning-soft)" : "var(--color-slate-400)",
                 fontWeight: 700,
-                fontSize: "14px",
+                fontSize: "13px",
                 cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
@@ -1011,9 +1107,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 minWidth: "44px",
                 height: "34px",
                 boxShadow: shotType === 2
-                  ? "0 0 12px #ef4444, inset 1px 1px 0 #fff"
-                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                textShadow: "1px 1px 0 #000",
+                  ? "var(--shadow-glow-red)"
+                  : "var(--shadow-bevel-btn)",
+                textShadow: "var(--text-shadow-pixel)",
               }}
               title="Super Shot [Tecla 3 / F]"
             >
@@ -1043,17 +1139,17 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   onClick={() => handleToggleItemSlot(slot.id, slot.type)}
                   style={{
                     background: isSelected
-                      ? "linear-gradient(180deg, #10b981 0%, #047857 100%)"
-                      : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                    border: isSelected ? "2px solid #ffffff" : "2px solid #000000",
+                      ? "var(--bg-panel-green)"
+                      : "var(--bg-panel-slate)",
+                    border: isSelected ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
                     borderRadius: "4px",
                     padding: 0,
                     width: "56px",
                     minWidth: "56px",
                     height: "34px",
                     boxSizing: "border-box",
-                    color: isSelected ? "#ffffff" : "#94a3b8",
-                    fontFamily: "'Pixelify Sans', cursive, monospace, sans-serif",
+                    color: isSelected ? "var(--color-white)" : "var(--color-slate-400)",
+                    fontFamily: "var(--font-game)",
                     fontWeight: 700,
                     fontSize: "13px",
                     cursor: "pointer",
@@ -1061,9 +1157,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                     alignItems: "center",
                     justifyContent: "center",
                     boxShadow: isSelected
-                      ? "0 0 10px #34d399, inset 1px 1px 0 #fff"
-                      : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                    textShadow: "1px 1px 0 #000",
+                      ? "var(--shadow-glow-green)"
+                      : "var(--shadow-bevel-btn)",
+                    textShadow: "var(--text-shadow-pixel)",
                     filter: isSelected ? "none" : undefined,
                   }}
                   title={slot.title}
@@ -1089,17 +1185,17 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               }}
               style={{
                 background: shootMode === "drag"
-                  ? "linear-gradient(180deg, #10b981 0%, #059669 100%)"
-                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                border: shootMode === "drag" ? "2px solid #34d399" : "2px solid #000000",
+                  ? "var(--bg-panel-green)"
+                  : "var(--bg-panel-slate)",
+                border: shootMode === "drag" ? "var(--border-pixel-success)" : "var(--border-pixel-black)",
                 borderRadius: "4px",
                 width: "36px",
                 height: "34px",
-                color: "#ffffff",
+                color: "var(--color-white)",
                 cursor: "pointer",
                 boxShadow: shootMode === "drag"
-                  ? "0 0 10px rgba(16, 185, 129, 0.6), inset 1px 1px 0 #fff"
-                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
+                  ? "var(--shadow-glow-green)"
+                  : "var(--shadow-bevel-btn)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1110,30 +1206,49 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               <span>{shootMode === "drag" ? "🖱️" : "⌨️"}</span>
             </button>
 
-            {/* Digital Arcade Angle Display */}
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "#030712",
-              border: "2px solid #000000",
-              borderRadius: "4px",
-              padding: "3px 10px",
-              minWidth: "56px",
-              height: "34px",
-              boxSizing: "border-box",
-              boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.95), 0 2px 0 rgba(255,255,255,0.1)",
-            }}>
+            {/* Digital Arcade Angle Display (GunBound True Angle + Backshot + Mode Toggle) */}
+            <button
+              className="pixel-btn"
+              onClick={() => {
+                setAngleMode((prev) => (prev === "true" ? "chassis" : "true"));
+                AudioManager.play("click", 0.7);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "var(--bg-input-field)",
+                border: "var(--border-pixel-black)",
+                borderRadius: "4px",
+                padding: "3px 8px",
+                minWidth: "58px",
+                height: "34px",
+                boxSizing: "border-box",
+                boxShadow: "var(--shadow-well-sunken)",
+                cursor: "pointer",
+                gap: "3px",
+              }}
+              title={angleMode === "true"
+                ? `Ángulo Real: ${angle > 90 ? `${180 - angle}° [BS]` : `${angle}°`} (Click para ver Ángulo Chasis: ${chassisAngle}°)`
+                : `Ángulo Chasis: ${chassisAngle}° (Click para ver Ángulo Real: ${angle > 90 ? `${180 - angle}° [BS]` : `${angle}°`})`}
+            >
               <span className="num-font" style={{
-                color: "#4ade80",
-                fontSize: "22px",
+                color: angle > 90 ? "var(--color-danger)" : "var(--color-success)",
+                fontSize: "17px",
                 fontWeight: 700,
-                letterSpacing: "1px",
-                textShadow: "0 0 8px rgba(74, 222, 128, 0.8), 1px 1px 0 #000",
+                letterSpacing: "0.5px",
+                textShadow: "var(--text-shadow-pixel-bold)",
               }}>
-                {angle}°
+                {angleMode === "true"
+                  ? (angle > 90 ? `${180 - angle}°` : `${angle}°`)
+                  : `${chassisAngle}°`}
               </span>
-            </div>
+              {angleMode === "true" && angle > 90 && (
+                <span style={{ fontSize: "9px", color: "var(--color-danger-light)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
+                  BS
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1141,12 +1256,12 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         <div style={{
           width: "100%",
           height: "32px",
-          background: "#050914",
+          background: "var(--bg-well-dark)",
           borderRadius: "4px",
-          border: "2px solid #000000",
+          border: "var(--border-pixel-black)",
           position: "relative",
           overflow: "hidden",
-          boxShadow: "inset 2px 2px 5px rgba(0,0,0,0.95), 0 2px 0 rgba(255,255,255,0.1)",
+          boxShadow: "var(--shadow-power-well)",
         }}>
           {/* Authentic ruler tick marks at 25%, 50%, 75% with exact same color intensity (1px, 0.28 opacity) */}
           <div style={{ position: "absolute", left: "25%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
@@ -1234,8 +1349,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             onMouseDown={resetChatInactivityTimer}
             onClick={resetChatInactivityTimer}
             style={{
-              width: "250px",
-              height: "175px",
+              width: "290px",
+              height: "190px",
               borderRadius: "4px",
               padding: "6px 8px",
               display: "flex",
@@ -1250,10 +1365,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              borderBottom: "1px solid rgba(255,255,255,0.15)",
+              borderBottom: "var(--border-subtle)",
               paddingBottom: "3px",
             }}>
-              <span style={{ fontSize: "12px", fontWeight: 700, color: "#38bdf8", textShadow: "1px 1px 0 #000" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
                 💬 Chat de Batalla
               </span>
               <button
@@ -1261,8 +1376,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 style={{
                   background: "transparent",
                   border: "none",
-                  color: "#94a3b8",
-                  fontSize: "12px",
+                  color: "var(--color-slate-400)",
+                  fontSize: "11px",
                   fontWeight: 900,
                   cursor: "pointer",
                   padding: "0 4px",
@@ -1287,15 +1402,15 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               }}
             >
               {chatMessages.map((msg, idx) => (
-                <div key={idx} style={{ fontSize: "11px", lineHeight: "1.25" }}>
+                <div key={idx} style={{ fontSize: "10px", lineHeight: "1.35", fontFamily: "var(--font-game)" }}>
                   {msg.isSystem ? (
-                    <span style={{ color: "#4ade80", textShadow: "1px 1px 0 #000" }}>{msg.text}</span>
+                    <span style={{ color: "var(--color-success)", textShadow: "var(--text-shadow-pixel)" }}>{msg.text}</span>
                   ) : (
                     <span>
-                      <strong style={{ color: msg.sender === "Tú" ? "#f59e0b" : "#38bdf8", textShadow: "1px 1px 0 #000" }}>
+                      <strong style={{ color: msg.sender === "Tú" ? "var(--color-warning)" : "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
                         [{msg.sender}]:{" "}
                       </strong>
-                      <span style={{ color: "#e2e8f0", textShadow: "1px 1px 0 #000" }}>{msg.text}</span>
+                      <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{msg.text}</span>
                     </span>
                   )}
                 </div>
@@ -1303,51 +1418,90 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               <div ref={chatBottomRef} />
             </div>
 
-            {/* Input Form */}
+            {/* Input Form with 200 char limit, anti-spam mute and pixel-art chat indicator icon */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSendChatMessage();
               }}
-              style={{ display: "flex", gap: "4px" }}
+              style={{ display: "flex", gap: "4px", alignItems: "center" }}
             >
-              <input
-                ref={chatInputRef}
-                type="text"
-                value={chatInput}
-                onChange={(e) => {
-                  setChatInput(e.target.value);
-                  resetChatInactivityTimer();
-                }}
-                onFocus={resetChatInactivityTimer}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  resetChatInactivityTimer();
-                }}
-                onKeyUp={(e) => e.stopPropagation()}
-                placeholder="Escribe un mensaje..."
+              <div
                 style={{
                   flex: 1,
-                  background: "#030712",
-                  border: "1.5px solid #000",
+                  display: "flex",
+                  alignItems: "center",
+                  background: chatMuteRemaining > 0 ? "var(--bg-input-muted)" : "var(--bg-input-field)",
+                  border: chatMuteRemaining > 0 ? "var(--border-pixel-danger)" : "var(--border-pixel-thin)",
                   borderRadius: "3px",
-                  color: "#ffffff",
-                  fontSize: "11px",
-                  padding: "3px 6px",
-                  outline: "none",
+                  boxShadow: "var(--shadow-well-sunken)",
+                  padding: "0 6px",
+                  gap: "5px",
                 }}
-              />
+              >
+                {/* Pixel Art Chat Indicator Icon */}
+                <span
+                  style={{
+                    fontSize: "11px",
+                    display: "flex",
+                    alignItems: "center",
+                    filter: hasNewChatAlert ? "drop-shadow(0 0 3px #38bdf8)" : "none",
+                    transition: "filter 0.2s ease",
+                    userSelect: "none",
+                  }}
+                  title="Mensaje de chat"
+                >
+                  💬
+                </span>
+
+                <input
+                  ref={chatInputRef}
+                  type="text"
+                  maxLength={200}
+                  disabled={chatMuteRemaining > 0}
+                  value={chatInput}
+                  onChange={(e) => {
+                    setChatInput(e.target.value);
+                    resetChatInactivityTimer();
+                  }}
+                  onFocus={resetChatInactivityTimer}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    resetChatInactivityTimer();
+                  }}
+                  onKeyUp={(e) => e.stopPropagation()}
+                  placeholder={
+                    chatMuteRemaining > 0
+                      ? `Silenciado (${chatMuteRemaining}s)...`
+                      : "Escribe un mensaje... (máx 200)"
+                  }
+                  style={{
+                    flex: 1,
+                    background: "transparent",
+                    border: "none",
+                    fontFamily: "var(--font-game)",
+                    color: chatMuteRemaining > 0 ? "var(--color-danger-light)" : "var(--color-white)",
+                    fontSize: "10px",
+                    padding: "4px 0",
+                    outline: "none",
+                    boxSizing: "border-box",
+                    opacity: chatMuteRemaining > 0 ? 0.8 : 1,
+                  }}
+                />
+              </div>
+
               <button
                 type="submit"
-                className="pixel-btn"
+                disabled={chatMuteRemaining > 0 || !chatInput.trim()}
+                className={`pixel-btn ${chatMuteRemaining > 0 ? "pixel-btn-slate" : "pixel-btn-primary"}`}
                 style={{
-                  background: "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)",
-                  color: "#ffffff",
                   borderRadius: "3px",
                   padding: "0 8px",
                   fontSize: "11px",
                   fontWeight: 700,
-                  cursor: "pointer",
+                  cursor: chatMuteRemaining > 0 ? "not-allowed" : "pointer",
+                  opacity: chatMuteRemaining > 0 ? 0.5 : 1,
+                  height: "24px",
                 }}
               >
                 ➤
@@ -1359,28 +1513,63 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         {/* Chat Toggle Button in bottom-right */}
         <button
           className="pixel-btn"
-          onClick={() => setIsChatOpen(!isChatOpen)}
+          onClick={() => {
+            setIsChatOpen(!isChatOpen);
+            setUnreadChatCount(0);
+            setHasNewChatAlert(false);
+          }}
           style={{
-            background: isChatOpen
-              ? "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)"
-              : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-            color: "#ffffff",
+            position: "relative",
+            background: (!isChatOpen && unreadChatCount > 0)
+              ? "var(--bg-panel-amber)"
+              : "var(--bg-panel-slate)",
+            color: "var(--color-white)",
             borderRadius: "4px",
             padding: "4px 10px",
             height: "32px",
             display: "flex",
             alignItems: "center",
             gap: "6px",
-            fontSize: "13px",
+            fontSize: "11px",
             fontWeight: 700,
             cursor: "pointer",
-            textShadow: "1px 1px 0 #000",
-            boxShadow: "0 2px 0 #000",
+            textShadow: "var(--text-shadow-pixel)",
+            boxShadow: (!isChatOpen && unreadChatCount > 0)
+              ? "var(--shadow-glow-gold)"
+              : "var(--shadow-bevel-btn)",
           }}
           title="Abrir / Cerrar Chat de batalla"
         >
-          <span style={{ fontSize: "14px" }}>💬</span>
+          <span style={{ fontSize: "12px" }}>💬</span>
           <span>Chat</span>
+
+          {/* Retro Pixel Art Notification Badge when closed and new messages exist */}
+          {unreadChatCount > 0 && !isChatOpen && (
+            <div
+              className="num-font"
+              style={{
+                position: "absolute",
+                top: "-6px",
+                right: "-6px",
+                background: "var(--bg-panel-red)",
+                border: "var(--border-pixel-thin)",
+                borderRadius: "999px",
+                padding: "0 5px",
+                minWidth: "16px",
+                height: "16px",
+                boxSizing: "border-box",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--color-white)",
+                fontSize: "9px",
+                fontWeight: 700,
+                boxShadow: "var(--shadow-glow-red)",
+              }}
+            >
+              {unreadChatCount}
+            </div>
+          )}
         </button>
       </div>
     </div>

@@ -46,11 +46,11 @@ export const LobbyScreen: React.FC = () => {
           <div style={{ color: "#f8fafc" }}>
             Piloto: <strong style={{ color: "#38bdf8" }}>{user?.nickname || "Invitado"}</strong>
           </div>
-          <div style={{ color: "#fbbf24" }}>
-            Oro: <strong>{user?.gold?.toLocaleString() || "10,000"}</strong>
+          <div style={{ color: "var(--color-warning-light)" }}>
+            Oro: <strong className="num-font">{user?.gold?.toLocaleString() || "10,000"}</strong>
           </div>
           <div style={{ color: "#a855f7" }}>
-            GP: <strong>{user?.gp?.toLocaleString() || "0"}</strong>
+            GP: <strong className="num-font">{user?.gp?.toLocaleString() || "0"}</strong>
           </div>
         </div>
       </div>

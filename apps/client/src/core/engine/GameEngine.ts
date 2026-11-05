@@ -51,6 +51,14 @@ export class GameEngine {
     this.ssOverlay = new Graphics();
   }
 
+  public get screenW(): number {
+    return this.app.screen.width;
+  }
+
+  public get screenH(): number {
+    return this.app.screen.height;
+  }
+
   public async init(containerElement: HTMLElement) {
     const parentWidth = containerElement.clientWidth || 800;
     const parentHeight = containerElement.clientHeight || 600;
@@ -81,7 +89,7 @@ export class GameEngine {
     this.app.stage.addChild(this.uiContainer);
 
     // Initial camera placement framed nicely across the battlefield at 1.2x
-    this.panTo(704.5, 495, true);
+    this.panTo(704.5, 420, true);
 
     // Frame Ticker
     this.app.ticker.add((ticker) => {
@@ -251,10 +259,10 @@ export class GameEngine {
         const texH = bg.texture.height;
         const texAspect = texW / texH;
 
-        // Ensure background is at least 45% wider and 75% taller than viewport
-        // to guarantee ample travel room for high sky shots, deep bottom panning, and widescreen
-        const minW = Math.max(screenW * 1.45, 2752);
-        const minH = Math.max(screenH * 1.75, 1720);
+        // Pulled back / zoomed out scale so more background elements (mountain silhouettes,
+        // steampunk towers, factories, and vast sky) are visible at once across the widescreen monitor.
+        const minW = Math.max(screenW * 1.30, 2150);
+        const minH = Math.max(screenH * 1.40, 1320);
 
         let bgW = minW;
         let bgH = bgW / texAspect;
@@ -272,18 +280,18 @@ export class GameEngine {
 
         // World anchor references
         const worldCenterX = this.worldWidth / 2; // 704.5
-        const worldCenterY = 510; // Metamine bridge surface
+        const worldCenterY = 420; // Metamine bridge surface (raised by 90px)
 
         // Smooth Proportional Parallax
-        // 1. Horizontal: Far-distance parallax factor (0.28). Centered at worldCenterX
+        // 1. Horizontal: Far-distance parallax factor (0.20). Centered at worldCenterX
         const dx = this.cameraX - worldCenterX;
-        const targetBgX = -slackX * 0.5 - dx * 0.28;
+        const targetBgX = -slackX * 0.50 - dx * 0.20;
 
-        // 2. Vertical: High-sky & abyss tracking factor (0.20).
-        // At battlefield center view (cameraY = 510), background rests lower at ~44% vertical travel,
-        // providing generous breathing room below the terrain so it never hugs the bottom edge of the background.
+        // 2. Vertical: High-sky & abyss tracking factor (0.16).
+        // Anchored with generous upper-sky and lower-abyss clearance, keeping landmarks
+        // framed cleanly across the horizon above the bridge.
         const dy = this.cameraY - worldCenterY;
-        const targetBgY = -slackY * 0.44 - dy * 0.20;
+        const targetBgY = -slackY * 0.70 - dy * 0.16;
 
         // STRICT INVIOLABLE SCREEN BOUNDS CLAMP:
         // Guaranteed: bgX <= 0 and bgX + bgW >= screenW

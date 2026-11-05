@@ -39,7 +39,7 @@ export class AimController {
     this.stopMoving();
     this.activeMobile = mobile;
     if (this.activeMobile && this.onAngleChange) {
-      this.onAngleChange(this.activeMobile.angleDeg);
+      this.onAngleChange(this.activeMobile.getTrueAimAngle());
     }
   }
 
@@ -182,6 +182,10 @@ export class AimController {
 
     this.activeMobile.playAnimation("move");
 
+    if (this.onAngleChange) {
+      this.onAngleChange(this.activeMobile.getTrueAimAngle());
+    }
+
     if (this.onMobileMove) {
       this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
     }
@@ -193,7 +197,7 @@ export class AimController {
     const newAngle = Math.round(this.activeMobile.angleDeg + delta);
     this.activeMobile.setAngle(newAngle);
     if (this.onAngleChange) {
-      this.onAngleChange(this.activeMobile.angleDeg);
+      this.onAngleChange(this.activeMobile.getTrueAimAngle());
     }
   }
 

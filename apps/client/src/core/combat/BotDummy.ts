@@ -228,10 +228,14 @@ export class BotDummy extends Container {
     this.mobile.setFacing(-1);
   }
 
+  public updateFontFamily(fontName: string) {
+    this.mobile.updateFontFamily(fontName);
+  }
+
   private spawnFloatingDamage(amount: number, x: number, y: number, label?: string) {
     const textStyle = new TextStyle({
-      fontFamily: ["Segoe UI This", "Pixelify Sans", "Arial", "sans-serif"],
-      fontSize: label ? 22 : 18,
+      fontFamily: [this.mobile.activeFontFamily, "Silkscreen", "EditUndo", "Pixeboy", "sans-serif"],
+      fontSize: label ? 20 : 16,
       fontWeight: "900",
       fill: label ? "#ef4444" : "#fbbf24",
       stroke: { color: "#000000", width: 4 },

@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "./ui/theme.css";
 import { GameEngine } from "./core/engine/GameEngine.js";
 import { CombatArena } from "./core/combat/CombatArena.js";
 import { App } from "./ui/App.js";

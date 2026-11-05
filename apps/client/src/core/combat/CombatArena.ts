@@ -100,7 +100,7 @@ export class CombatArena {
       // Reposition player and bot to true ground surface once map mask finishes loading
       this.respawnPlayer();
       this.resetBot(false);
-      this.engine.panTo(704.5, 510, true);
+      this.engine.panTo(704.5, 420, true);
       this.engine.playIntroZoom(0.52, 1.20);
     };
     this.engine.worldContainer.addChildAt(this.terrain, 1);
@@ -169,7 +169,7 @@ export class CombatArena {
     this.windAngle = 0;
 
     // 8. Center Camera across the battlefield with authentic framing (centering Metamine bridge and framing clock tower at 1.2x)
-    this.engine.panTo(704.5, 510, true);
+    this.engine.panTo(704.5, 420, true);
 
     // 9. Play Battle Music
     AudioManager.playMusic("dbBattleMiramoTown.mp3");
@@ -241,7 +241,14 @@ export class CombatArena {
     this.bot.checkGroundFall(dt);
     this.destructionParticles.update(dt);
     this.dynamicExplosionEngine.update(dt * 16.66);
-    this.leavesEngine.update(dt);
+    this.leavesEngine.update(
+      dt,
+      this.engine.cameraX,
+      this.engine.cameraY,
+      this.engine.cameraZoom,
+      this.engine.screenW,
+      this.engine.screenH
+    );
     this.thor.update(dt);
 
     // Authentic Gunbound Slice/Drag mechanic:
@@ -468,6 +475,11 @@ export class CombatArena {
       this.onBotHpUpdate(this.bot.mobile.hp, this.bot.mobile.maxHp);
     }
     return isImmortal;
+  }
+
+  public updateGameFont(fontName: string) {
+    this.player.updateFontFamily(fontName);
+    this.bot.updateFontFamily(fontName);
   }
 
   public activateItem(item: "dual" | "teleport" | null) {
@@ -916,7 +928,7 @@ export class CombatArena {
   }
 
   public resetCamera() {
-    this.engine.panTo(704.5, 510);
+    this.engine.panTo(704.5, 420);
     this.engine.playIntroZoom(0.52, 1.20);
   }
 

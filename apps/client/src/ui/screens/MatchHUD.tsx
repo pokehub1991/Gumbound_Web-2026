@@ -167,16 +167,17 @@ export const MatchHUD: React.FC<Props> = ({
           </button>
 
           <div style={{
-            background: timeLeft <= 5 ? "rgba(239, 68, 68, 0.9)" : "rgba(15, 23, 42, 0.85)",
-            color: "#fff",
-            fontSize: "20px",
+            background: timeLeft <= 5 ? "var(--bg-panel-critical)" : "var(--bg-panel-slate)",
+            color: timeLeft <= 5 ? "var(--color-danger)" : "var(--color-success)",
+            fontSize: "17px",
             fontWeight: "bold",
-            padding: "8px 18px",
-            borderRadius: "8px",
-            border: "1px solid #334155",
-            fontFamily: "monospace",
+            padding: "6px 14px",
+            borderRadius: "6px",
+            border: timeLeft <= 5 ? "var(--border-pixel-danger)" : "var(--border-pixel-black)",
+            fontFamily: "var(--font-game)",
+            boxShadow: timeLeft <= 5 ? "var(--shadow-glow-red)" : "var(--shadow-bevel-btn)",
           }}>
-            {timeLeft}s
+            <span className="num-font">{timeLeft}</span>s
           </div>
         </div>
       </div>

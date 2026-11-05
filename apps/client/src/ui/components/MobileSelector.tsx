@@ -55,8 +55,8 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
     <div className="pixel-box" style={{
       borderRadius: "6px",
       padding: "14px 16px",
-      color: "#f8fafc",
-      fontFamily: "'Pixelify Sans', cursive, sans-serif",
+      color: "var(--color-slate-100)",
+      fontFamily: "var(--font-game)",
       maxWidth: "540px",
       width: "92vw",
       display: "flex",
@@ -69,36 +69,34 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
         alignItems: "center",
         justifyContent: "space-between",
         marginBottom: "12px",
-        borderBottom: "2px solid #000000",
+        borderBottom: "var(--border-pixel-black)",
         paddingBottom: "8px",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "18px" }}>🚀</span>
-          <h2 style={{ margin: 0, fontSize: "16px", letterSpacing: "0.5px", color: "#38bdf8", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
+          <h2 style={{ margin: 0, fontSize: "16px", letterSpacing: "0.5px", color: "var(--color-primary)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
             {title}
           </h2>
           <span style={{
             fontSize: "12px",
             background: "rgba(56, 189, 248, 0.2)",
-            color: "#38bdf8",
-            border: "1px solid #000",
+            color: "var(--color-primary)",
+            border: "var(--border-pixel-thin)",
             padding: "2px 6px",
             borderRadius: "3px",
             fontWeight: 700,
-            textShadow: "1px 1px 0 #000",
+            textShadow: "var(--text-shadow-pixel)",
           }}>
-            {mobiles.length} Disponibles
+            <span className="num-font">{mobiles.length}</span> Disponibles
           </span>
         </div>
 
         {onClose && (
           <button
-            className="pixel-btn"
+            className="pixel-btn pixel-btn-danger"
             onClick={onClose}
             style={{
-              background: "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
               borderRadius: "3px",
-              color: "#fff",
               cursor: "pointer",
               padding: "4px 8px",
               fontSize: "13px",
@@ -169,7 +167,7 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
               <div style={{
                 color: "#ffffff",
                 fontWeight: 700,
-                fontSize: "13px",
+                fontSize: "11px",
                 lineHeight: 1.2,
                 marginTop: "1px",
                 maxWidth: "100%",
@@ -184,7 +182,7 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
               {/* Compact Angle Range */}
               <div style={{
                 color: isSelected ? "#e0f2fe" : "#94a3b8",
-                fontSize: "11px",
+                fontSize: "10px",
                 fontWeight: 600,
                 lineHeight: 1,
                 textShadow: "1px 1px 0 #000",
