@@ -490,10 +490,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           </div>
 
           <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
-            <span style={{ color: isWindEnabled ? "#38bdf8" : "#94a3b8", fontSize: "17px", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
+            <span className="num-font" style={{ color: isWindEnabled ? "#38bdf8" : "#94a3b8", fontSize: "17px", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
               {isWindEnabled ? windPower : 0}
             </span>
-            <span style={{ fontSize: "12px", color: isWindEnabled ? "#7dd3fc" : "#64748b", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
+            <span className="num-font" style={{ fontSize: "12px", color: isWindEnabled ? "#7dd3fc" : "#64748b", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
               {isWindEnabled ? `${windAngle}°` : "OFF"}
             </span>
           </div>
@@ -626,6 +626,39 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             >
               {isMusicActive ? "🔊" : "🔇"}
             </button>
+
+            {/* Subtle Vertical Divider */}
+            <div style={{ width: "1px", height: "18px", background: "#334155" }} />
+
+            {/* Random Bot Respawn Button */}
+            <button
+              className="pixel-btn"
+              onClick={() => {
+                if (arena) {
+                  arena.resetBot(true);
+                  setBotHp(arena.bot.mobile.maxHp);
+                  setBotMaxHp(arena.bot.mobile.maxHp);
+                  AudioManager.play("click", 0.7);
+                }
+              }}
+              style={{
+                background: "linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%)",
+                borderRadius: "3px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.3), 0 1px 0 #000",
+                border: "none",
+                color: "#ffffff",
+              }}
+              title="Reaparecer Bot en terreno aleatorio (Respawn)"
+            >
+              🎲
+            </button>
           </div>
 
           {/* Bot Immortal / Mortal Toggle Button */}
@@ -686,10 +719,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             title="Tiempo restante de turno (20 segundos)"
           >
             <span
+              className="num-font"
               style={{
                 fontSize: "24px",
                 fontWeight: 900,
-                fontFamily: "'Pixelify Sans', cursive, monospace",
+                fontFamily: "'Segoe UI This', 'Pixelify Sans', sans-serif",
                 lineHeight: "1",
                 color: turnCountdown <= 5 ? "#ef4444" : turnCountdown <= 10 ? "#facc15" : "#4ade80",
                 textShadow: turnCountdown <= 5
@@ -778,7 +812,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               Lista de Turnos
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "#86efac", textShadow: "1px 1px 0 #000" }}>
+              <span className="num-font" style={{ fontSize: "13px", fontWeight: 700, color: "#86efac", textShadow: "1px 1px 0 #000" }}>
                 {turnNumber} / {maxTurns}
               </span>
               <span style={{ fontSize: "12px" }}>⏱️</span>
@@ -805,7 +839,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 {/* Left section: Turn order box + Rank icon box + Name */}
                 <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
                   {/* Order Box: [0] or [1] */}
-                  <div style={{
+                  <div className="num-font" style={{
                     width: "16px",
                     height: "16px",
                     background: item.orderBoxBg,
@@ -854,7 +888,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 </div>
 
                 {/* Right section: Delay points difference */}
-                <span style={{
+                <span className="num-font" style={{
                   fontSize: "13px",
                   fontWeight: 700,
                   color: item.delayColor,
@@ -1090,7 +1124,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               boxSizing: "border-box",
               boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.95), 0 2px 0 rgba(255,255,255,0.1)",
             }}>
-              <span style={{
+              <span className="num-font" style={{
                 color: "#4ade80",
                 fontSize: "22px",
                 fontWeight: 700,

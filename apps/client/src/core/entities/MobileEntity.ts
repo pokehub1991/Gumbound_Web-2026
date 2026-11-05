@@ -100,7 +100,7 @@ export class MobileEntity extends Container {
     this.aimAngleText = new Text({
       text: `${this.angleDeg}°`,
       style: new TextStyle({
-        fontFamily: "Inter, Roboto, Arial, sans-serif",
+        fontFamily: ["Segoe UI This", "Pixelify Sans", "Arial"],
         fontSize: 12,
         fontWeight: "900",
         fill: "#ffffff",
@@ -117,7 +117,7 @@ export class MobileEntity extends Container {
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
-      fontFamily: "'Pixelify Sans', Inter, Roboto, Arial, sans-serif",
+      fontFamily: ["Pixelify Sans", "Segoe UI This", "Arial"],
       fontSize: 12,
       fontWeight: "bold",
       fill: config.team === "A" ? "#f59e0b" : "#38bdf8",
@@ -479,7 +479,7 @@ export class MobileEntity extends Container {
   public showDamagePopup(damage: number) {
     if (damage <= 0) return;
     const style = new TextStyle({
-      fontFamily: "Impact, Arial Black, sans-serif",
+      fontFamily: ["Segoe UI This", "Pixelify Sans", "Impact", "sans-serif"],
       fontSize: 22,
       fontWeight: "bold",
       fill: damage >= 300 ? "#ff2a5f" : "#fbbf24",
@@ -506,7 +506,7 @@ export class MobileEntity extends Container {
   /**
    * GunBound Authentic Floating Chat Speech Cloud / Bubble above the mobile
    */
-  public showChatBubble(message: string, durationMs: number = 4500) {
+  public showChatBubble(message: string, durationMs: number = 9500) {
     if (!message || message.trim().length === 0) return;
 
     if (this.chatBubbleTimeout !== undefined) {
@@ -524,7 +524,7 @@ export class MobileEntity extends Container {
     this.chatBubbleContainer = container;
 
     const textStyle = new TextStyle({
-      fontFamily: "'Pixelify Sans', Inter, Arial, sans-serif",
+      fontFamily: ["Pixelify Sans", "Segoe UI This", "Arial", "sans-serif"],
       fontSize: 12,
       fontWeight: "bold",
       fill: "#000000",

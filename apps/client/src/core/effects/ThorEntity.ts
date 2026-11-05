@@ -41,9 +41,9 @@ export class ThorEntity extends Container {
     this.spriteContainer = new Container();
     this.addChild(this.spriteContainer);
 
-    // Retro text styles matching GunBound / DragonBound (Verdana / Inter Bold with black outline)
+    // Retro text styles matching GunBound / DragonBound (Segoe UI This / Pixelify Sans with black outline)
     const lvlStyle = new TextStyle({
-      fontFamily: "Verdana, Arial, sans-serif",
+      fontFamily: ["Segoe UI This", "Pixelify Sans", "Arial", "sans-serif"],
       fontSize: 14,
       fontWeight: "900",
       fill: "#f73918",
@@ -51,7 +51,7 @@ export class ThorEntity extends Container {
     });
 
     const dmgStyle = new TextStyle({
-      fontFamily: "Verdana, Arial, sans-serif",
+      fontFamily: ["Segoe UI This", "Pixelify Sans", "Arial", "sans-serif"],
       fontSize: 12,
       fontWeight: "800",
       fill: "#ff5a42",

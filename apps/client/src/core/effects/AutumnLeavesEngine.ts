@@ -36,7 +36,7 @@ export class AutumnLeavesEngine {
   // Extended outer background boundaries to ensure edge-to-edge entry & exit without pop-ins
   private minX: number = -500;
   private maxX: number = 1950;
-  private minY: number = -350;
+  private minY: number = -550;
   private maxY: number = 1350;
 
   // Warm autumn palette: Amber Gold, Deep Autumn Orange, Rust Crimson, Warm Maple, Earthy Ochre
@@ -66,7 +66,7 @@ export class AutumnLeavesEngine {
   private updateBounds() {
     this.minX = -500;
     this.maxX = this.mapWidth + 550;
-    this.minY = -350;
+    this.minY = -550;
     this.maxY = this.mapHeight + 250;
   }
 
@@ -81,9 +81,9 @@ export class AutumnLeavesEngine {
       const targetContainer = isForeground ? this.foregroundContainer : this.backgroundContainer;
       targetContainer.addChild(g);
 
-      // Distribute across the entire wide background space
-      const x = this.minX + Math.random() * (this.maxX - this.minX);
-      const y = this.minY + Math.random() * (this.maxY - this.minY);
+      // Spawn strictly above the top edge so they drift into view from above the screen
+      const x = this.minX + Math.random() * (this.maxX - this.minX + 350);
+      const y = this.minY - Math.random() * 250 - (i / count) * 450;
       const baseScale = isForeground ? (1.15 + Math.random() * 0.35) : (0.80 + Math.random() * 0.35);
 
       this.leaves.push({
@@ -157,16 +157,9 @@ export class AutumnLeavesEngine {
 
       // Edge-to-edge wrap around: only reset once completely past outer background borders
       if (leaf.x < this.minX || leaf.y > this.maxY) {
-        // Respawn along top border or right border
-        if (Math.random() < 0.65) {
-          // Enter from far right background edge
-          leaf.x = this.maxX + Math.random() * 80;
-          leaf.y = this.minY + Math.random() * (this.maxY - this.minY) * 0.7;
-        } else {
-          // Enter from top background edge
-          leaf.x = this.minX + Math.random() * (this.maxX - this.minX);
-          leaf.y = this.minY - Math.random() * 80;
-        }
+        // Always respawn strictly above the top edge so leaves cascade downward into the screen from the upper boundary
+        leaf.x = this.minX + Math.random() * (this.maxX - this.minX + 350);
+        leaf.y = this.minY - Math.random() * 120;
 
         // Dynamically alternate layers for natural depth
         const newIsForeground = Math.random() < 0.28;

@@ -100,7 +100,7 @@ export class CombatArena {
       // Reposition player and bot to true ground surface once map mask finishes loading
       this.respawnPlayer();
       this.resetBot(false);
-      this.engine.panTo(704.5, 495, true);
+      this.engine.panTo(704.5, 510, true);
       this.engine.playIntroZoom(0.52, 1.20);
     };
     this.engine.worldContainer.addChildAt(this.terrain, 1);
@@ -169,7 +169,7 @@ export class CombatArena {
     this.windAngle = 0;
 
     // 8. Center Camera across the battlefield with authentic framing (centering Metamine bridge and framing clock tower at 1.2x)
-    this.engine.panTo(704.5, 495, true);
+    this.engine.panTo(704.5, 510, true);
 
     // 9. Play Battle Music
     AudioManager.playMusic("dbBattleMiramoTown.mp3");
@@ -555,9 +555,9 @@ export class CombatArena {
 
     const trajectories = BallisticsEngine.simulateShot(params);
 
-    // 1. Transition pause: +10ms delay per shot type (Tiro 1: 10ms, Tiro 2: 90ms [+10ms], SS: 90ms)
+    // 1. Transition pause: +10ms delay per shot type (Tiro 1: 10ms, Tiro 2: 110ms [+10ms], SS: 90ms)
     const fireAnim = shotType === 2 ? "sfire" : shotType === 1 ? "fire2" : "fire1";
-    const chargeToFireDelayMs = shotType === 0 ? 10 : shotType === 1 ? 90 : 90;
+    const chargeToFireDelayMs = shotType === 0 ? 10 : shotType === 1 ? 110 : 90;
 
     const startFiringAnimation = () => {
       this.player.playAnimation(fireAnim, false, () => {
@@ -905,18 +905,18 @@ export class CombatArena {
   public resetBot(useRandomPos: boolean = false) {
     const mapDef = MAPS["metamine"];
     const botSpawn = mapDef.botSpawn;
-    const targetX = useRandomPos
-      ? this.terrain.getRandomGroundPosition(650, Math.min(1250, this.terrain.mapWidth - 150)).x
-      : botSpawn.x;
-    const placement = this.terrain.getMobileSurfacePlacement(targetX, botSpawn.y);
-    this.bot.spawnAt(targetX, placement.y);
+    const groundPos = useRandomPos
+      ? this.terrain.getRandomGroundPosition(250, Math.min(1300, this.terrain.mapWidth - 200))
+      : botSpawn;
+    const placement = this.terrain.getMobileSurfacePlacement(groundPos.x, groundPos.y);
+    this.bot.spawnAt(groundPos.x, placement.y);
     if (this.onBotHpUpdate) {
       this.onBotHpUpdate(this.bot.mobile.hp, this.bot.mobile.maxHp);
     }
   }
 
   public resetCamera() {
-    this.engine.panTo(704.5, 495);
+    this.engine.panTo(704.5, 510);
     this.engine.playIntroZoom(0.52, 1.20);
   }
 

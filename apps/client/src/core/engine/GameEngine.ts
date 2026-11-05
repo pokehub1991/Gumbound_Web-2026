@@ -23,12 +23,15 @@ export class GameEngine {
 
   // Camera & Zoom (Authentic GunBound battlefield framing at 1.2x, centered on bridge)
   public cameraX: number = 704.5;
-  public cameraY: number = 495;
+  public cameraY: number = 510;
   public targetCameraX: number = 704.5;
-  public targetCameraY: number = 495;
+  public targetCameraY: number = 510;
   public cameraZoom: number = 0.52;
   public targetZoom: number = 1.2;
   public isIntroZooming: boolean = true;
+  private introZoomProgress: number = 0;
+  private introZoomDuration: number = 1800; // Smooth 1.8s cinematic glide
+  private introZoomStart: number = 0.52;
 
   // Mouse pan controls (Right-click Glove Hand)
   public isDraggingCamera: boolean = false;
@@ -156,9 +159,12 @@ export class GameEngine {
     this.targetCameraY = this.cameraY;
   }
 
-  public playIntroZoom(startZoom: number = 0.52, finalZoom: number = 1.20) {
+  public playIntroZoom(startZoom: number = 0.52, finalZoom: number = 1.20, durationMs: number = 1800) {
+    this.introZoomStart = startZoom;
     this.cameraZoom = startZoom;
     this.targetZoom = finalZoom;
+    this.introZoomDuration = Math.max(100, durationMs);
+    this.introZoomProgress = 0;
     this.isIntroZooming = true;
   }
 
@@ -196,15 +202,21 @@ export class GameEngine {
     this.cameraY += (this.targetCameraY - this.cameraY) * lerpSpeed;
 
     if (this.isIntroZooming) {
-      // Smooth cinematic zoom from wide panoramic view to default battlefield framing
-      const introZoomSpeed = Math.min(1.0, 0.026 * dt);
-      this.cameraZoom += (this.targetZoom - this.cameraZoom) * introZoomSpeed;
-      if (Math.abs(this.targetZoom - this.cameraZoom) < 0.012) {
+      // Smooth cinematic ease-out: starts with motion, smoothly decelerates to exactly 0 velocity at target zoom
+      this.introZoomProgress += dt * 16.666;
+      const t = Math.min(1.0, this.introZoomProgress / this.introZoomDuration);
+      const ease = 1 - Math.pow(1 - t, 3);
+      this.cameraZoom = this.introZoomStart + (this.targetZoom - this.introZoomStart) * ease;
+
+      if (t >= 1.0) {
         this.cameraZoom = this.targetZoom;
         this.isIntroZooming = false;
       }
     } else {
       this.cameraZoom += (this.targetZoom - this.cameraZoom) * lerpSpeed;
+      if (Math.abs(this.targetZoom - this.cameraZoom) < 0.0005) {
+        this.cameraZoom = this.targetZoom;
+      }
     }
 
     const screenW = this.app.screen.width;
@@ -239,10 +251,10 @@ export class GameEngine {
         const texH = bg.texture.height;
         const texAspect = texW / texH;
 
-        // Ensure background is at least 45% wider and 55% taller than viewport
+        // Ensure background is at least 45% wider and 75% taller than viewport
         // to guarantee ample travel room for high sky shots, deep bottom panning, and widescreen
         const minW = Math.max(screenW * 1.45, 2752);
-        const minH = Math.max(screenH * 1.55, 1536);
+        const minH = Math.max(screenH * 1.75, 1720);
 
         let bgW = minW;
         let bgH = bgW / texAspect;
@@ -260,18 +272,18 @@ export class GameEngine {
 
         // World anchor references
         const worldCenterX = this.worldWidth / 2; // 704.5
-        const worldCenterY = 495; // Metamine bridge surface
+        const worldCenterY = 510; // Metamine bridge surface
 
         // Smooth Proportional Parallax
         // 1. Horizontal: Far-distance parallax factor (0.28). Centered at worldCenterX
         const dx = this.cameraX - worldCenterX;
         const targetBgX = -slackX * 0.5 - dx * 0.28;
 
-        // 2. Vertical: High-sky & abyss tracking factor (0.22).
-        // At battlefield center view (cameraY = 495), background rests at ~70% vertical travel,
-        // showcasing the Clock Tower in the upper half and the courtyard in the lower half.
+        // 2. Vertical: High-sky & abyss tracking factor (0.20).
+        // At battlefield center view (cameraY = 510), background rests lower at ~44% vertical travel,
+        // providing generous breathing room below the terrain so it never hugs the bottom edge of the background.
         const dy = this.cameraY - worldCenterY;
-        const targetBgY = -slackY * 0.70 - dy * 0.22;
+        const targetBgY = -slackY * 0.44 - dy * 0.20;
 
         // STRICT INVIOLABLE SCREEN BOUNDS CLAMP:
         // Guaranteed: bgX <= 0 and bgX + bgW >= screenW

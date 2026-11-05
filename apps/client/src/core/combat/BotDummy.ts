@@ -139,10 +139,8 @@ export class BotDummy extends Container {
     this.mobile.playAnimation("drop", true);
     this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, "BUNGE!");
 
-    // Falling into abyss: falls off bottom screen, transforms into ghost and ascends to sky
-    setTimeout(() => {
-      this.respawn();
-    }, 5000);
+    // Falling into abyss: falls off bottom screen, transforms into ghost and ascends to sky once
+    // Does NOT auto-respawn in a loop; manual respawn available in UI widget
   }
 
   private handleDeath(reason: string) {
@@ -157,7 +155,7 @@ export class BotDummy extends Container {
 
     this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, reason);
 
-    // Retraso de 2 segundos antes de que el móvil desaparezca y el fantasma vuele al cielo
+    // Retraso de 2 segundos antes de que el móvil desaparezca y el fantasma vuele al cielo (solo 1 vez, sin bucle infinito)
     setTimeout(() => {
       this.mobile.visible = false;
 
@@ -167,11 +165,6 @@ export class BotDummy extends Container {
       }
       this.ghostEntity = new DeathGhostEntity(this.mobile.x, this.mobile.y);
       this.addChild(this.ghostEntity);
-
-      // Auto respawn after ghost completes ascension
-      setTimeout(() => {
-        this.respawn();
-      }, 2800);
     }, 2000);
   }
 
@@ -223,6 +216,13 @@ export class BotDummy extends Container {
     this.spawnAt(this.spawnX, placement.y);
   }
 
+  public respawnRandom() {
+    // Respawn stably at a random playable ground position
+    const randPos = this.terrain.getRandomGroundPosition(250, Math.min(1300, this.terrain.mapWidth - 200));
+    const placement = this.terrain.getMobileSurfacePlacement(randPos.x, randPos.y);
+    this.spawnAt(randPos.x, placement.y);
+  }
+
   public setMobileType(type: number) {
     this.mobile.setMobileType(type);
     this.mobile.setFacing(-1);
@@ -230,7 +230,7 @@ export class BotDummy extends Container {
 
   private spawnFloatingDamage(amount: number, x: number, y: number, label?: string) {
     const textStyle = new TextStyle({
-      fontFamily: "Arial, sans-serif",
+      fontFamily: ["Segoe UI This", "Pixelify Sans", "Arial", "sans-serif"],
       fontSize: label ? 22 : 18,
       fontWeight: "900",
       fill: label ? "#ef4444" : "#fbbf24",

@@ -4,11 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gumbound Web 2026</title>
-    <!-- Pixelify Sans Pixel-Art Font from Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- Local Fonts: Pixelify Sans for Text, Segoe UI This for Numbers -->
     <style>
+      @font-face {
+        font-family: 'Pixelify Sans';
+        src: url('/fonts/PixelifySans-Regular.ttf') format('truetype');
+        font-weight: 400 700;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Segoe UI This';
+        src: url('/fonts/segoeuithis.ttf') format('truetype');
+        font-weight: 400 700;
+        font-style: normal;
+        font-display: swap;
+      }
+      /* Composite GameFont: digits (0-9), degree symbol (°), and signs (+, -, %, /) rendered via Segoe UI This; all other glyphs via Pixelify Sans */
+      @font-face {
+        font-family: 'GameFont';
+        src: url('/fonts/segoeuithis.ttf') format('truetype');
+        unicode-range: U+0030-0039, U+00B0, U+002B, U+002D, U+0025, U+002F;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'GameFont';
+        src: url('/fonts/PixelifySans-Regular.ttf') format('truetype');
+        font-display: swap;
+      }
+
       * {
         box-sizing: border-box;
         margin: 0;
@@ -19,7 +43,7 @@
         height: 100%;
         overflow: hidden;
         background: #dca04c;
-        font-family: 'Pixelify Sans', cursive, sans-serif;
+        font-family: 'GameFont', 'Pixelify Sans', 'Segoe UI This', cursive, sans-serif;
         -webkit-font-smoothing: none;
         -moz-osx-font-smoothing: grayscale;
         image-rendering: pixelated;
@@ -53,13 +77,19 @@
         height: 100%;
         z-index: 10;
         pointer-events: none;
-        font-family: 'Pixelify Sans', cursive, sans-serif;
+        font-family: 'GameFont', 'Pixelify Sans', 'Segoe UI This', cursive, sans-serif;
       }
       button, input, select, textarea {
-        font-family: 'Pixelify Sans', cursive, sans-serif;
+        font-family: 'GameFont', 'Pixelify Sans', 'Segoe UI This', cursive, sans-serif;
       }
       body.is-grabbing, body.is-grabbing * {
         cursor: url('/cursors/hand.png') 9 8, grabbing !important;
+      }
+
+      /* Numbers font utility: renders crisp digits with Segoe UI This */
+      .num-font {
+        font-family: 'Segoe UI This', 'Pixelify Sans', sans-serif !important;
+        font-variant-numeric: tabular-nums;
       }
 
       /* Pixel Art UI Bevels & Buttons */

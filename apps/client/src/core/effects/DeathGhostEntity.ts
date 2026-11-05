@@ -57,9 +57,9 @@ export class DeathGhostEntity extends Container {
     this.life += dt;
 
     // Ascend smoothly straight up into heaven and exit through the top background border
-    this.y -= 3.2 * dt;
+    this.y -= 1.4 * dt;
 
-    if (this.y < -120 || this.life > 600) {
+    if (this.y < -650 || this.life > 2000) {
       this.cleanup();
       return false;
     }
