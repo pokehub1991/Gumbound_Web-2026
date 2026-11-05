@@ -1,7 +1,7 @@
 import { MobileEntity } from "../entities/MobileEntity.js";
 import { TerrainRenderer } from "../terrain/TerrainRenderer.js";
 import { AudioManager } from "../audio/AudioManager.js";
-import { MOBILE_WALK_SPEEDS } from "../constants/mobiles.js";
+import { MOBILE_WALK_SPEEDS, MOBILES_DATA } from "../constants/mobiles.js";
 
 export class AimController {
   public terrain: TerrainRenderer;
@@ -19,6 +19,7 @@ export class AimController {
   private keysPressed: Record<string, boolean> = {};
   private walkAccumulator: number = 0;
   private angleAccumulator: number = 0;
+  private isCurrentlyMoving: boolean = false;
 
   // Event callbacks
   public onFireCallback?: (angle: number, power: number, shotType: number) => void;
@@ -35,6 +36,7 @@ export class AimController {
   }
 
   public setActiveMobile(mobile?: MobileEntity) {
+    this.stopMoving();
     this.activeMobile = mobile;
     if (this.activeMobile && this.onAngleChange) {
       this.onAngleChange(this.activeMobile.angleDeg);
@@ -48,8 +50,28 @@ export class AimController {
     }
   }
 
+  public startMoving() {
+    if (this.isCurrentlyMoving || !this.activeMobile) return;
+    this.isCurrentlyMoving = true;
+    const mobDef = MOBILES_DATA[this.activeMobile.mobileType] || MOBILES_DATA[0];
+    const soundMove = mobDef.soundMove || "1move";
+    AudioManager.startMoveLoop(soundMove, 0.65);
+  }
+
+  public stopMoving() {
+    if (!this.isCurrentlyMoving) return;
+    this.isCurrentlyMoving = false;
+    const mobDef = this.activeMobile
+      ? (MOBILES_DATA[this.activeMobile.mobileType] || MOBILES_DATA[0])
+      : MOBILES_DATA[0];
+    AudioManager.stopMoveLoop(mobDef?.soundStop);
+  }
+
   public update(dt: number) {
-    if (!this.enabled || !this.activeMobile) return;
+    if (!this.enabled || !this.activeMobile) {
+      this.stopMoving();
+      return;
+    }
 
     // 1. Mobile Movement along terrain contour with WASD standard (A = Left, D = Right)
     // Dynamic per-vehicle mobility speed matching GunBound / DragonBound statmov
@@ -61,18 +83,31 @@ export class AimController {
 
     if (isLeft && !isRight) {
       this.walkAccumulator += dt * speedRate;
+      let moved = false;
       while (this.walkAccumulator >= 1) {
-        this.stepMobile(-1);
+        if (this.stepMobile(-1)) {
+          moved = true;
+        }
         this.walkAccumulator -= 1;
+      }
+      if (moved || !this.isAirborne) {
+        this.startMoving();
       }
     } else if (isRight && !isLeft) {
       this.walkAccumulator += dt * speedRate;
+      let moved = false;
       while (this.walkAccumulator >= 1) {
-        this.stepMobile(1);
+        if (this.stepMobile(1)) {
+          moved = true;
+        }
         this.walkAccumulator -= 1;
+      }
+      if (moved || !this.isAirborne) {
+        this.startMoving();
       }
     } else {
       this.walkAccumulator = 0;
+      this.stopMoving();
     }
 
     // 2. Smooth aim angle adjustments with WASD standard (W = Up, S = Down) (~17 deg/sec)
@@ -109,8 +144,8 @@ export class AimController {
     }
   }
 
-  private stepMobile(dir: number) {
-    if (!this.activeMobile) return;
+  private stepMobile(dir: number): boolean {
+    if (!this.activeMobile) return false;
 
     this.activeMobile.setFacing(dir);
 
@@ -120,13 +155,13 @@ export class AimController {
       if (this.onMobileMove) {
         this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
       }
-      return;
+      return true;
     }
 
     // Terrain walking step with ground incline tracking
     const walkRes = this.terrain.walk(this.activeMobile.x, this.activeMobile.y, dir);
     if (walkRes.stuck) {
-      return;
+      return false;
     }
 
     this.activeMobile.x = walkRes.x;
@@ -138,7 +173,7 @@ export class AimController {
       if (this.onMobileMove) {
         this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
       }
-      return;
+      return true;
     }
 
     const placement = this.terrain.getMobileSurfacePlacement(this.activeMobile.x, this.activeMobile.y);
@@ -150,6 +185,7 @@ export class AimController {
     if (this.onMobileMove) {
       this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
     }
+    return true;
   }
 
   public adjustAngle(delta: number) {
@@ -163,6 +199,7 @@ export class AimController {
 
   public startCharging() {
     if (this.isCharging || !this.activeMobile) return;
+    this.stopMoving();
     this.isCharging = true;
     this.power = 0;
     const chargeAnim = this.shotType === 2 ? "bsfire" : this.shotType === 1 ? "bfire2" : "bfire1";
@@ -232,14 +269,16 @@ export class AimController {
   private handleKeyUp(e: KeyboardEvent) {
     this.keysPressed[e.code] = false;
 
-    // Stop walking animation when A or D keys released
-    if (
-      (e.code === "KeyA" || e.code === "KeyD") &&
-      this.activeMobile &&
-      !this.isCharging &&
-      !this.isAirborne
-    ) {
-      this.activeMobile.playAnimation("normal");
+    // Stop walking animation and movement sound when A or D keys released
+    if (e.code === "KeyA" || e.code === "KeyD") {
+      this.stopMoving();
+      if (
+        this.activeMobile &&
+        !this.isCharging &&
+        !this.isAirborne
+      ) {
+        this.activeMobile.playAnimation("normal");
+      }
     }
 
     // Spacebar release fire (only allowed if shootMode === 'space')
@@ -249,6 +288,7 @@ export class AimController {
   }
 
   public destroy() {
+    this.stopMoving();
     window.removeEventListener("keydown", (e) => this.handleKeyDown(e));
     window.removeEventListener("keyup", (e) => this.handleKeyUp(e));
   }

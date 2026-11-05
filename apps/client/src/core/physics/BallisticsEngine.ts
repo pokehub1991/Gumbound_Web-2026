@@ -201,6 +201,9 @@ export class BallisticsEngine {
     const maxMs = 16000;
     const stepMs = 8; // High-precision sub-stepping
 
+    let prevX = origin.x;
+    let prevY = origin.y;
+
     for (let tMs = 0; tMs <= maxMs; tMs += stepMs) {
       const p = tMs / 1000;
       const x = origin.x + vx * p + (ax * p * p) / 2;
@@ -215,6 +218,40 @@ export class BallisticsEngine {
       const isSpecialPhase =
         (mobile.id === 0 && params.shotType === 2 && tMs >= 1540) ||
         (mobile.id === 14 && params.shotType === 2 && tMs >= 1540);
+
+      // Continuous collision detection (CCD) against terrain along trajectory segment
+      if (tMs > 0) {
+        const segDist = Math.hypot(x - prevX, y - prevY);
+        const subSteps = Math.max(1, Math.ceil(segDist / 2));
+        let hitTerrain = false;
+
+        for (let s = 1; s <= subSteps; s++) {
+          const factor = s / subSteps;
+          const cx = prevX + (x - prevX) * factor;
+          const cy = prevY + (y - prevY) * factor;
+          const distFromMuzzle = Math.hypot(cx - origin.x, cy - origin.y);
+
+          // Clear tiny 5px radius right at the muzzle aperture, then collide with any solid terrain
+          // Guarantees bullets never pass through thin overhangs, ledges or sharp terrain tips
+          if (distFromMuzzle >= 5 && params.isPixelSolid(Math.round(cx), Math.round(cy))) {
+            hitType = "ground";
+            finalPos = { x: Math.round(cx), y: Math.round(cy) };
+            points.push({
+              x: cx,
+              y: cy,
+              timeMs: tMs - stepMs + stepMs * factor,
+              tangentAngle: tang,
+              isSpecialPhase,
+            });
+            hitTerrain = true;
+            break;
+          }
+        }
+
+        if (hitTerrain) {
+          break;
+        }
+      }
 
       points.push({
         x,
@@ -245,13 +282,8 @@ export class BallisticsEngine {
         break;
       }
 
-      // 3. Terrain solid pixel collision (ensure projectile has left mobile muzzle clearance)
-      const distFromOrigin = Math.hypot(x - origin.x, y - origin.y);
-      if (tMs > 100 && distFromOrigin > 35 && params.isPixelSolid(x, y)) {
-        hitType = "ground";
-        finalPos = { x, y };
-        break;
-      }
+      prevX = x;
+      prevY = y;
     }
 
     const isSS = params.shotType === 2;
@@ -329,7 +361,7 @@ export class BallisticsEngine {
       pointsB.push({ x: bxPt, y: byPt, timeMs: tMs, tangentAngle: (tang * 180) / Math.PI });
 
       const distFromOrigin = Math.hypot(baseX - origin.x, baseY - origin.y);
-      if (tMs > 100 && distFromOrigin > 35 && (params.isPixelSolid(axPt, ayPt) || params.isPixelSolid(bxPt, byPt))) {
+      if (distFromOrigin >= 5 && (params.isPixelSolid(Math.round(axPt), Math.round(ayPt)) || params.isPixelSolid(Math.round(bxPt), Math.round(byPt)))) {
         hitPos = { x: Math.round(baseX), y: Math.round(baseY) };
         break;
       }
@@ -420,7 +452,7 @@ export class BallisticsEngine {
       pointsB.push({ x: bxPt, y: byPt, timeMs: tMs, tangentAngle: (tang * 180) / Math.PI });
 
       const distFromOrigin = Math.hypot(baseX - origin.x, baseY - origin.y);
-      if (tMs > 100 && distFromOrigin > 35 && (params.isPixelSolid(axPt, ayPt) || params.isPixelSolid(bxPt, byPt))) {
+      if (distFromOrigin >= 5 && (params.isPixelSolid(Math.round(axPt), Math.round(ayPt)) || params.isPixelSolid(Math.round(bxPt), Math.round(byPt)))) {
         hitPos = { x: Math.round(baseX), y: Math.round(baseY) };
         break;
       }

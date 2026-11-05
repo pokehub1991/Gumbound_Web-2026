@@ -90,6 +90,38 @@
         box-shadow: inset -1px -1px 0px rgba(255, 255, 255, 0.2),
                     inset 1px 1px 0px rgba(0, 0, 0, 0.8);
       }
+
+      /* Retro Pixel Art Scrollbar */
+      .pixel-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: #1e3a5f #080d1a;
+      }
+      .pixel-scrollbar::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+        background: #060a14;
+      }
+      .pixel-scrollbar::-webkit-scrollbar-track {
+        background: #080d1a;
+        border-left: 1.5px solid #000000;
+        box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.8);
+      }
+      .pixel-scrollbar::-webkit-scrollbar-thumb {
+        background: #1e3a5f;
+        border: 1.5px solid #000000;
+        border-radius: 0px;
+        box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.35), inset -1px -1px 0 rgba(0, 0, 0, 0.6);
+      }
+      .pixel-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #0284c7;
+        box-shadow: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #000000;
+      }
+      .pixel-scrollbar::-webkit-scrollbar-thumb:active {
+        background: #38bdf8;
+      }
+      .pixel-scrollbar::-webkit-scrollbar-corner {
+        background: #060a14;
+      }
     </style>
   </head>
   <body>

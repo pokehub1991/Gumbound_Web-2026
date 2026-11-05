@@ -26,8 +26,9 @@ export class GameEngine {
   public cameraY: number = 495;
   public targetCameraX: number = 704.5;
   public targetCameraY: number = 495;
-  public cameraZoom: number = 1.2;
+  public cameraZoom: number = 0.52;
   public targetZoom: number = 1.2;
+  public isIntroZooming: boolean = true;
 
   // Mouse pan controls (Right-click Glove Hand)
   public isDraggingCamera: boolean = false;
@@ -155,7 +156,14 @@ export class GameEngine {
     this.targetCameraY = this.cameraY;
   }
 
+  public playIntroZoom(startZoom: number = 0.52, finalZoom: number = 1.20) {
+    this.cameraZoom = startZoom;
+    this.targetZoom = finalZoom;
+    this.isIntroZooming = true;
+  }
+
   public setPresetZoom(zoom: number) {
+    this.isIntroZooming = false;
     this.setZoom(zoom);
   }
 
@@ -186,7 +194,18 @@ export class GameEngine {
     const lerpSpeed = Math.min(1.0, 0.12 * dt);
     this.cameraX += (this.targetCameraX - this.cameraX) * lerpSpeed;
     this.cameraY += (this.targetCameraY - this.cameraY) * lerpSpeed;
-    this.cameraZoom += (this.targetZoom - this.cameraZoom) * lerpSpeed;
+
+    if (this.isIntroZooming) {
+      // Smooth cinematic zoom from wide panoramic view to default battlefield framing
+      const introZoomSpeed = Math.min(1.0, 0.026 * dt);
+      this.cameraZoom += (this.targetZoom - this.cameraZoom) * introZoomSpeed;
+      if (Math.abs(this.targetZoom - this.cameraZoom) < 0.012) {
+        this.cameraZoom = this.targetZoom;
+        this.isIntroZooming = false;
+      }
+    } else {
+      this.cameraZoom += (this.targetZoom - this.cameraZoom) * lerpSpeed;
+    }
 
     const screenW = this.app.screen.width;
     const screenH = this.app.screen.height;

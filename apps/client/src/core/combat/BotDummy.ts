@@ -1,6 +1,7 @@
 import { Container, Text, TextStyle } from "pixi.js";
 import { MobileEntity } from "../entities/MobileEntity.js";
 import { TerrainRenderer } from "../terrain/TerrainRenderer.js";
+import { DeathGhostEntity } from "../effects/DeathGhostEntity.js";
 
 export class BotDummy extends Container {
   public mobile: MobileEntity;
@@ -10,6 +11,8 @@ export class BotDummy extends Container {
 
   public isDead: boolean = false;
   public isImmortal: boolean = true;
+  private isBotBunged: boolean = false;
+  private ghostEntity?: DeathGhostEntity;
   private damageNumbersContainer: Container;
   private botFallVy: number = 0;
   private isBotAirborne: boolean = false;
@@ -25,11 +28,11 @@ export class BotDummy extends Container {
     const groundY = this.terrain.findSurfaceY(spawnX, spawnY);
     this.mobile = new MobileEntity({
       id: "bot_dummy",
-      nickname: "Bot Dummy [∞ HP]",
+      nickname: "Haris Pilton",
       team: "B",
       mobileType: mobileType,
-      maxHp: 99999,
-      hp: 99999,
+      maxHp: 1000,
+      hp: 1000,
       x: spawnX,
       y: groundY,
     });
@@ -75,10 +78,25 @@ export class BotDummy extends Container {
 
   public checkGroundFall(dt: number = 1.0) {
     if (this.isDead) {
-      // Only if dead by bunge (fell off into abyss/void) should it continue falling down
-      if (this.isBotAirborne && this.mobile.y < this.terrain.mapHeight + 120) {
-        this.botFallVy = Math.min(6.5, this.botFallVy + 0.25 * dt);
-        this.mobile.y += this.botFallVy * dt;
+      if (this.isBotBunged) {
+        if (this.mobile.visible) {
+          this.botFallVy = Math.min(8.5, this.botFallVy + 0.35 * dt);
+          this.mobile.y += this.botFallVy * dt;
+
+          // Once bot falls off the bottom edge, hide mobile and spawn ascending ghost!
+          if (this.mobile.y >= this.terrain.mapHeight + 60) {
+            this.mobile.visible = false;
+            if (this.ghostEntity) {
+              this.ghostEntity.cleanup();
+            }
+            this.ghostEntity = new DeathGhostEntity(this.mobile.x, this.terrain.mapHeight + 50);
+            this.addChild(this.ghostEntity);
+          }
+        } else if (this.ghostEntity) {
+          this.ghostEntity.update(dt);
+        }
+      } else if (this.ghostEntity) {
+        this.ghostEntity.update(dt);
       }
       return;
     }
@@ -107,39 +125,54 @@ export class BotDummy extends Container {
       this.mobile.setTilt(placement.slope.angle);
     }
 
-    // Knocked completely off map bottom or sides (bunge)
-    if (this.mobile.y >= this.terrain.mapHeight - 30 || this.mobile.x < -30 || this.mobile.x > this.terrain.mapWidth + 30) {
-      if (!this.isImmortal) {
-        this.handleDeath("BUNGE!");
-      } else {
-        this.respawn();
-      }
+    // Knocked completely off map bottom or sides (bunge / void abyss fall)
+    if (!this.isDead && (this.mobile.y >= this.terrain.mapHeight - 30 || this.mobile.x < -30 || this.mobile.x > this.terrain.mapWidth + 30)) {
+      this.handleBunge();
     }
+  }
+
+  private handleBunge() {
+    if (this.isDead) return;
+    this.isDead = true;
+    this.isBotBunged = true;
+    this.isBotAirborne = true;
+    this.mobile.playAnimation("drop", true);
+    this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, "BUNGE!");
+
+    // Falling into abyss: falls off bottom screen, transforms into ghost and ascends to sky
+    setTimeout(() => {
+      this.respawn();
+    }, 5000);
   }
 
   private handleDeath(reason: string) {
     if (this.isDead) return;
     this.isDead = true;
+    this.isBotBunged = false;
 
-    this.mobile.playAnimation("dead", false);
-
-    if (reason === "BUNGE!") {
-      this.isBotAirborne = true;
-    } else {
-      // Solid ground defeat: stay firmly resting on ground with dead sprite
-      this.isBotAirborne = false;
-      this.botFallVy = 0;
-      const placement = this.terrain.getMobileSurfacePlacement(this.mobile.x, this.mobile.y);
-      this.mobile.y = placement.y;
-      this.mobile.setTilt(placement.slope.angle);
-    }
+    // Mobile stays in place for 2 seconds showing surrender / defeat animation
+    this.mobile.playAnimation("dead", true);
+    this.isBotAirborne = false;
+    this.mobile.setTilt(0);
 
     this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, reason);
 
-    // Auto respawn after 2.2 seconds for continuous combat testing
+    // Retraso de 2 segundos antes de que el móvil desaparezca y el fantasma vuele al cielo
     setTimeout(() => {
-      this.respawn();
-    }, 2200);
+      this.mobile.visible = false;
+
+      // Dedicated animated death ghost ascends straight up to heaven
+      if (this.ghostEntity) {
+        this.ghostEntity.cleanup();
+      }
+      this.ghostEntity = new DeathGhostEntity(this.mobile.x, this.mobile.y);
+      this.addChild(this.ghostEntity);
+
+      // Auto respawn after ghost completes ascension
+      setTimeout(() => {
+        this.respawn();
+      }, 2800);
+    }, 2000);
   }
 
   public toggleImmortal(): boolean {
@@ -160,7 +193,14 @@ export class BotDummy extends Container {
   }
 
   public spawnAt(x: number, y: number) {
+    if (this.ghostEntity) {
+      this.ghostEntity.cleanup();
+      this.ghostEntity = undefined;
+    }
     this.isDead = false;
+    this.isBotBunged = false;
+    this.mobile.alpha = 1.0;
+    this.mobile.visible = true;
     this.isBotAirborne = false;
     this.botFallVy = 0;
     this.mobile.hp = this.mobile.maxHp;
@@ -178,9 +218,9 @@ export class BotDummy extends Container {
   }
 
   public respawn() {
-    // Choose a random valid position on the terrain surface
-    const randPos = this.terrain.getRandomGroundPosition(650, Math.min(1250, this.terrain.mapWidth - 150));
-    this.spawnAt(randPos.x, randPos.y);
+    // Respawn stably at initial battle spawn post
+    const placement = this.terrain.getMobileSurfacePlacement(this.spawnX, this.spawnY);
+    this.spawnAt(this.spawnX, placement.y);
   }
 
   public setMobileType(type: number) {

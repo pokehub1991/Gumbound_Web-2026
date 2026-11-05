@@ -61,6 +61,10 @@ export class MobileEntity extends Container {
   private smokeTimer: number = 0;
   private sparkTimer: number = 0;
 
+  // Floating Chat Bubble / Cloud
+  private chatBubbleContainer?: Container;
+  private chatBubbleTimeout?: number;
+
   constructor(config: MobileEntityConfig) {
     super();
     this.id = config.id;
@@ -113,13 +117,14 @@ export class MobileEntity extends Container {
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
-      fontFamily: "Inter, Roboto, Arial, sans-serif",
-      fontSize: 11,
+      fontFamily: "'Pixelify Sans', Inter, Roboto, Arial, sans-serif",
+      fontSize: 12,
       fontWeight: "bold",
-      fill: "#ffedd5",
+      fill: config.team === "A" ? "#f59e0b" : "#38bdf8",
       stroke: { color: "#000000", width: 3 },
     });
-    this.nameText = new Text({ text: this.nickname, style: textStyle });
+    const rankIcon = config.team === "A" ? "🐣" : "🔨";
+    this.nameText = new Text({ text: `[${rankIcon}] ${this.nickname}`, style: textStyle });
     this.nameText.anchor.set(0.5, 0);
     this.nameText.y = 19;
 
@@ -136,6 +141,14 @@ export class MobileEntity extends Container {
 
     // Load authentic mobile EPA spritesheet
     this.loadSprite();
+  }
+
+  public setNickname(name: string, team?: "A" | "B") {
+    this.nickname = name;
+    if (team) this.team = team;
+    const rankIcon = this.team === "A" ? "🐣" : "🔨";
+    this.nameText.text = `[${rankIcon}] ${this.nickname}`;
+    this.nameText.style.fill = this.team === "A" ? "#f59e0b" : "#38bdf8";
   }
 
   public async loadSprite() {
@@ -488,6 +501,109 @@ export class MobileEntity extends Container {
         popup.destroy();
       }
     }, 16);
+  }
+
+  /**
+   * GunBound Authentic Floating Chat Speech Cloud / Bubble above the mobile
+   */
+  public showChatBubble(message: string, durationMs: number = 4500) {
+    if (!message || message.trim().length === 0) return;
+
+    if (this.chatBubbleTimeout !== undefined) {
+      window.clearTimeout(this.chatBubbleTimeout);
+      this.chatBubbleTimeout = undefined;
+    }
+
+    if (this.chatBubbleContainer) {
+      this.removeChild(this.chatBubbleContainer);
+      this.chatBubbleContainer.destroy({ children: true });
+      this.chatBubbleContainer = undefined;
+    }
+
+    const container = new Container();
+    this.chatBubbleContainer = container;
+
+    const textStyle = new TextStyle({
+      fontFamily: "'Pixelify Sans', Inter, Arial, sans-serif",
+      fontSize: 12,
+      fontWeight: "bold",
+      fill: "#000000",
+      wordWrap: true,
+      wordWrapWidth: 160,
+      align: "center",
+      lineHeight: 15,
+    });
+
+    const textObj = new Text({ text: message.trim(), style: textStyle });
+    textObj.anchor.set(0.5, 0.5);
+
+    const paddingX = 10;
+    const paddingY = 6;
+    const bubbleWidth = Math.max(46, Math.min(180, textObj.width + paddingX * 2));
+    const bubbleHeight = textObj.height + paddingY * 2;
+
+    const bubbleGfx = new Graphics();
+
+    // 1. Shadow for 3D retro depth
+    bubbleGfx.roundRect(-bubbleWidth / 2 + 1, -bubbleHeight - 8 + 2, bubbleWidth, bubbleHeight, 6);
+    bubbleGfx.fill({ color: 0x000000, alpha: 0.35 });
+
+    // 2. White bubble body with 2px solid black border
+    bubbleGfx.roundRect(-bubbleWidth / 2, -bubbleHeight - 8, bubbleWidth, bubbleHeight, 5);
+    bubbleGfx.fill(0xffffff);
+    bubbleGfx.stroke({ width: 2, color: 0x000000 });
+
+    // 3. Pointer tail pointing down toward mobile top
+    bubbleGfx.poly([
+      { x: -6, y: -8 },
+      { x: 6, y: -8 },
+      { x: 0, y: -1 },
+    ]);
+    bubbleGfx.fill(0x000000);
+
+    bubbleGfx.poly([
+      { x: -4, y: -9 },
+      { x: 4, y: -9 },
+      { x: 0, y: -3 },
+    ]);
+    bubbleGfx.fill(0xffffff);
+
+    // Merge white seam between bubble body and tail
+    bubbleGfx.moveTo(-4, -8);
+    bubbleGfx.lineTo(4, -8);
+    bubbleGfx.stroke({ width: 3, color: 0xffffff });
+
+    textObj.position.set(0, -bubbleHeight / 2 - 8);
+
+    container.addChild(bubbleGfx);
+    container.addChild(textObj);
+
+    // Position above mobile body
+    container.position.set(0, -42);
+    container.alpha = 1.0;
+
+    this.addChild(container);
+
+    // Auto fade-out after durationMs
+    this.chatBubbleTimeout = window.setTimeout(() => {
+      let fadeElapsed = 0;
+      const fadeInterval = setInterval(() => {
+        fadeElapsed += 25;
+        if (!this.chatBubbleContainer || this.chatBubbleContainer !== container) {
+          clearInterval(fadeInterval);
+          return;
+        }
+        container.alpha = Math.max(0, 1.0 - fadeElapsed / 300);
+        if (fadeElapsed >= 300) {
+          clearInterval(fadeInterval);
+          if (this.chatBubbleContainer === container) {
+            this.removeChild(container);
+            container.destroy({ children: true });
+            this.chatBubbleContainer = undefined;
+          }
+        }
+      }, 25);
+    }, durationMs);
   }
 
   public updateHpBar() {

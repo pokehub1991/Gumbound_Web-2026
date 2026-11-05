@@ -1,6 +1,8 @@
 export class AudioManager {
   private static audioCache: Map<string, HTMLAudioElement> = new Map();
   private static musicAudio?: HTMLAudioElement;
+  private static moveLoopAudio?: HTMLAudioElement;
+  private static currentMoveSound?: string;
   public static isMuted: boolean = false;
   public static isMusicMuted: boolean = false;
   public static volume: number = 0.7;
@@ -61,6 +63,50 @@ export class AudioManager {
     }
   }
 
+  public static startMoveLoop(soundName: string, volScale: number = 0.65) {
+    if (this.isMuted) return;
+    try {
+      if (this.moveLoopAudio && this.currentMoveSound === soundName && !this.moveLoopAudio.paused) {
+        return;
+      }
+      this.stopMoveLoop();
+
+      const ext = soundName.includes(".") ? "" : ".wav";
+      const path = `/audio/${soundName}${ext}`;
+      const audio = new Audio(path);
+      audio.loop = true;
+      audio.volume = Math.max(0, Math.min(1, this.volume * volScale));
+      audio.play().catch(() => {
+        // Fallback to .ogg
+        const fallbackPath = `/audio/${soundName}.ogg`;
+        const fallbackAudio = new Audio(fallbackPath);
+        fallbackAudio.loop = true;
+        fallbackAudio.volume = Math.max(0, Math.min(1, this.volume * volScale));
+        fallbackAudio.play().catch(() => {});
+        this.moveLoopAudio = fallbackAudio;
+      });
+      this.moveLoopAudio = audio;
+      this.currentMoveSound = soundName;
+    } catch {
+      // Graceful fallback
+    }
+  }
+
+  public static stopMoveLoop(stopSoundName?: string) {
+    if (this.moveLoopAudio) {
+      try {
+        this.moveLoopAudio.pause();
+        this.moveLoopAudio.currentTime = 0;
+      } catch {}
+      this.moveLoopAudio = undefined;
+      this.currentMoveSound = undefined;
+
+      if (stopSoundName && !this.isMuted) {
+        this.play(stopSoundName, 0.7);
+      }
+    }
+  }
+
   public static playMusic(filename: string = "dbBattleMiramoTown.mp3") {
     if (this.isMuted || this.isMusicMuted) return;
 
@@ -99,8 +145,9 @@ export class AudioManager {
 
   public static toggleMute(): boolean {
     this.isMuted = !this.isMuted;
-    if (this.isMuted && this.musicAudio) {
-      this.musicAudio.pause();
+    if (this.isMuted) {
+      if (this.musicAudio) this.musicAudio.pause();
+      this.stopMoveLoop();
     } else if (!this.isMuted && this.musicAudio) {
       this.musicAudio.play().catch(() => {});
     }

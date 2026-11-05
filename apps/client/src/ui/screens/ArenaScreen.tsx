@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { CombatArena } from "../../core/combat/CombatArena.js";
 import { MobileSelector } from "../components/MobileSelector.js";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
@@ -19,8 +19,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [windAngle, setWindAngle] = useState<number>(0);
   const [isWindEnabled, setIsWindEnabled] = useState<boolean>(false);
 
-  const [botHp, setBotHp] = useState<number>(1000);
-  const [botMaxHp, setBotMaxHp] = useState<number>(1000);
+  const [, setBotHp] = useState<number>(1000);
+  const [, setBotMaxHp] = useState<number>(1000);
 
   const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
   const [selectorTarget, setSelectorTarget] = useState<"player" | "bot">("player");
@@ -31,6 +31,127 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
   const [currentZoom, setCurrentZoom] = useState<number>(1.2);
   const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
+
+  // Turn System (Lista de Turnos)
+  const [turnNumber, setTurnNumber] = useState<number>(1);
+  const [maxTurns, setMaxTurns] = useState<number>(40);
+  const [activeTurn, setActiveTurn] = useState<"player" | "bot">("player");
+  const [playerDelay, setPlayerDelay] = useState<number>(0);
+  const [botDelay, setBotDelay] = useState<number>(960);
+
+  // Compact Chat System
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; isSystem?: boolean }>>([
+    { sender: "Sistema", text: "¡Bienvenido a Meta Mine!", isSystem: true },
+  ]);
+  const [chatInput, setChatInput] = useState<string>("");
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatInactivityTimeoutRef = useRef<number | null>(null);
+
+  // 20-Second Turn Countdown (GunBound Authentic)
+  const [turnCountdown, setTurnCountdown] = useState<number>(20);
+
+  // Battle Item Slots (Dual, Dual, TP) - Only 1 active at a time
+  const [activeItemSlot, setActiveItemSlot] = useState<number | null>(null);
+
+  const handleToggleItemSlot = (slotIndex: number, itemType: "dual" | "teleport") => {
+    if (activeItemSlot === slotIndex) {
+      setActiveItemSlot(null);
+      if (arena) arena.activateItem(null);
+      AudioManager.play("click", 0.7);
+    } else {
+      setActiveItemSlot(slotIndex);
+      if (arena) arena.activateItem(itemType);
+      AudioManager.play("dual_snd", 0.85);
+    }
+  };
+
+  // Turn Countdown Timer Interval: ticks every single second from the beginning
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTurnCountdown((prev) => {
+        if (!arena || arena.isSimulating) return prev;
+        if (prev <= 1) return 0;
+        const next = prev - 1;
+        // Sonido del temporizador suena en cada segundo desde el principio (respetando silenciar música/audio)
+        if (next > 0 && !AudioManager.isMusicMuted && !AudioManager.isMuted) {
+          AudioManager.play("turntick1s", next <= 5 ? 0.9 : 0.75);
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [arena]);
+
+  // Keyboard listeners: Enter opens chat; Shift cycles shot types (S1 -> S2 -> SS -> S1)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+        return;
+      }
+      if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
+        e.preventDefault();
+        setShotType((prev) => {
+          const next = (prev + 1) % 3;
+          if (arena) arena.setShotType(next);
+          AudioManager.play("click", 0.7);
+          return next;
+        });
+        return;
+      }
+      if (e.code === "Enter") {
+        e.preventDefault();
+        setIsChatOpen(true);
+        setTimeout(() => {
+          chatInputRef.current?.focus();
+        }, 50);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [arena]);
+
+  const resetChatInactivityTimer = useCallback(() => {
+    if (chatInactivityTimeoutRef.current) {
+      window.clearTimeout(chatInactivityTimeoutRef.current);
+      chatInactivityTimeoutRef.current = null;
+    }
+    if (isChatOpen) {
+      chatInactivityTimeoutRef.current = window.setTimeout(() => {
+        setIsChatOpen(false);
+      }, 10000); // Auto-close chat after 10 seconds of inactivity
+    }
+  }, [isChatOpen]);
+
+  useEffect(() => {
+    if (isChatOpen) {
+      resetChatInactivityTimer();
+      // Instantly scroll to the bottom so the newest messages are shown when opening chat
+      requestAnimationFrame(() => {
+        if (chatMessagesContainerRef.current) {
+          chatMessagesContainerRef.current.scrollTop = chatMessagesContainerRef.current.scrollHeight;
+        }
+        chatBottomRef.current?.scrollIntoView({ behavior: "auto" });
+      });
+    } else if (chatInactivityTimeoutRef.current) {
+      window.clearTimeout(chatInactivityTimeoutRef.current);
+      chatInactivityTimeoutRef.current = null;
+    }
+    return () => {
+      if (chatInactivityTimeoutRef.current) {
+        window.clearTimeout(chatInactivityTimeoutRef.current);
+      }
+    };
+  }, [isChatOpen, resetChatInactivityTimer]);
+
+  useEffect(() => {
+    if (isChatOpen && chatMessagesContainerRef.current) {
+      chatMessagesContainerRef.current.scrollTop = chatMessagesContainerRef.current.scrollHeight;
+    }
+  }, [chatMessages, isChatOpen]);
 
   // Direct DOM reference for 60fps smooth power bar with zero React re-render overhead
   const powerBarFillRef = useRef<HTMLDivElement>(null);
@@ -45,7 +166,21 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     setWindAngle(arena.windAngle);
     setIsWindEnabled(arena.isWindEnabled);
     setIsBotImmortal(arena.bot.isImmortal);
+    setTurnNumber(arena.turnNumber);
+    setMaxTurns(arena.maxTurns);
+    setActiveTurn(arena.activeTurn);
+    setPlayerDelay(arena.playerDelay);
+    setBotDelay(arena.botDelay);
     arena.setShootMode(shootMode);
+
+    arena.onTurnUpdate = (info) => {
+      setTurnNumber(info.turnNumber);
+      setMaxTurns(info.maxTurns);
+      setActiveTurn(info.activeTurn);
+      setPlayerDelay(info.playerDelay);
+      setBotDelay(info.botDelay);
+      setTurnCountdown(20);
+    };
 
     arena.onWindUpdate = (pw, ang) => {
       setWindPower(pw);
@@ -69,11 +204,27 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     };
 
     arena.onLastPowerUpdate = (pw) => {
-      setLastPower(pw);
+      setLastPower(pw ?? null);
+    };
+
+    arena.onActiveItemChange = (item) => {
+      if (item === null) {
+        setActiveItemSlot(null);
+      }
+    };
+
+    arena.onChatMessage = (msg) => {
+      setChatMessages((prev) => [...prev, msg]);
+      if (msg.sender === "Tú" || msg.sender === "Player [Tú]") {
+        arena.player.showChatBubble(msg.text);
+      } else if (!msg.isSystem && arena.bot) {
+        arena.bot.mobile.showChatBubble(msg.text);
+      }
     };
 
     arena.onTurnReady = () => {
       if (powerBarFillRef.current) powerBarFillRef.current.style.width = "0%";
+      setTurnCountdown(20);
     };
   }, [arena]);
 
@@ -114,13 +265,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     }
   };
 
-  const handleResetBot = () => {
-    if (arena) {
-      arena.resetBot();
-      AudioManager.play("click", 0.7);
-    }
-  };
-
   const handleToggleMusic = () => {
     const active = AudioManager.toggleMusic();
     setIsMusicActive(active);
@@ -128,7 +272,75 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   };
 
   const currentMob = MOBILES_DATA[playerMobileId] || MOBILES_DATA[0];
-  const botMob = MOBILES_DATA[botMobileId] || MOBILES_DATA[1];
+
+  const handleSendChatMessage = () => {
+    if (!chatInput.trim()) return;
+    const text = chatInput.trim();
+    setChatMessages((prev) => [...prev, { sender: "Tú", text }]);
+    if (arena) {
+      arena.player.showChatBubble(text);
+    }
+    setChatInput("");
+    resetChatInactivityTimer();
+    setTimeout(() => {
+      chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 40);
+  };
+
+  // Turn List always prioritizes the active turn entity at index 0 (top row)
+  const turnList = activeTurn === "player"
+    ? [
+        {
+          id: "player",
+          turnIndex: 0,
+          rankIcon: "🐣",
+          name: "Player [Tú]",
+          isActive: true,
+          orderBoxBg: "#f59e0b",
+          orderBoxBorder: "#b45309",
+          nameColor: "#f59e0b",
+          delayStr: "0",
+          delayColor: "#ffffff",
+        },
+        {
+          id: "bot",
+          turnIndex: 1,
+          rankIcon: "🔨",
+          name: "Haris Pilton",
+          isActive: false,
+          orderBoxBg: "#38bdf8",
+          orderBoxBorder: "#0284c7",
+          nameColor: "#38bdf8",
+          delayStr: `+${Math.max(0, botDelay - playerDelay || 960)}`,
+          delayColor: "#94a3b8",
+        },
+      ]
+    : [
+        {
+          id: "bot",
+          turnIndex: 0,
+          rankIcon: "🔨",
+          name: "Haris Pilton",
+          isActive: true,
+          orderBoxBg: "#f59e0b",
+          orderBoxBorder: "#b45309",
+          nameColor: "#38bdf8",
+          delayStr: "0",
+          delayColor: "#ffffff",
+        },
+        {
+          id: "player",
+          turnIndex: 1,
+          rankIcon: "🐣",
+          name: "Player [Tú]",
+          isActive: false,
+          orderBoxBg: "#38bdf8",
+          orderBoxBorder: "#0284c7",
+          nameColor: "#f59e0b",
+          delayStr: `+${Math.max(0, playerDelay - botDelay || 960)}`,
+          delayColor: "#94a3b8",
+        },
+      ];
 
   return (
     <div style={{
@@ -152,54 +364,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       {/* ============================================================ */}
       <div style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "space-between",
         pointerEvents: "none",
         gap: "10px",
         width: "100%",
       }}>
-        {/* Left: Map & Reset & Segmented Zoom Pill */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {/* Map Pill */}
-          <div className="pixel-box" style={{
-            borderRadius: "4px",
-            padding: "3px 10px",
-            height: "36px",
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            pointerEvents: "auto",
-          }}>
-            <span style={{ fontSize: "14px", fontWeight: 700, color: "#38bdf8", letterSpacing: "0.5px", textShadow: "1px 1px 0 #000" }}>
-              METAMINE
-            </span>
-            <button
-              className="pixel-btn"
-              onClick={() => {
-                if (arena) {
-                  arena.resetMap();
-                  AudioManager.play("click", 0.7);
-                }
-              }}
-              style={{
-                background: "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)",
-                color: "#ffffff",
-                borderRadius: "3px",
-                width: "24px",
-                height: "24px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "12px",
-                cursor: "pointer",
-              }}
-              title="Reiniciar mapa y posiciones"
-            >
-              🔄
-            </button>
-          </div>
-
+        {/* Left: Stacked Segmented Zoom Pill (top) & Map Info (bottom) */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
           {/* Compact Segmented Zoom Pill */}
           <div className="pixel-box" style={{
             borderRadius: "4px",
@@ -244,6 +416,48 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 {item.label}
               </button>
             ))}
+          </div>
+
+          {/* Map Pill */}
+          <div className="pixel-box" style={{
+            borderRadius: "4px",
+            padding: "3px 10px",
+            height: "36px",
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            pointerEvents: "auto",
+          }}>
+            <span style={{ fontSize: "14px", fontWeight: 700, color: "#38bdf8", letterSpacing: "0.5px", textShadow: "1px 1px 0 #000" }}>
+              METAMINE
+            </span>
+            <button
+              className="pixel-btn"
+              onClick={() => {
+                if (arena) {
+                  arena.resetMap();
+                  setLastPower(null);
+                  setTurnCountdown(20);
+                  AudioManager.play("click", 0.7);
+                }
+              }}
+              style={{
+                background: "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)",
+                color: "#ffffff",
+                borderRadius: "3px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+              }}
+              title="Reiniciar mapa y posiciones"
+            >
+              🔄
+            </button>
           </div>
         </div>
 
@@ -330,168 +544,67 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           )}
         </div>
 
-        {/* Right: Player Mobile Selector + Bot Dummy Status & Audio */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {/* Player Mobile Selector Capsule */}
-          <button
-            className="pixel-box pixel-btn"
-            onClick={() => {
-              setSelectorTarget("player");
-              setIsSelectorOpen(true);
-              AudioManager.play("click", 0.7);
-            }}
+        {/* Right: Player Mobile Selector + Bot Immortal Toggle + Turn Countdown Timer */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", pointerEvents: "auto" }}>
+          {/* Mobile Selector Capsule with integrated Music Toggle */}
+          <div
+            className="pixel-box"
             style={{
               borderRadius: "4px",
-              padding: "3px 10px",
+              padding: "3px 8px",
               height: "36px",
               boxSizing: "border-box",
               display: "flex",
               alignItems: "center",
-              gap: "7px",
-              color: "#ffffff",
-              fontSize: "14px",
-              fontWeight: 700,
-              cursor: "pointer",
+              gap: "8px",
               pointerEvents: "auto",
-              textShadow: "1px 1px 0 #000",
             }}
-            title="Elegir móvil del jugador (25 móviles disponibles)"
           >
-            <span style={{ fontSize: "14px" }}>👤</span>
-            <span style={{ color: "#38bdf8" }}>{currentMob.name}</span>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>▾</span>
-          </button>
-
-          {/* Bot Dummy Status Capsule */}
-          <div className="pixel-box" style={{
-            borderRadius: "4px",
-            padding: "3px 10px",
-            height: "36px",
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            pointerEvents: "auto",
-          }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ color: "#f87171", fontSize: "12px", fontWeight: 700, textShadow: "1px 1px 0 #000" }}>
-                  [{botMob.name}]
-                </span>
-                <span style={{
-                  color: isBotImmortal ? "#4ade80" : botHp > 500 ? "#4ade80" : botHp > 250 ? "#facc15" : "#ef4444",
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  textShadow: "1px 1px 0 #000",
-                }}>
-                  {isBotImmortal ? "∞ HP" : `${botHp}/${botMaxHp}`}
-                </span>
-              </div>
-              <div style={{
-                width: "72px",
-                height: "6px",
-                background: "#030712",
-                border: "1.5px solid #000",
-                borderRadius: "2px",
-                overflow: "hidden",
-                marginTop: "2px",
-              }}>
-                <div style={{
-                  width: isBotImmortal ? "100%" : `${Math.max(0, Math.min(100, (botHp / (botMaxHp || 1)) * 100))}%`,
-                  height: "100%",
-                  background: isBotImmortal ? "#22c55e" : botHp > 500 ? "#22c55e" : botHp > 250 ? "#eab308" : "#ef4444",
-                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.4)",
-                  transition: "width 0.2s steps(8)",
-                }} />
-              </div>
-            </div>
-
-            {/* Immortal / Mortal Toggle Icon */}
             <button
               className="pixel-btn"
               onClick={() => {
-                if (arena) {
-                  const next = arena.toggleBotImmortality();
-                  setIsBotImmortal(next);
-                  AudioManager.play("click", 0.7);
-                }
-              }}
-              style={{
-                background: isBotImmortal
-                  ? "linear-gradient(180deg, #059669 0%, #047857 100%)"
-                  : "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
-                color: "#ffffff",
-                borderRadius: "3px",
-                width: "26px",
-                height: "26px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-              title={isBotImmortal ? "Bot Inmortal (click para hacerlo mortal)" : "Bot Mortal (click para hacerlo inmortal)"}
-            >
-              {isBotImmortal ? "🛡️" : "⚔️"}
-            </button>
-
-            {/* Change Bot Mobile Button */}
-            <button
-              className="pixel-btn"
-              onClick={() => {
-                setSelectorTarget("bot");
+                setSelectorTarget("player");
                 setIsSelectorOpen(true);
                 AudioManager.play("click", 0.7);
               }}
               style={{
-                background: "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
+                background: "transparent",
+                border: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: "7px",
                 color: "#ffffff",
+                fontSize: "14px",
+                fontWeight: 700,
+                cursor: "pointer",
+                padding: 0,
+                textShadow: "1px 1px 0 #000",
+              }}
+              title="Elegir móvil del jugador (25 móviles disponibles)"
+            >
+              {/* User Rank Box */}
+              <div style={{
+                width: "20px",
+                height: "20px",
+                background: "#050914",
+                border: "1.5px solid #f59e0b",
                 borderRadius: "3px",
-                width: "26px",
-                height: "26px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-              title="Cambiar móvil del bot"
-            >
-              🚗
+                fontSize: "12px",
+                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.25)",
+              }}>
+                🐣
+              </div>
+              <span style={{ color: "#38bdf8" }}>{currentMob.name}</span>
+              <span style={{ fontSize: "11px", color: "#94a3b8" }}>▾</span>
             </button>
 
-            {/* Reset Bot Position Button */}
-            <button
-              className="pixel-btn"
-              onClick={handleResetBot}
-              style={{
-                background: "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                color: "#94a3b8",
-                borderRadius: "3px",
-                width: "26px",
-                height: "26px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-              title="Reubicar bot en posición segura"
-            >
-              🔄
-            </button>
-          </div>
+            {/* Subtle Vertical Divider */}
+            <div style={{ width: "1px", height: "18px", background: "#334155" }} />
 
-          {/* Quick Settings: Music Toggle */}
-          <div className="pixel-box" style={{
-            borderRadius: "4px",
-            padding: "3px 6px",
-            height: "36px",
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            pointerEvents: "auto",
-          }}>
+            {/* Integrated Music Toggle Button */}
             <button
               className="pixel-btn"
               onClick={handleToggleMusic}
@@ -500,18 +613,108 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   ? "linear-gradient(180deg, #059669 0%, #047857 100%)"
                   : "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
                 borderRadius: "3px",
-                width: "26px",
-                height: "26px",
+                width: "24px",
+                height: "24px",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "13px",
+                fontSize: "12px",
                 cursor: "pointer",
+                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.3), 0 1px 0 #000",
               }}
               title={isMusicActive ? "Silenciar música" : "Activar música"}
             >
               {isMusicActive ? "🔊" : "🔇"}
             </button>
+          </div>
+
+          {/* Bot Immortal / Mortal Toggle Button */}
+          <button
+            className="pixel-btn pixel-box"
+            onClick={() => {
+              if (arena) {
+                const next = arena.toggleBotImmortality();
+                setIsBotImmortal(next);
+                AudioManager.play("click", 0.7);
+              }
+            }}
+            style={{
+              background: isBotImmortal
+                ? "linear-gradient(180deg, #059669 0%, #047857 100%)"
+                : "linear-gradient(180deg, #dc2626 0%, #991b1b 100%)",
+              color: "#ffffff",
+              borderRadius: "4px",
+              width: "36px",
+              height: "36px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "16px",
+              cursor: "pointer",
+              boxSizing: "border-box",
+              border: isBotImmortal ? "2px solid #34d399" : "2px solid #f87171",
+              boxShadow: isBotImmortal
+                ? "0 0 8px rgba(16, 185, 129, 0.5), inset 1px 1px 0 rgba(255,255,255,0.3)"
+                : "0 0 8px rgba(239, 68, 68, 0.5), inset 1px 1px 0 rgba(255,255,255,0.3)",
+            }}
+            title={isBotImmortal ? "Bot Inmortal (click para hacerlo mortal)" : "Bot Mortal (click para hacerlo inmortal)"}
+          >
+            {isBotImmortal ? "🛡️" : "⚔️"}
+          </button>
+
+          {/* Turn Countdown Timer Widget (20s) in Top-Right Corner */}
+          <div
+            className="pixel-box"
+            style={{
+              borderRadius: "4px",
+              width: "70px",
+              height: "36px",
+              boxSizing: "border-box",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "2px",
+              pointerEvents: "auto",
+              background: turnCountdown <= 5
+                ? "linear-gradient(180deg, #450a0a 0%, #1f0404 100%)"
+                : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+              border: turnCountdown <= 5 ? "2px solid #ef4444" : "2px solid #000000",
+              boxShadow: turnCountdown <= 5
+                ? "0 0 12px rgba(239, 68, 68, 0.85), inset 1px 1px 0 rgba(255,255,255,0.25)"
+                : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 rgba(0,0,0,0.6)",
+            }}
+            title="Tiempo restante de turno (20 segundos)"
+          >
+            <span
+              style={{
+                fontSize: "24px",
+                fontWeight: 900,
+                fontFamily: "'Pixelify Sans', cursive, monospace",
+                lineHeight: "1",
+                color: turnCountdown <= 5 ? "#ef4444" : turnCountdown <= 10 ? "#facc15" : "#4ade80",
+                textShadow: turnCountdown <= 5
+                  ? "0 0 8px rgba(239, 68, 68, 0.9), 2px 2px 0 #000"
+                  : "2px 2px 0 #000",
+                textAlign: "right",
+                display: "inline-block",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {turnCountdown}
+            </span>
+            <span
+              style={{
+                fontSize: "14px",
+                fontWeight: 700,
+                fontFamily: "'Pixelify Sans', cursive, monospace",
+                lineHeight: "1",
+                color: turnCountdown <= 5 ? "#fca5a5" : turnCountdown <= 10 ? "#fde047" : "#86efac",
+                textShadow: "1px 1px 0 #000",
+                marginTop: "3px",
+              }}
+            >
+              s
+            </span>
           </div>
         </div>
       </div>
@@ -543,123 +746,335 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       )}
 
       {/* ============================================================ */}
-      {/* BOTTOM HUD (AUTHENTIC PIXEL-ART GUNBOUND BAR + SLICE/SPACE BUTTON) */}
+      {/* BOTTOM-LEFT: LISTA DE TURNOS */}
       {/* ============================================================ */}
       <div style={{
+        position: "absolute",
+        bottom: "12px",
+        left: "12px",
         display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
-        gap: "12px",
-        width: "100%",
-        pointerEvents: "none",
+        flexDirection: "column",
+        gap: "6px",
+        zIndex: 20,
+        pointerEvents: "auto",
       }}>
-        {/* Main HUD Container: Shot Selectors, Angle & Authentic Power Bar */}
+        {/* Turn List Box (Replica fiel de GunBound con estilo Pixel-Art moderno) */}
         <div className="pixel-box" style={{
-          borderRadius: "6px",
-          padding: "10px 16px",
-          pointerEvents: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
-          width: "100%",
-          maxWidth: "700px",
+          width: "240px",
+          borderRadius: "4px",
+          padding: "4px 8px",
+          boxSizing: "border-box",
         }}>
-          {/* Upper Row: Shot Selector (S1, S2, SS) & Angle Badge */}
+          {/* Header: Lista de Turnos, 1/40, ⏱️ */}
           <div style={{
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            gap: "12px",
+            paddingBottom: "3px",
+            borderBottom: "1px solid rgba(0,0,0,0.6)",
+            marginBottom: "3px",
           }}>
-            {/* Shot Selector (S1, S2, SS Pixel Arcade Buttons) */}
-            <div style={{ display: "flex", gap: "8px" }}>
-              <button
-                className="pixel-btn"
-                onClick={() => handleSelectShotType(0)}
-                style={{
-                  background: shotType === 0
-                    ? "linear-gradient(180deg, #38bdf8 0%, #0284c7 100%)"
-                    : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                  border: shotType === 0 ? "2px solid #ffffff" : "2px solid #000000",
-                  borderRadius: "4px",
-                  padding: "4px 14px",
-                  color: shotType === 0 ? "#ffffff" : "#94a3b8",
-                  fontWeight: 700,
-                  fontSize: "15px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  minWidth: "50px",
-                  height: "34px",
-                  boxShadow: shotType === 0
-                    ? "0 0 10px #38bdf8, inset 1px 1px 0 #fff"
-                    : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                  textShadow: "1px 1px 0 #000",
-                }}
-                title="Shot 1 [Tecla 1]"
-              >
-                S1
-              </button>
-
-              <button
-                className="pixel-btn"
-                onClick={() => handleSelectShotType(1)}
-                style={{
-                  background: shotType === 1
-                    ? "linear-gradient(180deg, #facc15 0%, #d97706 100%)"
-                    : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                  border: shotType === 1 ? "2px solid #ffffff" : "2px solid #000000",
-                  borderRadius: "4px",
-                  padding: "4px 14px",
-                  color: shotType === 1 ? "#ffffff" : "#94a3b8",
-                  fontWeight: 700,
-                  fontSize: "15px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  minWidth: "50px",
-                  height: "34px",
-                  boxShadow: shotType === 1
-                    ? "0 0 10px #facc15, inset 1px 1px 0 #fff"
-                    : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                  textShadow: "1px 1px 0 #000",
-                }}
-                title="Shot 2 [Tecla 2]"
-              >
-                S2
-              </button>
-
-              <button
-                className="pixel-btn"
-                onClick={() => handleSelectShotType(2)}
-                style={{
-                  background: shotType === 2
-                    ? "linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)"
-                    : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-                  border: shotType === 2 ? "2px solid #fde047" : "2px solid #000000",
-                  borderRadius: "4px",
-                  padding: "4px 14px",
-                  color: shotType === 2 ? "#fde047" : "#94a3b8",
-                  fontWeight: 700,
-                  fontSize: "15px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  minWidth: "50px",
-                  height: "34px",
-                  boxShadow: shotType === 2
-                    ? "0 0 12px #ef4444, inset 1px 1px 0 #fff"
-                    : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
-                  textShadow: "1px 1px 0 #000",
-                }}
-                title="Super Shot [Tecla 3 / F]"
-              >
-                SS
-              </button>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#ffffff", textShadow: "1px 1px 0 #000" }}>
+              Lista de Turnos
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#86efac", textShadow: "1px 1px 0 #000" }}>
+                {turnNumber} / {maxTurns}
+              </span>
+              <span style={{ fontSize: "12px" }}>⏱️</span>
             </div>
+          </div>
+
+          {/* Turn Rows: Active Turn always first at top */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            {turnList.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: item.isActive
+                    ? "linear-gradient(90deg, rgba(161, 98, 7, 0.5) 0%, rgba(120, 53, 15, 0.3) 100%)"
+                    : "rgba(0, 0, 0, 0.3)",
+                  border: item.isActive ? "1px solid rgba(245, 158, 11, 0.65)" : "1px solid transparent",
+                  borderRadius: "3px",
+                  padding: "2px 4px",
+                }}
+              >
+                {/* Left section: Turn order box + Rank icon box + Name */}
+                <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                  {/* Order Box: [0] or [1] */}
+                  <div style={{
+                    width: "16px",
+                    height: "16px",
+                    background: item.orderBoxBg,
+                    border: `1.5px solid ${item.orderBoxBorder}`,
+                    borderRadius: "2px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "11px",
+                    fontWeight: 900,
+                    color: "#000000",
+                    lineHeight: "1",
+                  }}>
+                    {item.turnIndex}
+                  </div>
+
+                  {/* Rank Icon Box */}
+                  <div style={{
+                    width: "18px",
+                    height: "18px",
+                    background: "#030712",
+                    border: "1.5px solid #000",
+                    borderRadius: "2px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "11px",
+                    boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.25)",
+                  }}>
+                    {item.rankIcon}
+                  </div>
+
+                  {/* Player / Bot Nickname */}
+                  <span style={{
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    color: item.nameColor,
+                    textShadow: "1px 1px 0 #000",
+                    maxWidth: "100px",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {item.name}
+                  </span>
+                </div>
+
+                {/* Right section: Delay points difference */}
+                <span style={{
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  color: item.delayColor,
+                  textShadow: "1px 1px 0 #000",
+                }}>
+                  {item.delayStr}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* CENTER-BOTTOM: STRICTLY FIXED CENTER POWER BAR HUD */}
+      {/* ============================================================ */}
+      <div
+        className="pixel-box"
+        style={{
+          position: "absolute",
+          bottom: "12px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          borderRadius: "6px",
+          padding: "8px 14px",
+          pointerEvents: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          width: "min(640px, calc(100vw - 340px))",
+          boxSizing: "border-box",
+          zIndex: 10,
+        }}
+      >
+        {/* Upper Row: Left S1/S2/SS, Center DUAL/DUAL/TP, Right Mode Toggle + Angle Badge */}
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          position: "relative",
+          minHeight: "36px",
+        }}>
+          {/* Left Group: Shot Selector (S1, S2, SS Pixel Arcade Buttons) */}
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+            <button
+              className="pixel-btn"
+              onClick={() => handleSelectShotType(0)}
+              style={{
+                background: shotType === 0
+                  ? "linear-gradient(180deg, #38bdf8 0%, #0284c7 100%)"
+                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+                border: shotType === 0 ? "2px solid #ffffff" : "2px solid #000000",
+                borderRadius: "4px",
+                padding: "3px 12px",
+                color: shotType === 0 ? "#ffffff" : "#94a3b8",
+                fontWeight: 700,
+                fontSize: "14px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: "44px",
+                height: "34px",
+                boxShadow: shotType === 0
+                  ? "0 0 10px #38bdf8, inset 1px 1px 0 #fff"
+                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
+                textShadow: "1px 1px 0 #000",
+              }}
+              title="Shot 1 [Tecla 1]"
+            >
+              S1
+            </button>
+
+            <button
+              className="pixel-btn"
+              onClick={() => handleSelectShotType(1)}
+              style={{
+                background: shotType === 1
+                  ? "linear-gradient(180deg, #facc15 0%, #d97706 100%)"
+                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+                border: shotType === 1 ? "2px solid #ffffff" : "2px solid #000000",
+                borderRadius: "4px",
+                padding: "3px 12px",
+                color: shotType === 1 ? "#ffffff" : "#94a3b8",
+                fontWeight: 700,
+                fontSize: "14px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: "44px",
+                height: "34px",
+                boxShadow: shotType === 1
+                  ? "0 0 10px #facc15, inset 1px 1px 0 #fff"
+                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
+                textShadow: "1px 1px 0 #000",
+              }}
+              title="Shot 2 [Tecla 2]"
+            >
+              S2
+            </button>
+
+            <button
+              className="pixel-btn"
+              onClick={() => handleSelectShotType(2)}
+              style={{
+                background: shotType === 2
+                  ? "linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)"
+                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+                border: shotType === 2 ? "2px solid #fde047" : "2px solid #000000",
+                borderRadius: "4px",
+                padding: "3px 12px",
+                color: shotType === 2 ? "#fde047" : "#94a3b8",
+                fontWeight: 700,
+                fontSize: "14px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minWidth: "44px",
+                height: "34px",
+                boxShadow: shotType === 2
+                  ? "0 0 12px #ef4444, inset 1px 1px 0 #fff"
+                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
+                textShadow: "1px 1px 0 #000",
+              }}
+              title="Super Shot [Tecla 3 / F]"
+            >
+              SS
+            </button>
+          </div>
+
+          {/* Center Group: 3 Classic Lobby Item Buttons (DUAL, DUAL, TP) */}
+          <div style={{
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            gap: "6px",
+            alignItems: "center",
+          }}>
+            {[
+              { id: 0, label: "DUAL", type: "dual" as const, title: "Item 1: Disparo Dual (x2 proyectiles)" },
+              { id: 1, label: "DUAL", type: "dual" as const, title: "Item 2: Disparo Dual (x2 proyectiles)" },
+              { id: 2, label: "TP", type: "teleport" as const, title: "Item 3: Teleportación instantánea" },
+            ].map((slot) => {
+              const isSelected = activeItemSlot === slot.id;
+              return (
+                <button
+                  key={slot.id}
+                  className="pixel-btn"
+                  onClick={() => handleToggleItemSlot(slot.id, slot.type)}
+                  style={{
+                    background: isSelected
+                      ? "linear-gradient(180deg, #10b981 0%, #047857 100%)"
+                      : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+                    border: isSelected ? "2px solid #ffffff" : "2px solid #000000",
+                    borderRadius: "4px",
+                    padding: 0,
+                    width: "56px",
+                    minWidth: "56px",
+                    height: "34px",
+                    boxSizing: "border-box",
+                    color: isSelected ? "#ffffff" : "#94a3b8",
+                    fontFamily: "'Pixelify Sans', cursive, monospace, sans-serif",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: isSelected
+                      ? "0 0 10px #34d399, inset 1px 1px 0 #fff"
+                      : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
+                    textShadow: "1px 1px 0 #000",
+                    filter: isSelected ? "none" : undefined,
+                  }}
+                  title={slot.title}
+                >
+                  {slot.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Right Group: Shoot Mode Toggle (⌨️ / 🖱️) + Digital Angle Badge */}
+          <div style={{ display: "flex", gap: "6px", alignItems: "center", marginLeft: "auto" }}>
+            {/* Mode toggle button moved directly to the left of angle box */}
+            <button
+              className="pixel-btn"
+              onClick={() => {
+                const newMode = shootMode === "space" ? "drag" : "space";
+                setShootMode(newMode);
+                if (arena) arena.setShootMode(newMode);
+                AudioManager.play("click", 0.7);
+              }}
+              style={{
+                background: shootMode === "drag"
+                  ? "linear-gradient(180deg, #10b981 0%, #059669 100%)"
+                  : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
+                border: shootMode === "drag" ? "2px solid #34d399" : "2px solid #000000",
+                borderRadius: "4px",
+                width: "36px",
+                height: "34px",
+                color: "#ffffff",
+                cursor: "pointer",
+                boxShadow: shootMode === "drag"
+                  ? "0 0 10px rgba(16, 185, 129, 0.6), inset 1px 1px 0 #fff"
+                  : "inset 1px 1px 0 rgba(255,255,255,0.2), inset -1px -1px 0 #000, 0 2px 0 #000",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "17px",
+              }}
+              title={shootMode === "drag" ? "Modo Mouse / Slice (Click para cambiar a Teclado Espacio)" : "Modo Teclado / Espacio (Click para cambiar a Mouse Slice)"}
+            >
+              <span>{shootMode === "drag" ? "🖱️" : "⌨️"}</span>
+            </button>
 
             {/* Digital Arcade Angle Display */}
             <div style={{
@@ -669,9 +1084,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               background: "#030712",
               border: "2px solid #000000",
               borderRadius: "4px",
-              padding: "3px 14px",
-              minWidth: "62px",
+              padding: "3px 10px",
+              minWidth: "56px",
               height: "34px",
+              boxSizing: "border-box",
               boxShadow: "inset 1px 1px 3px rgba(0,0,0,0.95), 0 2px 0 rgba(255,255,255,0.1)",
             }}>
               <span style={{
@@ -685,142 +1101,252 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               </span>
             </div>
           </div>
-
-          {/* Lower Row: Full-Width Authentic GunBound Power Meter Bar */}
-          <div style={{
-            width: "100%",
-            height: "32px",
-            background: "#050914",
-            borderRadius: "4px",
-            border: "2px solid #000000",
-            position: "relative",
-            overflow: "hidden",
-            boxShadow: "inset 2px 2px 5px rgba(0,0,0,0.95), 0 2px 0 rgba(255,255,255,0.1)",
-          }}>
-            {/* Authentic ruler tick marks at 25%, 50%, 75% */}
-            <div style={{ position: "absolute", left: "25%", top: 0, bottom: 0, width: "2px", background: "rgba(255,255,255,0.45)", zIndex: 3 }} />
-            <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: "2.5px", background: "#ffffff", zIndex: 3 }} />
-            <div style={{ position: "absolute", left: "75%", top: 0, bottom: 0, width: "2px", background: "rgba(255,255,255,0.45)", zIndex: 3 }} />
-
-            {/* Subtle sub-ticks at 10% intervals */}
-            {[10, 20, 30, 40, 60, 70, 80, 90].map((tick) => (
-              <div
-                key={tick}
-                style={{
-                  position: "absolute",
-                  left: `${tick}%`,
-                  top: "8px",
-                  bottom: "8px",
-                  width: "1px",
-                  background: "rgba(255,255,255,0.22)",
-                  zIndex: 3,
-                }}
-              />
-            ))}
-
-            {/* Centered POTENCIA Text Overlay in Pixelify Sans */}
-            <div style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              zIndex: 4,
-              pointerEvents: "none",
-            }}>
-              <span style={{
-                color: "rgba(255, 255, 255, 0.85)",
-                fontSize: "14px",
-                fontWeight: 700,
-                letterSpacing: "1.5px",
-                textShadow: "1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000",
-              }}>
-                POTENCIA
-              </span>
-            </div>
-
-            {/* Last Shot Power Indicator Marker */}
-            {lastPower !== null && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: `${lastPower}%`,
-                  top: 0,
-                  bottom: 0,
-                  width: "2px",
-                  background: "#ffffff",
-                  boxShadow: "0 0 8px #fbbf24, 0 0 2px #ffffff",
-                  zIndex: 5,
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: "-5px",
-                    width: 0,
-                    height: 0,
-                    borderLeft: "6px solid transparent",
-                    borderRight: "6px solid transparent",
-                    borderTop: "8px solid #fbbf24",
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Filled Power Progress with authentic fiery GunBound gradient */}
-            <div
-              ref={powerBarFillRef}
-              style={{
-                width: "0%",
-                height: "100%",
-                background: "linear-gradient(90deg, #facc15 0%, #f97316 40%, #ef4444 80%, #b91c1c 100%)",
-                boxShadow: "0 0 14px rgba(249, 115, 22, 0.75)",
-                transition: "none",
-              }}
-            />
-          </div>
         </div>
 
-        {/* Independent Floating Shoot Mode Button (to the right of the Power Bar) */}
+        {/* Lower Row: Full-Width Authentic GunBound Power Meter Bar (WITHOUT TEXT AS REQUESTED) */}
+        <div style={{
+          width: "100%",
+          height: "32px",
+          background: "#050914",
+          borderRadius: "4px",
+          border: "2px solid #000000",
+          position: "relative",
+          overflow: "hidden",
+          boxShadow: "inset 2px 2px 5px rgba(0,0,0,0.95), 0 2px 0 rgba(255,255,255,0.1)",
+        }}>
+          {/* Authentic ruler tick marks at 25%, 50%, 75% with exact same color intensity (1px, 0.28 opacity) */}
+          <div style={{ position: "absolute", left: "25%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
+          <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
+          <div style={{ position: "absolute", left: "75%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
+
+          {/* Sub-ticks at 10% intervals with matching subtle intensity */}
+          {[10, 20, 30, 40, 60, 70, 80, 90].map((tick) => (
+            <div
+              key={tick}
+              style={{
+                position: "absolute",
+                left: `${tick}%`,
+                top: "8px",
+                bottom: "8px",
+                width: "1px",
+                background: "rgba(255,255,255,0.28)",
+                zIndex: 3,
+              }}
+            />
+          ))}
+
+          {/* Last Shot Power Indicator Marker (Golden-yellow line matching arrow marker) */}
+          {lastPower !== null && (
+            <div
+              style={{
+                position: "absolute",
+                left: `${lastPower}%`,
+                top: 0,
+                bottom: 0,
+                width: "2px",
+                background: "#fbbf24",
+                boxShadow: "0 0 4px #f59e0b",
+                zIndex: 5,
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: "-5px",
+                  width: 0,
+                  height: 0,
+                  borderLeft: "6px solid transparent",
+                  borderRight: "6px solid transparent",
+                  borderTop: "8px solid #fbbf24",
+                }}
+              />
+            </div>
+          )}
+
+          {/* Filled Power Progress with authentic fiery GunBound gradient */}
+          <div
+            ref={powerBarFillRef}
+            style={{
+              width: "0%",
+              height: "100%",
+              background: "linear-gradient(90deg, #facc15 0%, #f97316 40%, #ef4444 80%, #b91c1c 100%)",
+              boxShadow: "0 0 14px rgba(249, 115, 22, 0.75)",
+              transition: "none",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* ============================================================ */}
+      {/* BOTTOM-RIGHT: CHAT DE BATALLA COMPACTO */}
+      {/* ============================================================ */}
+      <div style={{
+        position: "absolute",
+        bottom: "12px",
+        right: "12px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "flex-end",
+        gap: "6px",
+        zIndex: 25,
+        pointerEvents: "auto",
+      }}>
+        {/* Compact Chat Popup (if open) */}
+        {isChatOpen && (
+          <div
+            className="pixel-box"
+            onMouseMove={resetChatInactivityTimer}
+            onMouseDown={resetChatInactivityTimer}
+            onClick={resetChatInactivityTimer}
+            style={{
+              width: "250px",
+              height: "175px",
+              borderRadius: "4px",
+              padding: "6px 8px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "5px",
+              boxShadow: "0 6px 20px rgba(0,0,0,0.85)",
+              boxSizing: "border-box",
+            }}
+          >
+            {/* Chat Header */}
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: "1px solid rgba(255,255,255,0.15)",
+              paddingBottom: "3px",
+            }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#38bdf8", textShadow: "1px 1px 0 #000" }}>
+                💬 Chat de Batalla
+              </span>
+              <button
+                onClick={() => setIsChatOpen(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#94a3b8",
+                  fontSize: "12px",
+                  fontWeight: 900,
+                  cursor: "pointer",
+                  padding: "0 4px",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Messages Scroll Area with Retro Pixel-Art Scrollbar */}
+            <div
+              ref={chatMessagesContainerRef}
+              className="pixel-scrollbar"
+              onScroll={resetChatInactivityTimer}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                paddingRight: "4px",
+              }}
+            >
+              {chatMessages.map((msg, idx) => (
+                <div key={idx} style={{ fontSize: "11px", lineHeight: "1.25" }}>
+                  {msg.isSystem ? (
+                    <span style={{ color: "#4ade80", textShadow: "1px 1px 0 #000" }}>{msg.text}</span>
+                  ) : (
+                    <span>
+                      <strong style={{ color: msg.sender === "Tú" ? "#f59e0b" : "#38bdf8", textShadow: "1px 1px 0 #000" }}>
+                        [{msg.sender}]:{" "}
+                      </strong>
+                      <span style={{ color: "#e2e8f0", textShadow: "1px 1px 0 #000" }}>{msg.text}</span>
+                    </span>
+                  )}
+                </div>
+              ))}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* Input Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendChatMessage();
+              }}
+              style={{ display: "flex", gap: "4px" }}
+            >
+              <input
+                ref={chatInputRef}
+                type="text"
+                value={chatInput}
+                onChange={(e) => {
+                  setChatInput(e.target.value);
+                  resetChatInactivityTimer();
+                }}
+                onFocus={resetChatInactivityTimer}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  resetChatInactivityTimer();
+                }}
+                onKeyUp={(e) => e.stopPropagation()}
+                placeholder="Escribe un mensaje..."
+                style={{
+                  flex: 1,
+                  background: "#030712",
+                  border: "1.5px solid #000",
+                  borderRadius: "3px",
+                  color: "#ffffff",
+                  fontSize: "11px",
+                  padding: "3px 6px",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="submit"
+                className="pixel-btn"
+                style={{
+                  background: "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)",
+                  color: "#ffffff",
+                  borderRadius: "3px",
+                  padding: "0 8px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                ➤
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Chat Toggle Button in bottom-right */}
         <button
           className="pixel-btn"
-          onClick={() => {
-            const newMode = shootMode === "space" ? "drag" : "space";
-            setShootMode(newMode);
-            if (arena) arena.setShootMode(newMode);
-            AudioManager.play("click", 0.7);
-          }}
+          onClick={() => setIsChatOpen(!isChatOpen)}
           style={{
-            pointerEvents: "auto",
-            background: shootMode === "drag"
-              ? "linear-gradient(180deg, #10b981 0%, #059669 100%)"
+            background: isChatOpen
+              ? "linear-gradient(180deg, #0284c7 0%, #0369a1 100%)"
               : "linear-gradient(180deg, #1e293b 0%, #0f172a 100%)",
-            border: shootMode === "drag" ? "2px solid #34d399" : "2px solid #000000",
-            borderRadius: "6px",
-            padding: "0 16px",
-            height: "46px",
             color: "#ffffff",
-            fontSize: "14px",
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: shootMode === "drag"
-              ? "0 0 14px rgba(16, 185, 129, 0.6), inset 1px 1px 0 #fff"
-              : "inset 1px 1px 0 rgba(255,255,255,0.25), inset -1px -1px 0 #000, 0 3px 0 #000",
+            borderRadius: "4px",
+            padding: "4px 10px",
+            height: "32px",
             display: "flex",
             alignItems: "center",
-            gap: "8px",
-            whiteSpace: "nowrap",
+            gap: "6px",
+            fontSize: "13px",
+            fontWeight: 700,
+            cursor: "pointer",
             textShadow: "1px 1px 0 #000",
-            marginBottom: "2px",
+            boxShadow: "0 2px 0 #000",
           }}
-          title={shootMode === "drag" ? "Modo arrastrar con ratón (Click y suelta)" : "Modo barra espaciadora (Mantén Espacio)"}
+          title="Abrir / Cerrar Chat de batalla"
         >
-          <span style={{ fontSize: "16px" }}>{shootMode === "drag" ? "🖱️" : "⌨️"}</span>
-          <span style={{ letterSpacing: "0.8px" }}>{shootMode === "drag" ? "SLICE" : "ESPACIO"}</span>
+          <span style={{ fontSize: "14px" }}>💬</span>
+          <span>Chat</span>
         </button>
       </div>
     </div>

@@ -34,6 +34,8 @@ export interface MobileDef {
   sound2?: string;
   soundSS?: string;
   soundExplode?: string;
+  soundMove?: string;
+  soundStop?: string;
 }
 
 export type MobileData = MobileDef;
@@ -57,6 +59,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [0, 1, 2],
     playerOffset: { x: 17, y: -28 },
     description: "Tanque blindado de ataque frontal. SS se abre a 1540ms duplicando daño y bunge.",
+    soundMove: "1move",
+    soundStop: "1nmove",
   },
   1: {
     id: 1,
@@ -76,6 +80,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [3, 4, 5],
     playerOffset: { x: -5, y: -40 },
     description: "Mamut gélido. Tiro 2 reduce la defensa enemiga permanentemente.",
+    soundMove: "2move",
+    soundStop: "2nmove",
   },
   2: {
     id: 2,
@@ -95,6 +101,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [6, 6, 6],
     playerOffset: { x: -7, y: -24 },
     description: "Móvil electromagnético. Tiro 2 invoca el satélite orbital Thor.",
+    soundMove: "3move",
+    soundStop: "3nmove",
   },
   3: {
     id: 3,
@@ -114,6 +122,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [8, 8, 9],
     playerOffset: { x: 3, y: -37 },
     description: "Descarga rayos verticales desde la ionosfera hacia el cráter de impacto.",
+    soundMove: "4move",
   },
   4: {
     id: 4,
@@ -133,6 +142,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [10, 11, 10],
     playerOffset: { x: 5, y: -32 },
     description: "Artillería pesada. Tiro 2 lanza 6 cohetes en 2 columnas; SS lanza abanico de 15 misiles.",
+    soundMove: "5move",
+    soundStop: "5nmove",
   },
   5: {
     id: 5,
@@ -152,6 +163,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [8, 12, 13],
     playerOffset: { x: 11, y: -34 },
     description: "Cañón gravitatorio. Tiro 2 empuja o succiona terreno y enemigos.",
+    soundMove: "6move",
+    soundStop: "6nmove",
   },
   6: {
     id: 6,
@@ -171,6 +184,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [14, 15, 16],
     playerOffset: { x: 13, y: -30 },
     description: "Dispara balizas que activan el rayo láser iónico vertical de su satélite orbital.",
+    soundMove: "7move",
+    soundStop: "7nmove",
   },
   7: {
     id: 7,
@@ -190,6 +205,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [0, 1, 2],
     playerOffset: { x: 4, y: -38 },
     description: "Selección de ruleta clásica.",
+    soundMove: "1move",
+    soundStop: "1nmove",
   },
   8: {
     id: 8,
@@ -209,6 +226,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [17, 17, 17],
     playerOffset: { x: -6, y: -38 },
     description: "Caballero sagrado. Su satélite ion proyecta espadas de luz convergentes.",
+    soundMove: "8move",
+    soundStop: "8nmove",
   },
   9: {
     id: 9,
@@ -228,6 +247,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [19, 20, 21],
     playerOffset: { x: -2, y: -31 },
     description: "Zorro místico. Lanzas de fuego espiritual de alta precisión.",
+    soundMove: "9move.ogg",
   },
   10: {
     id: 10,
@@ -247,6 +267,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [22, 23, 24],
     playerOffset: { x: 14, y: -41 },
     description: "Dragón legendario. Devastador cometa cuádruple en Tiro 2.",
+    soundMove: "10move",
   },
   11: {
     id: 11,
@@ -266,6 +287,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [25, 26, 27],
     playerOffset: { x: -5, y: -26 },
     description: "Araña mecánica subterránea. Tiro 2 viaja bajo tierra y emerge bajo el enemigo.",
+    soundMove: "71move",
+    soundStop: "8nmove",
   },
   12: {
     id: 12,
@@ -285,6 +308,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [28, 29, 30],
     playerOffset: { x: -5, y: -41 },
     description: "Dinosaurio vegetal. 3 coles giratorias en órbita tridimensional sincronizada.",
+    soundMove: "9move.ogg",
   },
   13: {
     id: 13,
@@ -304,6 +328,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [31, 32, 33],
     playerOffset: { x: 4, y: -36 },
     description: "Mago astral. Tiro 2 entrelaza dos orbes en onda sinusoidal complementaria.",
+    soundMove: "13move",
   },
   14: {
     id: 14,
@@ -323,6 +348,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [34, 35, 36, 37],
     playerOffset: { x: -1, y: -35 },
     description: "Tortuga acuática. Tiro 2 TimeBomb forked; SS se abre en aire a 1540ms.",
+    soundMove: "14move",
   },
   15: {
     id: 15,
@@ -342,6 +368,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [38, 38, 39],
     playerOffset: { x: 9, y: -25 },
     description: "Ultraliviano. Curvatura de gancho pronunciada con viento a favor o en contra.",
+    soundMove: "14move",
   },
   16: {
     id: 16,
@@ -361,6 +388,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [8, 8, 30],
     playerOffset: { x: 5, y: -41 },
     description: "Bobinas Tesla móviles con pulsos de plasma.",
+    soundMove: "4move",
   },
   17: {
     id: 17,
@@ -380,6 +408,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [41, 42, 43],
     playerOffset: { x: 5, y: -33 },
     description: "Bolas rodantes que rebotan en las colinas siguiendo el relieve del suelo.",
+    soundMove: "71move",
   },
   18: {
     id: 18,
@@ -399,6 +428,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [45, 45, 46],
     playerOffset: { x: 7, y: -38 },
     description: "Versión reforzada de Dragón con meteoros ionizados.",
+    soundMove: "10move",
   },
   19: {
     id: 19,
@@ -418,6 +448,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [47, 48, 49],
     playerOffset: { x: 15, y: -27 },
     description: "Tiro 2 despliega 2 minas caminantes autónomas; SS genera Baby Raon caminante.",
+    soundMove: "71move",
   },
   20: {
     id: 20,
@@ -437,6 +468,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [0, 1, 2],
     playerOffset: { x: 2, y: -40 },
     description: "Androide mimético capaz de replicar armas y posturas.",
+    soundMove: "1move",
+    soundStop: "1nmove",
   },
   21: {
     id: 21,
@@ -456,6 +489,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [31, 42, 43],
     playerOffset: { x: 18, y: -28 },
     description: "Anfibio bio-químico de alto impacto explosivo.",
+    soundMove: "14move",
   },
   22: {
     id: 22,
@@ -475,6 +509,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [11, 11, 10],
     playerOffset: { x: -2, y: -31 },
     description: "Misiles MIRV de ojiva múltiple que se abren en el cenit de la parábola.",
+    soundMove: "8move",
+    soundStop: "8nmove",
   },
   23: {
     id: 23,
@@ -494,6 +530,8 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [0, 1, 2],
     playerOffset: { x: 15, y: -27 },
     description: "Tanque ancestral con municiones místicas.",
+    soundMove: "28move",
+    soundStop: "28nmove",
   },
   24: {
     id: 24,
@@ -513,6 +551,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     explodes: [0, 1, 2],
     playerOffset: { x: 14, y: -41 },
     description: "Ave fénix de fuego sagrado.",
+    soundMove: "10move",
   },
 };
 
