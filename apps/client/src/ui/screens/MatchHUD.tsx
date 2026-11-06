@@ -88,7 +88,7 @@ export const MatchHUD: React.FC<Props> = ({
             {isMyTurn ? "¡TU TURNO!" : `TURNO DE: ${activeNickname}`}
           </div>
           <div style={{ color: "#94a3b8", fontSize: "12px" }}>
-            (Ronda #{turnNumber})
+            (Ronda #<span className="num-font">{turnNumber}</span>)
           </div>
         </div>
 
@@ -227,7 +227,7 @@ export const MatchHUD: React.FC<Props> = ({
                 fontSize: "12px",
               }}
             >
-              [1] DISPARO 1
+              [<span className="num-font">1</span>] DISPARO <span className="num-font">1</span>
             </button>
 
             <button
@@ -243,7 +243,7 @@ export const MatchHUD: React.FC<Props> = ({
                 fontSize: "12px",
               }}
             >
-              [2] DISPARO 2
+              [<span className="num-font">2</span>] DISPARO <span className="num-font">2</span>
             </button>
 
             <button
@@ -259,7 +259,7 @@ export const MatchHUD: React.FC<Props> = ({
                 fontSize: "12px",
               }}
             >
-              [3] SUPER SHOT (SS)
+              [<span className="num-font">3</span>] SUPER SHOT (SS)
             </button>
           </div>
         </div>

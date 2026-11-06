@@ -3,12 +3,23 @@ import { CombatArena } from "../../core/combat/CombatArena.js";
 import { MobileSelector } from "../components/MobileSelector.js";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
 import { AudioManager } from "../../core/audio/AudioManager.js";
-import { useStore } from "../store.js";
 
 interface ArenaScreenProps {
   arena: CombatArena | null;
   onExit?: () => void;
 }
+
+const renderPixelText = (text: string) => {
+  if (!text) return null;
+  const parts = text.split(/(\d+)/g);
+  return parts.map((part, i) =>
+    /^\d+$/.test(part) ? (
+      <span key={i} className="num-font">{part}</span>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+};
 
 export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [playerMobileId, setPlayerMobileId] = useState<number>(0);
@@ -34,20 +45,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
   const [currentZoom, setCurrentZoom] = useState<number>(1.2);
   const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
-
-  // Global Font Switcher State
-  const { gameFont, toggleGameFont } = useStore();
-
-  const handleToggleFont = () => {
-    toggleGameFont();
-    AudioManager.play("click", 0.7);
-  };
-
-  useEffect(() => {
-    if (arena) {
-      arena.updateGameFont(gameFont);
-    }
-  }, [arena, gameFont]);
 
   // Turn System (Lista de Turnos)
   const [turnNumber, setTurnNumber] = useState<number>(1);
@@ -505,7 +502,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 }}
                 title={item.title}
               >
-                {item.label}
+                {renderPixelText(item.label)}
               </button>
             ))}
           </div>
@@ -583,7 +580,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             <span className="num-font" style={{ color: isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)", fontSize: "15px", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
               {isWindEnabled ? windPower : 0}
             </span>
-            <span className="num-font" style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
+            <span className={isWindEnabled ? "num-font" : undefined} style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
               {isWindEnabled ? `${windAngle}°` : "OFF"}
             </span>
           </div>
@@ -736,34 +733,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               title="Reaparecer Bot en terreno aleatorio (Respawn)"
             >
               🎲
-            </button>
-
-            {/* Subtle Vertical Divider */}
-            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
-
-            {/* Global Font Switcher Button: Silkscreen <-> EditUndo */}
-            <button
-              className="pixel-btn"
-              onClick={handleToggleFont}
-              style={{
-                borderRadius: "3px",
-                padding: "0 6px",
-                height: "24px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-                fontSize: "10px",
-                fontWeight: 700,
-                cursor: "pointer",
-                background: "var(--bg-panel-slate)",
-                color: "var(--color-primary)",
-                border: "var(--border-pixel-thin)",
-                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.3), 0 1px 0 #000",
-              }}
-              title={`Fuente actual: ${gameFont}. Click para alternar fuente (Silkscreen, EditUndo, Pixeboy)`}
-            >
-              <span style={{ fontSize: "11px" }}>🔤</span>
-              <span>{gameFont}</span>
             </button>
           </div>
 
@@ -1055,7 +1024,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               }}
               title="Shot 1 [Tecla 1]"
             >
-              S1
+              <span>S<span className="num-font">1</span></span>
             </button>
 
             <button
@@ -1084,7 +1053,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               }}
               title="Shot 2 [Tecla 2]"
             >
-              S2
+              <span>S<span className="num-font">2</span></span>
             </button>
 
             <button
@@ -1113,7 +1082,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               }}
               title="Super Shot [Tecla 3 / F]"
             >
-              SS
+              <span>SS</span>
             </button>
           </div>
 
@@ -1349,13 +1318,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             onMouseDown={resetChatInactivityTimer}
             onClick={resetChatInactivityTimer}
             style={{
-              width: "290px",
-              height: "190px",
+              width: "340px",
+              height: "220px",
               borderRadius: "4px",
-              padding: "6px 8px",
+              padding: "7px 9px",
               display: "flex",
               flexDirection: "column",
-              gap: "5px",
+              gap: "6px",
               boxShadow: "0 6px 20px rgba(0,0,0,0.85)",
               boxSizing: "border-box",
             }}
@@ -1366,9 +1335,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               alignItems: "center",
               justifyContent: "space-between",
               borderBottom: "var(--border-subtle)",
-              paddingBottom: "3px",
+              paddingBottom: "4px",
             }}>
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
                 💬 Chat de Batalla
               </span>
               <button
@@ -1377,7 +1346,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   background: "transparent",
                   border: "none",
                   color: "var(--color-slate-400)",
-                  fontSize: "11px",
+                  fontSize: "12px",
                   fontWeight: 900,
                   cursor: "pointer",
                   padding: "0 4px",
@@ -1397,20 +1366,20 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 overflowY: "auto",
                 display: "flex",
                 flexDirection: "column",
-                gap: "4px",
+                gap: "5px",
                 paddingRight: "4px",
               }}
             >
               {chatMessages.map((msg, idx) => (
-                <div key={idx} style={{ fontSize: "10px", lineHeight: "1.35", fontFamily: "var(--font-game)" }}>
+                <div key={idx} style={{ fontSize: "12px", lineHeight: "1.4", letterSpacing: "0.2px", fontFamily: "var(--font-game)" }}>
                   {msg.isSystem ? (
-                    <span style={{ color: "var(--color-success)", textShadow: "var(--text-shadow-pixel)" }}>{msg.text}</span>
+                    <span style={{ color: "var(--color-success)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
                   ) : (
                     <span>
                       <strong style={{ color: msg.sender === "Tú" ? "var(--color-warning)" : "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
-                        [{msg.sender}]:{" "}
+                        [{renderPixelText(msg.sender)}]:{" "}
                       </strong>
-                      <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{msg.text}</span>
+                      <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
                     </span>
                   )}
                 </div>
@@ -1442,7 +1411,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 {/* Pixel Art Chat Indicator Icon */}
                 <span
                   style={{
-                    fontSize: "11px",
+                    fontSize: "12px",
                     display: "flex",
                     alignItems: "center",
                     filter: hasNewChatAlert ? "drop-shadow(0 0 3px #38bdf8)" : "none",
@@ -1481,7 +1450,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                     border: "none",
                     fontFamily: "var(--font-game)",
                     color: chatMuteRemaining > 0 ? "var(--color-danger-light)" : "var(--color-white)",
-                    fontSize: "10px",
+                    fontSize: "11px",
                     padding: "4px 0",
                     outline: "none",
                     boxSizing: "border-box",
@@ -1496,12 +1465,15 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 className={`pixel-btn ${chatMuteRemaining > 0 ? "pixel-btn-slate" : "pixel-btn-primary"}`}
                 style={{
                   borderRadius: "3px",
-                  padding: "0 8px",
-                  fontSize: "11px",
+                  padding: "0 10px",
+                  fontSize: "12px",
                   fontWeight: 700,
                   cursor: chatMuteRemaining > 0 ? "not-allowed" : "pointer",
                   opacity: chatMuteRemaining > 0 ? 0.5 : 1,
-                  height: "24px",
+                  height: "28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 ➤

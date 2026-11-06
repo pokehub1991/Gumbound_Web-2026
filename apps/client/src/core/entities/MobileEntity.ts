@@ -64,7 +64,6 @@ export class MobileEntity extends Container {
   // Floating Chat Bubble / Cloud
   private chatBubbleContainer?: Container;
   private chatBubbleTimeout?: number;
-  public activeFontFamily: string = "Silkscreen";
 
   constructor(config: MobileEntityConfig) {
     super();
@@ -101,8 +100,8 @@ export class MobileEntity extends Container {
     this.aimAngleText = new Text({
       text: `${this.angleDeg}°`,
       style: new TextStyle({
-        fontFamily: ["Silkscreen", "GameFont", "Arial"],
-        fontSize: 11,
+        fontFamily: ["Silkscreen", "sans-serif"],
+        fontSize: 12,
         fontWeight: "900",
         fill: "#ffffff",
         stroke: { color: "#000000", width: 3 },
@@ -118,8 +117,8 @@ export class MobileEntity extends Container {
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
-      fontFamily: ["Silkscreen", "GameFont", "Arial"],
-      fontSize: 11,
+      fontFamily: ["Pixelify Sans", "sans-serif"],
+      fontSize: 12,
       fontWeight: "bold",
       fill: config.team === "A" ? "#f59e0b" : "#38bdf8",
       stroke: { color: "#000000", width: 3 },
@@ -142,16 +141,6 @@ export class MobileEntity extends Container {
 
     // Load authentic mobile EPA spritesheet
     this.loadSprite();
-  }
-
-  public updateFontFamily(fontName: string) {
-    this.activeFontFamily = fontName;
-    if (this.nameText) {
-      this.nameText.style.fontFamily = [fontName, "Silkscreen", "EditUndo", "Pixeboy", "Arial"];
-    }
-    if (this.aimAngleText) {
-      this.aimAngleText.style.fontFamily = [fontName, "Silkscreen", "EditUndo", "Pixeboy", "Arial"];
-    }
   }
 
   public setNickname(name: string, team?: "A" | "B") {
@@ -511,7 +500,7 @@ export class MobileEntity extends Container {
   public showDamagePopup(damage: number) {
     if (damage <= 0) return;
     const style = new TextStyle({
-      fontFamily: [this.activeFontFamily, "Silkscreen", "EditUndo", "Pixeboy", "sans-serif"],
+      fontFamily: ["Silkscreen", "sans-serif"],
       fontSize: 20,
       fontWeight: "bold",
       fill: damage >= 300 ? "#ff2a5f" : "#fbbf24",
@@ -556,23 +545,23 @@ export class MobileEntity extends Container {
     this.chatBubbleContainer = container;
 
     const textStyle = new TextStyle({
-      fontFamily: [this.activeFontFamily, "Silkscreen", "EditUndo", "Pixeboy", "sans-serif"],
-      fontSize: 10,
+      fontFamily: ["Pixelify Sans", "sans-serif"],
+      fontSize: 12,
       fontWeight: "bold",
       fill: "#000000",
       wordWrap: true,
       wordWrapWidth: 160,
       align: "center",
-      lineHeight: 14,
+      lineHeight: 15,
     });
 
     const textObj = new Text({ text: message.trim(), style: textStyle });
     textObj.anchor.set(0.5, 0.5);
 
-    const paddingX = 10;
-    const paddingY = 6;
-    const bubbleWidth = Math.max(46, Math.min(180, textObj.width + paddingX * 2));
-    const bubbleHeight = textObj.height + paddingY * 2;
+    const paddingX = 12;
+    const paddingY = 8;
+    const bubbleWidth = Math.max(50, Math.min(190, Math.ceil(textObj.width) + paddingX * 2));
+    const bubbleHeight = Math.ceil(textObj.height) + paddingY * 2;
 
     const bubbleGfx = new Graphics();
 
@@ -605,7 +594,8 @@ export class MobileEntity extends Container {
     bubbleGfx.lineTo(4, -8);
     bubbleGfx.stroke({ width: 3, color: 0xffffff });
 
-    textObj.position.set(0, -bubbleHeight / 2 - 8);
+    // Optical centering for Pixelify Sans (compensated by -2.5px vertically)
+    textObj.position.set(0, Math.round(-bubbleHeight / 2 - 8 - 2.5));
 
     container.addChild(bubbleGfx);
     container.addChild(textObj);

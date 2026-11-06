@@ -28,7 +28,7 @@ export const LobbyScreen: React.FC = () => {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <span style={{ fontSize: "18px", fontWeight: "bold", color: "#38bdf8" }}>
-            GUMBOUND S2
+            GUMBOUND S<span className="num-font">2</span>
           </span>
           <span style={{
             fontSize: "12px",
@@ -38,7 +38,7 @@ export const LobbyScreen: React.FC = () => {
             color: "#fff",
             fontWeight: "bold"
           }}>
-            CANAL 1 (PRINCIPAL)
+            CANAL <span className="num-font">1</span> (PRINCIPAL)
           </span>
         </div>
 

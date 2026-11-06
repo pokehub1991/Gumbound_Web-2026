@@ -180,13 +180,16 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
               </div>
 
               {/* Compact Angle Range */}
-              <div style={{
-                color: isSelected ? "#e0f2fe" : "#94a3b8",
-                fontSize: "10px",
-                fontWeight: 600,
-                lineHeight: 1,
-                textShadow: "1px 1px 0 #000",
-              }}>
+              <div
+                className="num-font"
+                style={{
+                  color: isSelected ? "#e0f2fe" : "#94a3b8",
+                  fontSize: "10px",
+                  fontWeight: 600,
+                  lineHeight: 1,
+                  textShadow: "1px 1px 0 #000",
+                }}
+              >
                 {m.minAngle}°-{m.maxAngle}°
               </div>
             </button>

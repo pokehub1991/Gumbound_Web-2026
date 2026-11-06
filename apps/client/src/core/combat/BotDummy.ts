@@ -143,29 +143,29 @@ export class BotDummy extends Container {
     // Does NOT auto-respawn in a loop; manual respawn available in UI widget
   }
 
+  public triggerAscension() {
+    if (!this.isDead || this.ghostEntity || this.isBotBunged) return;
+    this.mobile.visible = false;
+    this.ghostEntity = new DeathGhostEntity(this.mobile.x, this.mobile.y);
+    this.addChild(this.ghostEntity);
+  }
+
   private handleDeath(reason: string) {
     if (this.isDead) return;
     this.isDead = true;
     this.isBotBunged = false;
 
-    // Mobile stays in place for 2 seconds showing surrender / defeat animation
+    // Mobile stays in place showing surrender / defeat animation
     this.mobile.playAnimation("dead", true);
     this.isBotAirborne = false;
     this.mobile.setTilt(0);
 
     this.spawnFloatingDamage(0, this.mobile.x, this.mobile.y - 20, reason);
 
-    // Retraso de 2 segundos antes de que el móvil desaparezca y el fantasma vuele al cielo (solo 1 vez, sin bucle infinito)
+    // Ascension starts as soon as turn / camera transitions (~600ms)
     setTimeout(() => {
-      this.mobile.visible = false;
-
-      // Dedicated animated death ghost ascends straight up to heaven
-      if (this.ghostEntity) {
-        this.ghostEntity.cleanup();
-      }
-      this.ghostEntity = new DeathGhostEntity(this.mobile.x, this.mobile.y);
-      this.addChild(this.ghostEntity);
-    }, 2000);
+      this.triggerAscension();
+    }, 600);
   }
 
   public toggleImmortal(): boolean {
@@ -228,13 +228,9 @@ export class BotDummy extends Container {
     this.mobile.setFacing(-1);
   }
 
-  public updateFontFamily(fontName: string) {
-    this.mobile.updateFontFamily(fontName);
-  }
-
   private spawnFloatingDamage(amount: number, x: number, y: number, label?: string) {
     const textStyle = new TextStyle({
-      fontFamily: [this.mobile.activeFontFamily, "Silkscreen", "EditUndo", "Pixeboy", "sans-serif"],
+      fontFamily: label ? ["Pixelify Sans", "sans-serif"] : ["Silkscreen", "sans-serif"],
       fontSize: label ? 20 : 16,
       fontWeight: "900",
       fill: label ? "#ef4444" : "#fbbf24",

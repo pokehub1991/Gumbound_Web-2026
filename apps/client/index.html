@@ -4,33 +4,70 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gumbound Web 2026</title>
-    <!-- Local Retro Pixel Fonts: Silkscreen, EditUndo & Pixeboy -->
+    <!-- Local Retro Pixel Fonts: Pixelify Sans for Text, Silkscreen for Numbers -->
     <style>
+      /* 1. Base composite font: Pixelify Sans for all characters/letters/symbols */
       @font-face {
-        font-family: 'Silkscreen';
+        font-family: 'GameFont';
+        src: url('/fonts/PixelifySans-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'GameFont';
+        src: url('/fonts/PixelifySans-Regular.ttf') format('truetype');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      /* 2. Overriding glyphs for numbers (0-9), degree symbol (°), and math operators (+, -, %, /): Silkscreen */
+      @font-face {
+        font-family: 'GameFont';
         src: url('/fonts/Silkscreen-Regular.ttf') format('truetype');
-        font-weight: 100 900;
-        font-style: normal;
-        font-display: swap;
-      }
-      @font-face {
-        font-family: 'EditUndo';
-        src: url('/fonts/editundo.ttf') format('truetype');
-        font-weight: 100 900;
-        font-style: normal;
-        font-display: swap;
-      }
-      @font-face {
-        font-family: 'Pixeboy';
-        src: url('/fonts/Pixeboy.ttf') format('truetype');
-        font-weight: 100 900;
+        unicode-range: U+0030-0039, U+00B0, U+002B, U+002D, U+0025, U+002F;
+        font-weight: 400;
         font-style: normal;
         font-display: swap;
       }
       @font-face {
         font-family: 'GameFont';
         src: url('/fonts/Silkscreen-Regular.ttf') format('truetype');
-        font-weight: 100 900;
+        unicode-range: U+0030-0039, U+00B0, U+002B, U+002D, U+0025, U+002F;
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      /* Standalone Text and characters font: Pixelify Sans */
+      @font-face {
+        font-family: 'Pixelify Sans';
+        src: url('/fonts/PixelifySans-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Pixelify Sans';
+        src: url('/fonts/PixelifySans-Regular.ttf') format('truetype');
+        font-weight: 700;
+        font-style: normal;
+        font-display: swap;
+      }
+
+      /* Standalone Numbers font: Silkscreen */
+      @font-face {
+        font-family: 'Silkscreen';
+        src: url('/fonts/Silkscreen-Regular.ttf') format('truetype');
+        font-weight: 400;
+        font-style: normal;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Silkscreen';
+        src: url('/fonts/Silkscreen-Regular.ttf') format('truetype');
+        font-weight: 700;
         font-style: normal;
         font-display: swap;
       }
@@ -46,7 +83,7 @@
         height: 100%;
         overflow: hidden;
         background: #dca04c;
-        font-family: 'Silkscreen', 'GameFont', monospace, sans-serif;
+        font-family: 'GameFont', 'Pixelify Sans', sans-serif;
         -webkit-font-smoothing: none;
         -moz-osx-font-smoothing: grayscale;
         image-rendering: pixelated;
@@ -80,10 +117,10 @@
         height: 100%;
         z-index: 10;
         pointer-events: none;
-        font-family: 'Silkscreen', 'GameFont', monospace, sans-serif;
+        font-family: 'GameFont', 'Pixelify Sans', sans-serif;
       }
       button, input, select, textarea, ::placeholder {
-        font-family: 'Silkscreen', 'GameFont', monospace, sans-serif !important;
+        font-family: 'GameFont', 'Pixelify Sans', sans-serif !important;
       }
       body.is-grabbing, body.is-grabbing * {
         cursor: url('/cursors/hand.png') 9 8, grabbing !important;

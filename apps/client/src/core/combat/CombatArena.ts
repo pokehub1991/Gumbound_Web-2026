@@ -477,11 +477,6 @@ export class CombatArena {
     return isImmortal;
   }
 
-  public updateGameFont(fontName: string) {
-    this.player.updateFontFamily(fontName);
-    this.bot.updateFontFamily(fontName);
-  }
-
   public activateItem(item: "dual" | "teleport" | null) {
     this.activeItem = item;
     if (this.onActiveItemChange) {
@@ -567,9 +562,9 @@ export class CombatArena {
 
     const trajectories = BallisticsEngine.simulateShot(params);
 
-    // 1. Transition pause: +10ms delay per shot type (Tiro 1: 10ms, Tiro 2: 110ms [+10ms], SS: 90ms)
+    // 1. Transition pause: +10ms delay per shot type (Tiro 1: 10ms, Tiro 2: 120ms [+10ms], SS: 90ms)
     const fireAnim = shotType === 2 ? "sfire" : shotType === 1 ? "fire2" : "fire1";
-    const chargeToFireDelayMs = shotType === 0 ? 10 : shotType === 1 ? 110 : 90;
+    const chargeToFireDelayMs = shotType === 0 ? 10 : shotType === 1 ? 120 : 90;
 
     const startFiringAnimation = () => {
       this.player.playAnimation(fireAnim, false, () => {
@@ -775,7 +770,7 @@ export class CombatArena {
       this.player.playAnimation("dead", true);
       AudioManager.play("result_lose.mp3", 0.6);
 
-      // Retraso de 2 segundos antes de que el móvil desaparezca y el fantasma vuele al cielo
+      // Iniciar la animación de volar al cielo sincronizada cuando cambia el turno (~600ms)
       setTimeout(() => {
         if (this.player.hp > 0) return;
         this.player.visible = false;
@@ -791,7 +786,7 @@ export class CombatArena {
         setTimeout(() => {
           this.respawnPlayer();
         }, 2800);
-      }, 2000);
+      }, 600);
 
       return;
     }
@@ -907,6 +902,10 @@ export class CombatArena {
       this.aimController.enabled = true;
       this.aimController.setActiveMobile(this.player);
       this.engine.panTo(this.player.x + 80, this.player.y - 40);
+
+      if (this.bot.isDead) {
+        this.bot.triggerAscension();
+      }
 
       if (this.onTurnReady) {
         this.onTurnReady();

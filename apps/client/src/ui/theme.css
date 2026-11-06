@@ -5,10 +5,10 @@
 
 :root {
   /* ------------------------------------------------------------------------
-     1. TYPOGRAPHY TOKENS (SILKSCREEN & EDITUNDO RETRO PIXEL ART)
+     1. TYPOGRAPHY TOKENS (PIXELIFY SANS FOR TEXT, SILKSCREEN FOR NUMBERS)
      ------------------------------------------------------------------------ */
-  --font-game: 'Silkscreen', 'GameFont', monospace, sans-serif;
-  --font-text: 'Silkscreen', 'GameFont', monospace, sans-serif;
+  --font-game: 'GameFont', 'Pixelify Sans', sans-serif;
+  --font-text: 'Pixelify Sans', 'GameFont', sans-serif;
   --font-num: 'Silkscreen', monospace;
 
   /* ------------------------------------------------------------------------
@@ -111,21 +111,6 @@
   --text-shadow-pixel-bold: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
 }
 
-/* EditUndo Font Variant Override */
-[data-font="editundo"],
-body.font-editundo {
-  --font-game: 'EditUndo', 'GameFont', monospace, sans-serif;
-  --font-text: 'EditUndo', 'GameFont', monospace, sans-serif;
-  --font-num: 'EditUndo', monospace;
-}
-
-/* Pixeboy Font Variant Override */
-[data-font="pixeboy"],
-body.font-pixeboy {
-  --font-game: 'Pixeboy', 'Silkscreen', 'GameFont', monospace, sans-serif;
-  --font-text: 'Pixeboy', 'Silkscreen', 'GameFont', monospace, sans-serif;
-  --font-num: 'Pixeboy', 'Silkscreen', monospace;
-}
 
 /* --------------------------------------------------------------------------
    5. UNIVERSAL TYPOGRAPHY & ELEMENT DEFAULTS

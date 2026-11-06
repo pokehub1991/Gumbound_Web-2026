@@ -42,9 +42,9 @@ export class TerrainRenderer extends Container {
     const mapDef = MAPS[mapKey] || MAPS["metamine"];
 
     try {
-      // 1. Load Foreground image & Collision Mask in parallel
+      // 1. Load Foreground image & optional Collision Mask in parallel
       const fgImg = await this.loadImage(mapDef.fg);
-      const maskImg = await this.loadImage(mapDef.mask);
+      const maskImg = mapDef.mask ? await this.loadImage(mapDef.mask) : null;
 
       const offsetY = mapDef.offset_y || 0;
       const fgW = mapDef.fgWidth || fgImg.width;
@@ -56,11 +56,14 @@ export class TerrainRenderer extends Container {
       // 3. Render foreground bridge onto canvas at offset_y
       this.ctx.drawImage(fgImg, 0, offsetY, fgW, fgH);
 
-      // 4. Composite collision mask using destination-in on the bridge region
-      this.ctx.save();
-      this.ctx.globalCompositeOperation = "destination-in";
-      this.ctx.drawImage(maskImg, 0, offsetY, fgW, fgH);
-      this.ctx.restore();
+      // 4. Composite collision mask using destination-in if a separate mask image is provided
+      // (If no mask is provided, the alpha channel of fgImg is automatically used for collisions)
+      if (maskImg) {
+        this.ctx.save();
+        this.ctx.globalCompositeOperation = "destination-in";
+        this.ctx.drawImage(maskImg, 0, offsetY, fgW, fgH);
+        this.ctx.restore();
+      }
 
       // 5. Extract pixel buffer into in-memory collisionMask for instantaneous collision checks
       const imgData = this.ctx.getImageData(0, 0, this.mapWidth, this.mapHeight);

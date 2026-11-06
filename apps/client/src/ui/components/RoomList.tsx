@@ -42,7 +42,7 @@ export const RoomList: React.FC = () => {
         borderBottom: "1px solid #334155",
       }}>
         <span style={{ fontWeight: "bold", color: "#38bdf8", fontSize: "14px" }}>
-          SALAS DISPONIBLES ({rooms.length})
+          SALAS DISPONIBLES (<span className="num-font">{rooms.length}</span>)
         </span>
         <button
           onClick={() => setShowCreateModal(true)}

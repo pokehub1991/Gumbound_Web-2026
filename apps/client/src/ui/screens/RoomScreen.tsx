@@ -97,7 +97,7 @@ export const RoomScreen: React.FC = () => {
           gap: "8px",
         }}>
           <div style={{ fontWeight: "bold", color: "#60a5fa", borderBottom: "1px solid #1e3a8a", paddingBottom: "6px" }}>
-            EQUIPO AZUL ({teamA.length})
+            EQUIPO AZUL (<span className="num-font">{teamA.length}</span>)
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
             {teamA.map((p) => (
@@ -115,7 +115,7 @@ export const RoomScreen: React.FC = () => {
               >
                 <div>
                   <div style={{ fontWeight: "bold", color: "#fff", fontSize: "13px" }}>{p.nickname}</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>Móvil: #{p.mobile}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>Móvil: #<span className="num-font">{p.mobile}</span></div>
                 </div>
                 <div style={{
                   padding: "3px 8px",
@@ -143,7 +143,7 @@ export const RoomScreen: React.FC = () => {
           gap: "8px",
         }}>
           <div style={{ fontWeight: "bold", color: "#f87171", borderBottom: "1px solid #7f1d1d", paddingBottom: "6px" }}>
-            EQUIPO ROJO ({teamB.length})
+            EQUIPO ROJO (<span className="num-font">{teamB.length}</span>)
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
             {teamB.map((p) => (
@@ -161,7 +161,7 @@ export const RoomScreen: React.FC = () => {
               >
                 <div>
                   <div style={{ fontWeight: "bold", color: "#fff", fontSize: "13px" }}>{p.nickname}</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>Móvil: #{p.mobile}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>Móvil: #<span className="num-font">{p.mobile}</span></div>
                 </div>
                 <div style={{
                   padding: "3px 8px",

@@ -41,9 +41,9 @@ export class ThorEntity extends Container {
     this.spriteContainer = new Container();
     this.addChild(this.spriteContainer);
 
-    // Retro text styles matching GunBound / DragonBound (Pixel font with black outline)
+    // Retro text styles matching GunBound / DragonBound (Silkscreen for numbers, Pixelify Sans for text)
     const lvlStyle = new TextStyle({
-      fontFamily: ["Silkscreen", "EditUndo", "Pixeboy", "Arial", "sans-serif"],
+      fontFamily: ["Silkscreen", "sans-serif"],
       fontSize: 12,
       fontWeight: "900",
       fill: "#f73918",
@@ -51,7 +51,7 @@ export class ThorEntity extends Container {
     });
 
     const dmgStyle = new TextStyle({
-      fontFamily: ["Silkscreen", "EditUndo", "Pixeboy", "Arial", "sans-serif"],
+      fontFamily: ["Silkscreen", "sans-serif"],
       fontSize: 11,
       fontWeight: "800",
       fill: "#ff5a42",

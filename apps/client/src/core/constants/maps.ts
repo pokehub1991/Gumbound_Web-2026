@@ -4,7 +4,7 @@ export interface MapDef {
   name: string;
   fg: string;
   bg: string;
-  mask: string;
+  mask?: string; // Opcional si 'fg' es un PNG con canal alfa/transparencia integrado
   width: number;
   height: number;
   fgWidth: number;
@@ -23,9 +23,8 @@ export const MAPS: Record<string, MapDef> = {
     id: 9,
     key: "metamine",
     name: "Meta Mine",
-    fg: "/maps/metamine/metamine_fg.jpg",
-    bg: "/maps/metamine/metamine_bg.jpg",
-    mask: "/maps/metamine/metamine_mask.png",
+    fg: "/maps/metamine/terreno_metamine.png",
+    bg: "/maps/metamine/fondo_metamine.jpg",
     width: 1409,
     height: 1250, // 360 sky + 760 bridge + 130 bottom abyss clearance
     fgWidth: 1409,

@@ -69,10 +69,10 @@ export const LoginScreen: React.FC = () => {
       }}>
         <div style={{ textAlign: "center", marginBottom: "24px" }}>
           <h1 style={{ color: "#38bdf8", margin: 0, fontSize: "24px", letterSpacing: "1px" }}>
-            GUMBOUND S2
+            GUMBOUND S<span className="num-font">2</span>
           </h1>
           <p style={{ color: "#94a3b8", fontSize: "12px", margin: "4px 0 0" }}>
-            Edición Web Moderna (2026)
+            Edición Web Moderna (<span className="num-font">2026</span>)
           </p>
         </div>
 

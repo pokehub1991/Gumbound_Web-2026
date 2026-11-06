@@ -2,6 +2,18 @@ import React, { useState, useEffect, useRef } from "react";
 import { useStore } from "../store.js";
 import { Opcode } from "@gumbound/shared";
 
+const renderPixelText = (text: string) => {
+  if (!text) return null;
+  const parts = text.split(/(\d+)/g);
+  return parts.map((part, i) =>
+    /^\d+$/.test(part) ? (
+      <span key={i} className="num-font">{part}</span>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+};
+
 export const ChatBox: React.FC = () => {
   const { chatMessages, connection } = useStore();
   const [text, setText] = useState("");
@@ -47,13 +59,13 @@ export const ChatBox: React.FC = () => {
         display: "flex",
         flexDirection: "column",
         gap: "6px",
-        fontSize: "10px",
-        lineHeight: "1.35",
+        fontSize: "12px",
+        lineHeight: "1.4",
       }}>
         {chatMessages.map((msg, i) => (
           <div key={i} style={{ wordBreak: "break-word" }}>
-            <span style={{ color: "var(--color-primary)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>[{msg.sender}]: </span>
-            <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{msg.text}</span>
+            <span style={{ color: "var(--color-primary)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>[{renderPixelText(msg.sender)}]: </span>
+            <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
           </div>
         ))}
         <div ref={bottomRef} />
