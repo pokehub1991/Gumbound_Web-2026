@@ -1,14 +1,28 @@
 import { AnimatedSprite, Assets, Container, Graphics, Rectangle, Text, TextStyle, Texture } from "pixi.js";
-import { AudioManager } from "../audio/AudioManager";
+import { AudioManager } from "../audio/AudioManager.js";
+import { ThorExplosionEntity } from "./ThorExplosionEntity.js";
+
+/**
+ * Authentic GunBound Thor Level Thresholds (from DragonBound/GunBound original specs)
+ * Level 1: 0 - 299
+ * Level 2: 300 - 899
+ * Level 3: 900 - 1799
+ * Level 4: 1800 - 3199
+ * Level 5: 3200 - 5999
+ * Level 6+: 6000+ (Max 6000)
+ */
+const THOR_THRESHOLDS = [0, 300, 900, 1800, 3200, 6000];
 
 /**
  * ThorEntity
  * 
  * Authentic GunBound Thor orbital satellite weapon.
- * - 20-Frame animated core from /sprites/effects/thor.png (160px stride, 159x99 px frame).
+ * - Positioned high in the celestial sky (baseY = 80) well above the battlefield and terrain.
+ * - 20-Frame animated core from /sprites/effects/thor.png.
  * - True celestial pendulum harmonic physics swaying above the battlefield.
- * - Smooth lerped aiming & orbital laser beam strike without teleports or snapping.
- * - Retro level & accumulated damage text displays matching GunBound.
+ * - Multi-beam scaling with Level (thicker lasers and ion coronas as Thor levels up).
+ * - Smooth lerped aiming & orbital laser beam strike without snapping.
+ * - Authentic 16-frame aduka1-thor.png explosion at impact location.
  */
 export class ThorEntity extends Container {
   private spriteContainer: Container;
@@ -16,13 +30,15 @@ export class ThorEntity extends Container {
   private levelText: Text;
   private damageText: Text;
   private laserGraphic: Graphics;
+  private activeGlowGraphic: Graphics;
 
   public level: number = 1;
   public accumulatedDamage: number = 0;
+  public isWeatherActive: boolean = false;
 
-  // Positioned higher up in the celestial sky as requested (baseY = 68)
+  // Positioned high up in the celestial stratosphere (baseY = -340) clear above all castles & towers
   public baseX: number = 720;
-  public baseY: number = 68;
+  public baseY: number = -340;
   private time: number = 0;
 
   private isFiringBeam: boolean = false;
@@ -38,13 +54,16 @@ export class ThorEntity extends Container {
     this.laserGraphic = new Graphics();
     this.addChild(this.laserGraphic);
 
+    this.activeGlowGraphic = new Graphics();
+    this.addChild(this.activeGlowGraphic);
+
     this.spriteContainer = new Container();
     this.addChild(this.spriteContainer);
 
-    // Retro text styles matching GunBound / DragonBound (Silkscreen for numbers, Pixelify Sans for text)
+    // Retro text styles matching GunBound (Silkscreen for numbers, red with black stroke)
     const lvlStyle = new TextStyle({
       fontFamily: ["Silkscreen", "sans-serif"],
-      fontSize: 12,
+      fontSize: 13,
       fontWeight: "900",
       fill: "#f73918",
       stroke: { color: "#000000", width: 3.5 },
@@ -52,7 +71,7 @@ export class ThorEntity extends Container {
 
     const dmgStyle = new TextStyle({
       fontFamily: ["Silkscreen", "sans-serif"],
-      fontSize: 11,
+      fontSize: 12,
       fontWeight: "800",
       fill: "#ff5a42",
       stroke: { color: "#000000", width: 3.5 },
@@ -61,9 +80,9 @@ export class ThorEntity extends Container {
     this.levelText = new Text({ text: `Lv. ${this.level}`, style: lvlStyle });
     this.damageText = new Text({ text: `${this.accumulatedDamage}`, style: dmgStyle });
 
-    // Positioned beside/below the satellite body matching reference screenshot
-    this.levelText.position.set(22, 18);
-    this.damageText.position.set(28, 34);
+    // Positioned beside/below the satellite body matching reference screenshot 4
+    this.levelText.position.set(24, 18);
+    this.damageText.position.set(30, 36);
 
     this.addChild(this.levelText);
     this.addChild(this.damageText);
@@ -76,10 +95,6 @@ export class ThorEntity extends Container {
       const texture = await Assets.load<Texture>("/sprites/effects/thor.png");
       const baseTex = texture.source;
 
-      // Authentic GunBound spritesheet:
-      // Total width: 3199px across 20 frames.
-      // Each frame is 159x99 px, separated by 1px spacing (stride = 160px).
-      // Center anchor: cx = 98, cy = 59.
       const frameStride = 160;
       const frameWidth = 159;
       const frameHeight = 99;
@@ -111,21 +126,49 @@ export class ThorEntity extends Container {
     }
   }
 
+  public setWeatherActive(active: boolean) {
+    this.isWeatherActive = active;
+    if (!active) {
+      this.activeGlowGraphic.clear();
+    }
+  }
+
   public setLevelAndDamage(lvl: number, dmg: number) {
-    this.level = lvl;
-    this.accumulatedDamage = dmg;
+    this.level = Math.min(6, Math.max(1, lvl));
+    this.accumulatedDamage = Math.min(6000, Math.max(0, dmg));
     this.levelText.text = `Lv. ${this.level}`;
     this.damageText.text = `${this.accumulatedDamage}`;
   }
 
   /**
-   * Fires the Thor satellite laser beam directly down towards (targetX, targetY).
-   * Smoothly aims and rotates without abrupt teleporting or snapping!
+   * Authentic GunBound Thor experience meter:
+   * Adds damage / 2 to Thor's meter, maxing out at 6000 points.
    */
-  public fireBeam(targetX: number, targetY: number, damage: number = 180): Promise<void> {
+  public addDamage(damage: number) {
+    const addedExp = Math.round(damage / 2);
+    this.accumulatedDamage = Math.min(6000, this.accumulatedDamage + addedExp);
+
+    let newLevel = 1;
+    for (let i = THOR_THRESHOLDS.length - 1; i >= 0; i--) {
+      if (this.accumulatedDamage >= THOR_THRESHOLDS[i]) {
+        newLevel = i + 1;
+        break;
+      }
+    }
+    this.setLevelAndDamage(newLevel, this.accumulatedDamage);
+  }
+
+  /**
+   * Fires the Thor satellite laser beam directly down towards (targetX, targetY).
+   * Visual scales with Thor Level:
+   * - Lv 1: Single focused beam
+   * - Lv 2-3: Dual energetic beam with ion corona
+   * - Lv 4+: Massive triple heavy orbital plasma strike
+   */
+  public fireBeam(targetX: number, targetY: number, damage: number = 180, effectsContainer?: Container): Promise<void> {
     return new Promise((resolve) => {
       this.isFiringBeam = true;
-      this.beamTimer = 260; // Beam duration in ms
+      this.beamTimer = 280; // Beam duration in ms
 
       // Calculate relative vector from Thor to target
       const dx = targetX - this.x;
@@ -138,62 +181,96 @@ export class ThorEntity extends Container {
       // Draw high-energy orbital laser beam
       this.laserGraphic.clear();
 
-      // Outer golden/cyan halo
-      this.laserGraphic.moveTo(0, 0);
-      this.laserGraphic.lineTo(dx, dy);
-      this.laserGraphic.stroke({ width: 14, color: 0x38bdf8, alpha: 0.65 });
+      const lvl = this.level;
+      const outerWidth = 14 + lvl * 4;
+      const coreWidth = 3 + Math.floor(lvl * 1.2);
 
-      // Core energetic beam
+      // Outer glowing cyan beam
       this.laserGraphic.moveTo(0, 0);
       this.laserGraphic.lineTo(dx, dy);
-      this.laserGraphic.stroke({ width: 6, color: 0xffffff, alpha: 0.95 });
+      this.laserGraphic.stroke({ width: outerWidth, color: 0x38bdf8, alpha: 0.65 });
+
+      // Secondary bright golden core ring for Lv 2+
+      if (lvl >= 2) {
+        this.laserGraphic.moveTo(0, 0);
+        this.laserGraphic.lineTo(dx, dy);
+        this.laserGraphic.stroke({ width: outerWidth * 0.5, color: 0xfacc15, alpha: 0.85 });
+      }
+
+      // High-level twin satellite parallel ion traces for Lv 4+
+      if (lvl >= 4) {
+        const perpX = -Math.sin(rawAngle) * 12;
+        const perpY = Math.cos(rawAngle) * 12;
+        this.laserGraphic.moveTo(perpX, perpY);
+        this.laserGraphic.lineTo(dx + perpX, dy + perpY);
+        this.laserGraphic.stroke({ width: 3, color: 0x93c5fd, alpha: 0.8 });
+
+        this.laserGraphic.moveTo(-perpX, -perpY);
+        this.laserGraphic.lineTo(dx - perpX, dy - perpY);
+        this.laserGraphic.stroke({ width: 3, color: 0x93c5fd, alpha: 0.8 });
+      }
+
+      // Core incandescent white laser
+      this.laserGraphic.moveTo(0, 0);
+      this.laserGraphic.lineTo(dx, dy);
+      this.laserGraphic.stroke({ width: coreWidth, color: 0xffffff, alpha: 1.0 });
 
       // Impact blast flare at target ground
-      this.laserGraphic.circle(dx, dy, 24).fill({ color: 0x38bdf8, alpha: 0.55 });
-      this.laserGraphic.circle(dx, dy, 13).fill({ color: 0xffffff, alpha: 0.95 });
+      const flareRadius = 24 + lvl * 6;
+      this.laserGraphic.circle(dx, dy, flareRadius).fill({ color: 0x38bdf8, alpha: 0.6 });
+      this.laserGraphic.circle(dx, dy, flareRadius * 0.5).fill({ color: 0xffffff, alpha: 0.95 });
 
       // Sound effect
-      AudioManager.play("12blast", 0.85);
+      AudioManager.play("11blast", 0.9);
+      AudioManager.play("12blast", 0.8);
 
-      // Level up / accumulated damage update
-      this.accumulatedDamage += damage;
-      if (this.accumulatedDamage >= this.level * 450) {
-        this.level = Math.min(9, this.level + 1);
+      // Spawn authentic aduka1-thor.png explosion at ground target
+      const targetParent = effectsContainer || (this.parent as Container);
+      if (targetParent) {
+        const thorExp = new ThorExplosionEntity(targetX, targetY);
+        targetParent.addChild(thorExp);
       }
-      this.setLevelAndDamage(this.level, this.accumulatedDamage);
+
+      // Level up & damage update
+      this.addDamage(damage);
 
       setTimeout(() => {
         this.laserGraphic.clear();
         this.isFiringBeam = false;
         resolve();
-      }, 260);
+      }, 280);
     });
   }
 
   /**
    * Harmonic celestial pendulum update:
-   * Sways continuously like a hanging pendulum with fluid harmonic oscillation.
+   * Sways continuously like a hanging pendulum with fluid harmonic oscillation high in the sky.
    */
   public update(dt: number) {
     this.time += dt * 0.035;
 
     // Harmonic pendulum sway calculations
-    // Horizontal sway: ±32 pixels
     const swayX = Math.sin(this.time) * 32;
-    // True pendulum vertical dip: slightly drops at maximum swing amplitude
     const swayY = (1 - Math.cos(this.time * 2)) * 6;
-    // Pendulum rocking tilt: tilts in synchronization with the swing (±0.22 rad / ~12.5 deg)
     const naturalPendulumAngle = Math.sin(this.time) * 0.22;
 
     this.x = this.baseX + swayX;
     this.y = this.baseY + swayY;
+
+    // Active Thor Weather pulsing halo
+    if (this.isWeatherActive) {
+      this.activeGlowGraphic.clear();
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 4);
+      this.activeGlowGraphic.circle(0, 0, 48 + pulse * 10).fill({ color: 0x38bdf8, alpha: 0.25 * pulse });
+      this.activeGlowGraphic.circle(0, 0, 36).stroke({ width: 2, color: 0x38bdf8, alpha: 0.6 });
+    }
 
     if (this.thorSprite) {
       if (this.isFiringBeam) {
         // Smoothly lerp towards target aim angle while firing
         this.currentRotation += (this.targetAngle - this.currentRotation) * 0.25 * dt;
       } else {
-        // Smoothly lerp back to the natural pendulum rocking angle (zero snapping / teleporting!)
+        // Smoothly lerp back to the natural pendulum rocking angle
         this.currentRotation += (naturalPendulumAngle - this.currentRotation) * 0.08 * dt;
       }
 
@@ -203,13 +280,14 @@ export class ThorEntity extends Container {
     // Laser beam fade out
     if (this.isFiringBeam && this.beamTimer > 0) {
       this.beamTimer -= dt * 16.66;
-      this.laserGraphic.alpha = Math.max(0, this.beamTimer / 260);
+      this.laserGraphic.alpha = Math.max(0, this.beamTimer / 280);
     }
   }
 
   public destroy() {
     this.thorSprite?.destroy();
     this.laserGraphic.destroy();
+    this.activeGlowGraphic.destroy();
     this.levelText.destroy();
     this.damageText.destroy();
     super.destroy({ children: true });

@@ -14,7 +14,9 @@ import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 import { AutumnLeavesEngine } from "../effects/AutumnLeavesEngine.js";
 import { ThorEntity } from "../effects/ThorEntity.js";
 import { DeathGhostEntity } from "../effects/DeathGhostEntity.js";
-import { ItemPowerupEntity } from "../effects/ItemPowerupEntity.js";
+import { WeatherManager, WeatherDefinition, WeatherSlotItem, ActiveWeatherColumn } from "../weather/WeatherManager.js";
+import { WeatherColumnEntity } from "../weather/WeatherColumnEntity.js";
+import { WeatherSkyMarker } from "../weather/WeatherSkyMarker.js";
 
 export class CombatArena {
   public engine: GameEngine;
@@ -28,6 +30,11 @@ export class CombatArena {
   public dynamicExplosionEngine: DynamicExplosionEngine;
   public leavesEngine: AutumnLeavesEngine;
   public thor: ThorEntity;
+  public weatherManager: WeatherManager;
+  public weatherSkyMarker: WeatherSkyMarker;
+  private weatherContainer: Container;
+  private activeColumnEntity?: WeatherColumnEntity;
+  private fadingColumnEntities: WeatherColumnEntity[] = [];
 
   public windPower: number = 8;
   public windAngle: number = 45;
@@ -39,6 +46,11 @@ export class CombatArena {
   private orbitalEffectsContainer: Container;
 
   // UI callbacks for React state synchronization
+  public onWeatherUpdate?: (
+    weather: WeatherDefinition,
+    tapeSlice: WeatherSlotItem[],
+    column: ActiveWeatherColumn | null
+  ) => void;
   public onWindUpdate?: (power: number, angle: number) => void;
   public onPlayerAngleUpdate?: (angle: number) => void;
   public onPlayerPowerUpdate?: (power: number) => void;
@@ -94,24 +106,31 @@ export class CombatArena {
     this.leavesEngine = new AutumnLeavesEngine(undefined, mapDef.width, mapDef.height, 22);
     this.engine.worldContainer.addChildAt(this.leavesEngine.container, 0);
 
+    // Weather container (rendered BEHIND terrain so terrain bridge covers weather columns)
+    this.weatherContainer = new Container();
+    this.engine.worldContainer.addChildAt(this.weatherContainer, 1);
+
     // 1. Initialize Metamine Terrain (1800x904 px)
     this.terrain = new TerrainRenderer(mapDef.width, mapDef.height);
     this.terrain.onLoadedCallback = () => {
-      // Reposition player and bot to true ground surface once map mask finishes loading
-      this.respawnPlayer();
+      // Reposition player vertically to true ground surface once map mask finishes loading
+      // IMPORTANT: Preserve player's current horizontal position (player.x) so moving during match intro NEVER snaps back!
+      if (this.player && this.player.hp > 0 && !this.isPlayerBunged) {
+        const placement = this.terrain.getMobileSurfacePlacement(this.player.x, mapDef.player1Spawn.y);
+        this.player.y = placement.y;
+        this.player.setTilt(placement.slope.angle);
+      } else {
+        this.respawnPlayer();
+      }
       this.resetBot(false);
-      this.engine.panTo(704.5, 420, true);
-      this.engine.playIntroZoom(0.52, 1.20);
     };
-    this.engine.worldContainer.addChildAt(this.terrain, 1);
+    this.engine.worldContainer.addChildAt(this.terrain, 2);
 
     // 2. Load Parallax Background
     this.loadBackground(mapDef.bg);
 
     // 3. Initialize Local Player on Metamine spawn
     const playerSpawn = mapDef.player1Spawn;
-    const playerPlacement = this.terrain.getMobileSurfacePlacement(playerSpawn.x, playerSpawn.y);
-
     this.player = new MobileEntity({
       id: "player_local",
       nickname: "Player [Tú]",
@@ -120,10 +139,10 @@ export class CombatArena {
       maxHp: 1000,
       hp: 1000,
       x: playerSpawn.x,
-      y: playerPlacement.y,
+      y: playerSpawn.y,
     });
     this.player.setFacing(1); // Face right toward enemy
-    this.player.setTilt(playerPlacement.slope.angle);
+    this.player.setTilt(0);
     this.engine.mobilesContainer.addChild(this.player);
 
     // 4. Initialize Bot Dummy on Metamine right side
@@ -134,9 +153,50 @@ export class CombatArena {
     // 5. Orbital Laser & Satellite effects container
     this.engine.worldContainer.addChild(this.orbitalEffectsContainer);
 
-    // Initialize authentic Thor Orbital Satellite in sky
+    // Initialize authentic Thor Orbital Satellite in sky (elevated high in celestial sky)
     this.thor = new ThorEntity();
     this.engine.worldContainer.addChild(this.thor);
+
+    // Initialize screen-space weather indicator marker pinned at monitor top edge
+    this.weatherSkyMarker = new WeatherSkyMarker();
+    this.engine.uiContainer.addChild(this.weatherSkyMarker);
+
+    // Initialize authentic GunBound Weather System
+    this.weatherManager = new WeatherManager(this.terrain.mapWidth);
+    this.weatherManager.onWeatherChange = (weather, tapeSlice, column) => {
+      // Clean up previous active column immediately to avoid double-column ghosting/crossing
+      this.weatherContainer.removeChildren();
+      if (this.activeColumnEntity) {
+        this.activeColumnEntity.cleanup();
+        this.activeColumnEntity = undefined;
+      }
+      for (const oldCol of this.fadingColumnEntities) {
+        oldCol.cleanup();
+      }
+      this.fadingColumnEntities = [];
+
+      if (column) {
+        this.activeColumnEntity = new WeatherColumnEntity({
+          type: column.type,
+          x: column.x,
+          width: column.width,
+          mapHeight: this.terrain.mapHeight,
+        });
+        // Render inside dedicated weatherContainer (never disturbs worldContainer indices)
+        this.weatherContainer.addChild(this.activeColumnEntity);
+      }
+
+      if (this.thor) {
+        this.thor.setWeatherActive(weather.type === "thor");
+      }
+
+      if (this.onWeatherUpdate) {
+        this.onWeatherUpdate(weather, tapeSlice, column);
+      }
+    };
+
+    // Trigger initial weather sync now that listener is attached
+    this.weatherManager.triggerInitialSync();
 
     // Foreground atmospheric autumn leaves (drifting in front of terrain & mobiles for depth)
     this.engine.worldContainer.addChild(this.leavesEngine.foregroundContainer);
@@ -145,8 +205,13 @@ export class CombatArena {
     this.aimController = new AimController(this.terrain);
     this.aimController.setActiveMobile(this.player);
 
-    // Preload firing, impact and movement audio effects so they play with zero network/decoding latency
-    AudioManager.preload(["11fire.wav", "12fire.wav", "11blast.wav", "12blast.wav", "1move.wav", "1nmove.wav"]);
+    // Expose arena instance on window for testing & debugging
+    if (typeof window !== "undefined") {
+      (window as any).__ARENA__ = this;
+    }
+
+    // Preload firing, impact, movement and weather audio effects
+    AudioManager.preload(["11fire.wav", "12fire.wav", "11blast.wav", "12blast.wav", "1move.wav", "1nmove.wav", "4moon.ogg", "dual_snd.ogg"]);
 
     this.aimController.onFireCallback = (angle, power, shotType) => {
       this.fireShot(angle, power, shotType);
@@ -168,8 +233,9 @@ export class CombatArena {
     this.windPower = 0;
     this.windAngle = 0;
 
-    // 8. Center Camera across the battlefield with authentic framing (centering Metamine bridge and framing clock tower at 1.2x)
+    // 8. Center Camera across the battlefield with authentic framing and start smooth cinematic intro zoom from frame 1
     this.engine.panTo(704.5, 420, true);
+    this.engine.playIntroZoom(0.52, 1.20);
 
     // 9. Play Battle Music
     AudioManager.playMusic("dbBattleMiramoTown.mp3");
@@ -250,6 +316,23 @@ export class CombatArena {
       this.engine.screenH
     );
     this.thor.update(dt);
+    this.activeColumnEntity?.update(dt);
+    for (let i = this.fadingColumnEntities.length - 1; i >= 0; i--) {
+      const col = this.fadingColumnEntities[i];
+      col.update(dt);
+      if (col.isDestroyed) {
+        this.fadingColumnEntities.splice(i, 1);
+      }
+    }
+
+    // Update screen-space sky marker tracking the active column
+    this.weatherSkyMarker.update(
+      dt,
+      this.engine.cameraX,
+      this.engine.cameraZoom,
+      this.engine.screenW,
+      this.weatherManager.activeColumn
+    );
 
     // Authentic Gunbound Slice/Drag mechanic:
     // If user holds cursor static without releasing left click, power indicator oscillates/vibrates
@@ -478,22 +561,17 @@ export class CombatArena {
   }
 
   public activateItem(item: "dual" | "teleport" | null) {
+    if (item !== null && this.weatherManager.isItemsLocked()) {
+      AudioManager.play("turntick1s", 0.8);
+      return;
+    }
     this.activeItem = item;
     if (this.onActiveItemChange) {
       this.onActiveItemChange(item);
     }
     if (item !== null) {
-      // Spawn authentic circular USEITEM glow
-      const powerup = new ItemPowerupEntity(this.player.x, this.player.y - 10);
-      this.engine.effectsContainer.addChild(powerup);
-
-      // Play original item activation sound
-      AudioManager.play("dual_snd", 0.9);
-
-      // Trigger mobile item animation if supported
-      this.player.playAnimation("item", false, () => {
-        this.player.playAnimation("normal", true);
-      });
+      // Trigger native fluid synchronized mobile powerup effect directly on mobile
+      this.player.triggerPowerupEffect(item);
     }
   }
 
@@ -558,6 +636,7 @@ export class CombatArena {
       targets: !this.bot.isDead && this.bot.mobile.hp > 0
         ? [{ id: "bot", x: this.bot.mobile.x, y: this.bot.mobile.y - 14, radius: 26 }]
         : [],
+      activeWeatherColumn: this.weatherManager.activeColumn,
     };
 
     const trajectories = BallisticsEngine.simulateShot(params);
@@ -699,9 +778,8 @@ export class CombatArena {
       this.player.y = place.y;
       this.player.setTilt(place.slope.angle);
 
-      // Spawn teleport circular explosion effect
-      const teleportEffect = new ItemPowerupEntity(impact.x, place.y - 10);
-      this.engine.effectsContainer.addChild(teleportEffect);
+      // Trigger native fluid teleport powerup effect directly on mobile at arrival
+      this.player.triggerPowerupEffect("teleport");
       AudioManager.play("11blast", 0.9);
 
       if (!this.engine.userHasManualCamera) {
@@ -829,10 +907,15 @@ export class CombatArena {
   private handleSpecialOrbitalBeams(traj: ShotTrajectory) {
     const { x, y } = traj.finalPos;
 
-    if (traj.subType === "aduka_thor_tracker" || this.player.mobileType === 2) {
+    // 1. If Thor Weather is active, Thor fires orbital laser on ANY projectile hit!
+    if (this.weatherManager.isThorActive()) {
+      if (this.thor) {
+        this.thor.fireBeam(x, y, 120, this.engine.effectsContainer);
+      }
+    } else if (traj.subType === "aduka_thor_tracker" || this.player.mobileType === 2) {
       // Aduka: Authentic Thor Satellite Orbital Laser strike
       if (this.thor) {
-        this.thor.fireBeam(x, y, traj.damage);
+        this.thor.fireBeam(x, y, traj.damage, this.engine.effectsContainer);
       } else {
         this.drawDescendingLaser(x, y, 0x38bdf8, 10, 360);
         AudioManager.play("82blast", 0.85);
@@ -849,6 +932,12 @@ export class CombatArena {
       // Lightning: Vertical electric lightning arcs
       this.drawDescendingLaser(x, y, 0xc084fc, 8, 280);
       AudioManager.play("82fire", 0.85);
+    }
+
+    // 2. If projectile is lightning-charged from passing through Lightning weather column
+    if (traj.isLightningCharged) {
+      this.drawDescendingLaser(x, y, 0x60a5fa, 12, 300);
+      AudioManager.play("12blast", 0.9);
     }
   }
 
@@ -893,24 +982,34 @@ export class CombatArena {
       });
     }
 
-    // Randomize wind for next turn
-    this.randomizeWind();
-
-    // Pan camera back to player and re-enable aim
+    // Wait for the impact explosion to complete, then start camera animation and advance weather
     setTimeout(() => {
+      // 1. Camera animation starts towards the active player
       this.engine.userHasManualCamera = false;
-      this.aimController.enabled = true;
-      this.aimController.setActiveMobile(this.player);
       this.engine.panTo(this.player.x + 80, this.player.y - 40);
 
-      if (this.bot.isDead) {
-        this.bot.triggerAscension();
+      // 2. Right as camera starts panning, advance authentic GunBound weather tape!
+      const nextWeather = this.weatherManager.advanceTurn();
+
+      // If next weather is wind change, randomize wind
+      if (nextWeather.type === "wind") {
+        this.randomizeWind();
       }
 
-      if (this.onTurnReady) {
-        this.onTurnReady();
-      }
-    }, 600);
+      // 3. When camera pan settles, re-enable aim for active player
+      setTimeout(() => {
+        this.aimController.enabled = true;
+        this.aimController.setActiveMobile(this.player);
+
+        if (this.bot.isDead) {
+          this.bot.triggerAscension();
+        }
+
+        if (this.onTurnReady) {
+          this.onTurnReady();
+        }
+      }, 550);
+    }, 450);
   }
 
   public resetBot(useRandomPos: boolean = false) {
@@ -960,6 +1059,18 @@ export class CombatArena {
 
     this.destructionParticles.clear();
     this.dynamicExplosionEngine.clear();
+
+    // Clean up active and fading weather columns
+    if (this.activeColumnEntity) {
+      this.activeColumnEntity.cleanup();
+      this.activeColumnEntity = undefined;
+    }
+    for (const col of this.fadingColumnEntities) {
+      col.cleanup();
+    }
+    this.fadingColumnEntities = [];
+
+    this.weatherManager.reset();
     await this.terrain.loadMap("metamine");
     this.leavesEngine.setMapBounds(this.terrain.mapWidth, this.terrain.mapHeight);
     this.respawnPlayer();
@@ -978,5 +1089,15 @@ export class CombatArena {
     this.destructionParticles.clear();
     this.leavesEngine.destroy();
     this.thor.destroy();
+    this.weatherSkyMarker.cleanup();
+    this.weatherContainer.destroy({ children: true });
+    if (this.activeColumnEntity) {
+      this.activeColumnEntity.cleanup();
+      this.activeColumnEntity = undefined;
+    }
+    for (const col of this.fadingColumnEntities) {
+      col.cleanup();
+    }
+    this.fadingColumnEntities = [];
   }
 }

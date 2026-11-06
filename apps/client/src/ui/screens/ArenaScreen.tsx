@@ -3,6 +3,8 @@ import { CombatArena } from "../../core/combat/CombatArena.js";
 import { MobileSelector } from "../components/MobileSelector.js";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
 import { AudioManager } from "../../core/audio/AudioManager.js";
+import { WeatherWidget } from "../components/WeatherWidget.js";
+import { WeatherDefinition, WeatherSlotItem, WEATHER_DEFINITIONS } from "../../core/weather/WeatherManager.js";
 
 interface ArenaScreenProps {
   arena: CombatArena | null;
@@ -32,6 +34,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [windPower, setWindPower] = useState<number>(0);
   const [windAngle, setWindAngle] = useState<number>(0);
   const [isWindEnabled, setIsWindEnabled] = useState<boolean>(false);
+
+  // Authentic Weather System state (Thor, Wind, Force, Lightning, Mirror, Tornado, etc.)
+  const [currentWeather, setCurrentWeather] = useState<WeatherDefinition>(
+    arena?.weatherManager?.activeWeather || WEATHER_DEFINITIONS[0]
+  );
+  const [weatherTapeSlice, setWeatherTapeSlice] = useState<WeatherSlotItem[]>(
+    arena?.weatherManager?.getTapeSlice() || []
+  );
 
   const [, setBotHp] = useState<number>(1000);
   const [, setBotMaxHp] = useState<number>(1000);
@@ -274,6 +284,19 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
     arena.onActiveItemChange = (item) => {
       if (item === null) {
+        setActiveItemSlot(null);
+      }
+    };
+
+    if (arena.weatherManager) {
+      setCurrentWeather(arena.weatherManager.activeWeather);
+      setWeatherTapeSlice(arena.weatherManager.getTapeSlice());
+    }
+
+    arena.onWeatherUpdate = (weather, tape) => {
+      setCurrentWeather(weather);
+      setWeatherTapeSlice(tape);
+      if (weather.type === "no_items") {
         setActiveItemSlot(null);
       }
     };
@@ -548,68 +571,53 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           </div>
         </div>
 
-        {/* Center: Wind & Compass Capsule */}
-        <div className="pixel-box" style={{
-          background: isWindEnabled
-            ? "var(--bg-panel-dark)"
-            : "var(--bg-panel-slate)",
-          borderRadius: "4px",
-          padding: "3px 10px",
-          height: "36px",
-          boxSizing: "border-box",
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          boxShadow: isWindEnabled
-            ? "inset 1px 1px 0px rgba(56, 189, 248, 0.5), inset -1px -1px 0px #000, 0 3px 0px rgba(0,0,0,0.6)"
-            : "inset 1px 1px 0px rgba(255,255,255,0.15), inset -1px -1px 0px #000, 0 3px 0px rgba(0,0,0,0.6)",
-          pointerEvents: "auto",
-        }}>
-          {/* Rotating Compass Icon */}
-          <div style={{ position: "relative", width: "24px", height: "24px", opacity: isWindEnabled ? 1 : 0.45 }}>
-            <svg width="24" height="24" viewBox="0 0 36 36">
-              <circle cx="18" cy="18" r="16" fill="#0f172a" stroke="#000000" strokeWidth="2.5" />
-              <g transform={`rotate(${windAngle}, 18, 18)`}>
-                <polygon points="18,4 24,27 18,21 12,27" fill={isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)"} stroke="#000000" strokeWidth="1" />
-                <circle cx="18" cy="18" r="3" fill="#ffffff" />
-              </g>
-            </svg>
-          </div>
+        {/* Center: Weather Widget Capsule + Wind & Compass Capsule */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
+          {/* Authentic GunBound Weather Slime Capsule Widget */}
+          <WeatherWidget currentWeather={currentWeather} tapeSlice={weatherTapeSlice} />
 
-          <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
-            <span className="num-font" style={{ color: isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)", fontSize: "15px", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
-              {isWindEnabled ? windPower : 0}
-            </span>
-            <span className={isWindEnabled ? "num-font" : undefined} style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
-              {isWindEnabled ? `${windAngle}°` : "OFF"}
-            </span>
-          </div>
+          {/* Wind & Compass Capsule */}
+          <div className="pixel-box" style={{
+            background: isWindEnabled
+              ? "var(--bg-panel-dark)"
+              : "var(--bg-panel-slate)",
+            borderRadius: "4px",
+            padding: "3px 10px",
+            height: "36px",
+            boxSizing: "border-box",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            boxShadow: isWindEnabled
+              ? "inset 1px 1px 0px rgba(56, 189, 248, 0.5), inset -1px -1px 0px #000, 0 3px 0px rgba(0,0,0,0.6)"
+              : "inset 1px 1px 0px rgba(255,255,255,0.15), inset -1px -1px 0px #000, 0 3px 0px rgba(0,0,0,0.6)",
+            pointerEvents: "auto",
+          }}>
+            {/* Rotating Compass Icon */}
+            <div style={{ position: "relative", width: "24px", height: "24px", opacity: isWindEnabled ? 1 : 0.45 }}>
+              <svg width="24" height="24" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="16" fill="#0f172a" stroke="#000000" strokeWidth="2.5" />
+                <g transform={`rotate(${windAngle}, 18, 18)`}>
+                  <polygon points="18,4 24,27 18,21 12,27" fill={isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)"} stroke="#000000" strokeWidth="1" />
+                  <circle cx="18" cy="18" r="3" fill="#ffffff" />
+                </g>
+              </svg>
+            </div>
 
-          {/* Toggle Wind Button */}
-          <button
-            className={`pixel-btn ${isWindEnabled ? "pixel-btn-primary" : "pixel-btn-slate"}`}
-            onClick={handleToggleWind}
-            style={{
-              borderRadius: "3px",
-              width: "26px",
-              height: "26px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "13px",
-              cursor: "pointer",
-            }}
-            title={isWindEnabled ? "Desactivar viento (0 por defecto)" : "Activar viento"}
-          >
-            🌬️
-          </button>
+            <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
+              <span className="num-font" style={{ color: isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)", fontSize: "15px", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
+                {isWindEnabled ? windPower : 0}
+              </span>
+              <span className={isWindEnabled ? "num-font" : undefined} style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
+                {isWindEnabled ? `${windAngle}°` : "OFF"}
+              </span>
+            </div>
 
-          {isWindEnabled && (
+            {/* Toggle Wind Button */}
             <button
-              className="pixel-btn pixel-btn-slate"
-              onClick={handleRandomizeWind}
+              className={`pixel-btn ${isWindEnabled ? "pixel-btn-primary" : "pixel-btn-slate"}`}
+              onClick={handleToggleWind}
               style={{
-                color: "var(--color-primary)",
                 borderRadius: "3px",
                 width: "26px",
                 height: "26px",
@@ -619,11 +627,32 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 fontSize: "13px",
                 cursor: "pointer",
               }}
-              title="Aleatorizar dirección y fuerza de viento"
+              title={isWindEnabled ? "Desactivar viento (0 por defecto)" : "Activar viento"}
             >
-              🎲
+              🌬️
             </button>
-          )}
+
+            {isWindEnabled && (
+              <button
+                className="pixel-btn pixel-btn-slate"
+                onClick={handleRandomizeWind}
+                style={{
+                  color: "var(--color-primary)",
+                  borderRadius: "3px",
+                  width: "26px",
+                  height: "26px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                }}
+                title="Aleatorizar dirección y fuerza de viento"
+              >
+                🎲
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Right: Player Mobile Selector + Bot Immortal Toggle + Turn Countdown Timer */}
@@ -1100,14 +1129,18 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               { id: 1, label: "DUAL", type: "dual" as const, title: "Item 2: Disparo Dual (x2 proyectiles)" },
               { id: 2, label: "TP", type: "teleport" as const, title: "Item 3: Teleportación instantánea" },
             ].map((slot) => {
-              const isSelected = activeItemSlot === slot.id;
+              const isLocked = currentWeather.type === "no_items";
+              const isSelected = activeItemSlot === slot.id && !isLocked;
               return (
                 <button
                   key={slot.id}
+                  disabled={isLocked}
                   className="pixel-btn"
-                  onClick={() => handleToggleItemSlot(slot.id, slot.type)}
+                  onClick={() => !isLocked && handleToggleItemSlot(slot.id, slot.type)}
                   style={{
-                    background: isSelected
+                    background: isLocked
+                      ? "rgba(30, 41, 59, 0.6)"
+                      : isSelected
                       ? "var(--bg-panel-green)"
                       : "var(--bg-panel-slate)",
                     border: isSelected ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
@@ -1117,11 +1150,12 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                     minWidth: "56px",
                     height: "34px",
                     boxSizing: "border-box",
-                    color: isSelected ? "var(--color-white)" : "var(--color-slate-400)",
+                    color: isLocked ? "#64748b" : isSelected ? "var(--color-white)" : "var(--color-slate-400)",
                     fontFamily: "var(--font-game)",
                     fontWeight: 700,
                     fontSize: "13px",
-                    cursor: "pointer",
+                    cursor: isLocked ? "not-allowed" : "pointer",
+                    opacity: isLocked ? 0.45 : 1,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1131,9 +1165,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                     textShadow: "var(--text-shadow-pixel)",
                     filter: isSelected ? "none" : undefined,
                   }}
-                  title={slot.title}
+                  title={isLocked ? "Ítems bloqueados por el clima (No Items)" : slot.title}
                 >
-                  {slot.label}
+                  {isLocked ? "🔒" : slot.label}
                 </button>
               );
             })}

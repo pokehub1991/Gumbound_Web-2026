@@ -11,6 +11,7 @@ export interface TrajectoryPoint {
   timeMs: number;
   tangentAngle: number;
   isSpecialPhase?: boolean;
+  weatherEffect?: "sun" | "lightning" | "mirror" | "tornado" | "black";
 }
 
 export interface ShotTrajectory {
@@ -27,6 +28,8 @@ export interface ShotTrajectory {
   soundFire: string;
   soundExplode: string;
   launchDelayMs?: number;
+  isSunBuffed?: boolean;
+  isLightningCharged?: boolean;
   extraMeta?: Record<string, unknown>;
 }
 
@@ -45,6 +48,12 @@ export interface FireParams {
   mapWidth: number;
   mapHeight: number;
   targets?: { id: string; x: number; y: number; radius: number }[];
+  activeWeatherColumn?: {
+    id: number;
+    type: string;
+    x: number;
+    width: number;
+  } | null;
 }
 
 export class BallisticsEngine {
@@ -200,18 +209,131 @@ export class BallisticsEngine {
 
     const maxMs = 16000;
     const stepMs = 8; // High-precision sub-stepping
+    const dt = stepMs / 1000;
+
+    let curX = origin.x;
+    let curY = origin.y;
+    let curVx = vx;
+    let curVy = vy;
+
+    let isSunBuffed = false;
+    let isLightningCharged = false;
+    let isBlackDamped = false;
+    let hasMirrored = false;
+    const col = params.activeWeatherColumn;
 
     let prevX = origin.x;
     let prevY = origin.y;
 
-    for (let tMs = 0; tMs <= maxMs; tMs += stepMs) {
-      const p = tMs / 1000;
-      const x = origin.x + vx * p + (ax * p * p) / 2;
-      const y = origin.y + vy * p + (ay * p * p) / 2;
+    let tornadoPhase: 0 | 1 | 2 = 0; // 0 = outside, 1 = in 360 loop, 2 = exited loop
+    let tornadoLoopAngle = 0;
+    let tornadoLoopCenter = { x: 0, y: 0 };
+    let tornadoLoopRadius = 36;
+    let tornadoEntrySpeed = 0;
+    let tornadoDir = 1;
+    let tornadoProgress = 0;
 
-      // Smooth analytical velocity tangent vector (dx/dt = vx + ax*p, dy/dt = vy + ay*p)
-      const velX = vx + ax * p;
-      const velY = vy + ay * p;
+    for (let tMs = 0; tMs <= maxMs; tMs += stepMs) {
+      let x = origin.x;
+      let y = origin.y;
+      let velX = vx;
+      let velY = vy;
+
+      if (tMs === 0) {
+        x = curX;
+        y = curY;
+        velX = curVx;
+        velY = curVy;
+      } else {
+        // In-world weather column physics interactions
+        if (col) {
+          const distFromCenter = curX - col.x;
+          const halfWidth = col.width / 2;
+
+          if (col.type === "sun" && Math.abs(distFromCenter) <= halfWidth) {
+            isSunBuffed = true;
+          } else if (col.type === "lightning" && Math.abs(distFromCenter) <= halfWidth) {
+            isLightningCharged = true;
+          } else if (col.type === "black" && Math.abs(distFromCenter) <= halfWidth) {
+            isBlackDamped = true;
+          } else if (col.type === "mirror" && !hasMirrored && Math.abs(distFromCenter) <= 18 && tMs > 100) {
+            curVx = -curVx * 0.90;
+            hasMirrored = true;
+          } else if (col.type === "tornado") {
+            // Authentic GunBound Tornado cyclonic 360-degree vortex looping physics:
+            if (tornadoPhase === 0 && Math.abs(distFromCenter) <= halfWidth) {
+              tornadoPhase = 1;
+              tornadoDir = curVx < 0 ? -1 : 1;
+              tornadoEntrySpeed = Math.hypot(curVx, curVy);
+              tornadoLoopRadius = Math.min(42, Math.max(28, col.width * 0.32));
+              tornadoLoopCenter = { x: col.x, y: curY - 10 };
+              tornadoLoopAngle = Math.atan2(curY - tornadoLoopCenter.y, curX - tornadoLoopCenter.x);
+              tornadoProgress = 0;
+            }
+
+            if (tornadoPhase === 1) {
+              const angularSpeed = 16.0; // Fast and snappy 360-degree cyclonic loop (~0.39s)
+              tornadoProgress += angularSpeed * dt;
+              tornadoLoopAngle += angularSpeed * tornadoDir;
+              tornadoLoopCenter.y -= 130 * dt; // Cyclonic updraft suction lifts bullet
+              curX = tornadoLoopCenter.x + Math.cos(tornadoLoopAngle) * tornadoLoopRadius;
+              curY = tornadoLoopCenter.y + Math.sin(tornadoLoopAngle) * tornadoLoopRadius;
+              curVx = -Math.sin(tornadoLoopAngle) * tornadoLoopRadius * angularSpeed * tornadoDir;
+              curVy = Math.cos(tornadoLoopAngle) * tornadoLoopRadius * angularSpeed * tornadoDir - 130;
+
+              if (tornadoProgress >= Math.PI * 2.15) {
+                tornadoPhase = 2; // Loop complete, exit funnel
+                curVx = tornadoDir * Math.max(280, tornadoEntrySpeed * 0.95);
+                curVy = -Math.max(120, tornadoEntrySpeed * 0.35);
+              }
+            }
+          } else if (col.type === "random" && Math.abs(distFromCenter) <= halfWidth) {
+            // Random column with cascading items (Sun, Lightning, Mirror, Tornado, Black):
+            // Calculate which cascading item is at current Y height!
+            // Items repeat in a 5-item cycle spaced every 140px, falling smoothly at 34px/s
+            const cycleHeight = 700;
+            const scrollOffset = (tMs * 0.034) % cycleHeight;
+            const normY = (((curY + scrollOffset) % cycleHeight) + cycleHeight) % cycleHeight;
+            const itemIdx = Math.floor(normY / 140); // 0 = sun, 1 = lightning, 2 = mirror, 3 = tornado, 4 = black
+
+            if (itemIdx === 0) {
+              isSunBuffed = true;
+            } else if (itemIdx === 1) {
+              isLightningCharged = true;
+            } else if (itemIdx === 2 && !hasMirrored && tMs > 100) {
+              curVx = -curVx * 0.90;
+              hasMirrored = true;
+            } else if (itemIdx === 3) {
+              // Touching the Tornado badge triggers the cyclonic loop!
+              if (tornadoPhase === 0) {
+                tornadoPhase = 1;
+                tornadoDir = curVx < 0 ? -1 : 1;
+                tornadoEntrySpeed = Math.hypot(curVx, curVy);
+                tornadoLoopRadius = 32;
+                tornadoLoopCenter = { x: col.x, y: curY - 10 };
+                tornadoLoopAngle = Math.atan2(curY - tornadoLoopCenter.y, curX - tornadoLoopCenter.x);
+                tornadoProgress = 0;
+              }
+            } else if (itemIdx === 4) {
+              isBlackDamped = true;
+            }
+          }
+        }
+
+        if (tornadoPhase !== 1) {
+          curVx += ax * dt;
+          curVy += ay * dt;
+          curX += curVx * dt;
+          curY += curVy * dt;
+        }
+
+        x = curX;
+        y = curY;
+        velX = curVx;
+        velY = curVy;
+      }
+
+      // Smooth analytical velocity tangent vector
       const tang = (Math.atan2(velY, velX) * 180) / Math.PI;
 
       // Special transformation check (Armor SS or Turtle SS open phase)
@@ -234,6 +356,18 @@ export class BallisticsEngine {
           // Clear tiny 5px radius right at the muzzle aperture, then collide with any solid terrain
           // Guarantees bullets never pass through thin overhangs, ledges or sharp terrain tips
           if (distFromMuzzle >= 5 && params.isPixelSolid(Math.round(cx), Math.round(cy))) {
+            const activeWeatherEffect = isSunBuffed
+              ? "sun"
+              : isLightningCharged
+              ? "lightning"
+              : hasMirrored
+              ? "mirror"
+              : tornadoPhase > 0
+              ? "tornado"
+              : isBlackDamped
+              ? "black"
+              : undefined;
+
             hitType = "ground";
             finalPos = { x: Math.round(cx), y: Math.round(cy) };
             points.push({
@@ -242,6 +376,7 @@ export class BallisticsEngine {
               timeMs: tMs - stepMs + stepMs * factor,
               tangentAngle: tang,
               isSpecialPhase,
+              weatherEffect: activeWeatherEffect,
             });
             hitTerrain = true;
             break;
@@ -253,12 +388,25 @@ export class BallisticsEngine {
         }
       }
 
+      const activeWeatherEffect = isSunBuffed
+        ? "sun"
+        : isLightningCharged
+        ? "lightning"
+        : hasMirrored
+        ? "mirror"
+        : tornadoPhase > 0
+        ? "tornado"
+        : isBlackDamped
+        ? "black"
+        : undefined;
+
       points.push({
         x,
         y,
         timeMs: tMs,
         tangentAngle: tang,
         isSpecialPhase,
+        weatherEffect: activeWeatherEffect,
       });
 
       // 1. Mobile Enemy Collision check (skip initial launch to clear muzzle)
@@ -300,6 +448,18 @@ export class BallisticsEngine {
       }
     }
 
+    // Authentic Weather column damage & bunge modifiers
+    if (isSunBuffed) {
+      damage = Math.round(damage * 1.35);
+      bunge = Math.round(bunge * 1.25);
+    }
+    if (isLightningCharged) {
+      damage = Math.round(damage + 75);
+    }
+    if (isBlackDamped) {
+      damage = Math.round(damage * 0.75);
+    }
+
     return {
       id: `${mobile.key}_shot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       subType: "single",
@@ -314,6 +474,8 @@ export class BallisticsEngine {
       soundFire: "11fire",
       soundExplode: "11blast",
       launchDelayMs: delayMs,
+      isSunBuffed,
+      isLightningCharged,
     };
   }
 

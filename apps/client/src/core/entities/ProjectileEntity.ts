@@ -4,6 +4,17 @@ import { Point2D } from "../physics/BallisticsEngine.js";
 import { AudioManager } from "../audio/AudioManager.js";
 import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 
+interface BulletElectricSpark {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  color: number;
+  size: number;
+}
+
 export class ProjectileEntity extends Container {
   private bulletContainer: Container;
   private bulletSprite?: AnimatedSprite;
@@ -15,6 +26,9 @@ export class ProjectileEntity extends Container {
   private explodeSprite?: AnimatedSprite;
   private fallbackExplosion: Graphics;
   private auraGraphics: Graphics;
+  private weatherTrailGraphics: Graphics;
+  private weatherAuraTime: number = 0;
+  private electricSparks: BulletElectricSpark[] = [];
 
   private points: Point2D[];
   private mobileType: number;
@@ -62,6 +76,7 @@ export class ProjectileEntity extends Container {
     this.proceduralGraphics = new Graphics();
     this.fallbackExplosion = new Graphics();
     this.auraGraphics = new Graphics();
+    this.weatherTrailGraphics = new Graphics();
 
     // Canonical Mage is 13, Canonical Turtle is 14
     if ((mobileType === 13 && shotType < 2) || (mobileType === 14 && shotType < 2)) {
@@ -74,6 +89,7 @@ export class ProjectileEntity extends Container {
 
     this.bulletContainer.addChild(this.fallbackBullet);
     this.bulletContainer.addChild(this.auraGraphics);
+    this.addChild(this.weatherTrailGraphics);
     this.addChild(this.proceduralGraphics);
     this.addChild(this.bulletContainer);
     this.addChild(this.fallbackExplosion);
@@ -271,6 +287,179 @@ export class ProjectileEntity extends Container {
     // Procedural laser ribbon trails for Mage (13) and Turtle (14)
     if (this.isProcedural) {
       this.renderProceduralShot();
+    }
+
+    // Dynamic weather energy aura and trails
+    this.renderWeatherBulletEffects(dt);
+  }
+
+  private renderWeatherBulletEffects(dt: number) {
+    if (this.isExploding) {
+      this.weatherTrailGraphics.clear();
+      this.auraGraphics.clear();
+      return;
+    }
+
+    const ptIdx = Math.floor(this.progress);
+    const currentPt = this.points[ptIdx] as (Point2D & { weatherEffect?: "sun" | "lightning" | "mirror" | "tornado" | "black" });
+    const effect = currentPt?.weatherEffect;
+
+    this.weatherTrailGraphics.clear();
+
+    if (!effect) {
+      if (this.transformPauseMs <= 0) {
+        this.auraGraphics.clear();
+      }
+      return;
+    }
+
+    this.weatherAuraTime += dt * 0.15;
+    const time = this.weatherAuraTime;
+
+    // 1. Draw glowing local halo / corona around the bullet (inside bulletContainer)
+    this.auraGraphics.clear();
+
+    switch (effect) {
+      case "sun": {
+        const pulse = 0.85 + Math.sin(time * 8) * 0.15;
+        // Outer radiant god-ray flare
+        this.auraGraphics.circle(0, 0, 16 * pulse).fill({ color: 0xfef08a, alpha: 0.28 });
+        // Golden solar halo
+        this.auraGraphics.circle(0, 0, 11 * pulse).fill({ color: 0xfacc15, alpha: 0.55 });
+        // Incandescent core ring
+        this.auraGraphics.circle(0, 0, 6).fill({ color: 0xffffff, alpha: 0.85 });
+        break;
+      }
+
+      case "lightning": {
+        // High-voltage electric plasma aura with erratic crackle
+        this.auraGraphics.circle(0, 0, 11).fill({ color: 0x2563eb, alpha: 0.40 });
+        this.auraGraphics.circle(0, 0, 8).stroke({ width: 1.8, color: 0x67e8f9, alpha: 0.90 });
+        for (let a = 0; a < 4; a++) {
+          const ang = time * 18 + a * (Math.PI / 2);
+          const r1 = 4;
+          const r2 = 11 + Math.random() * 6;
+          const midAng = ang + (Math.random() - 0.5) * 0.8;
+          this.auraGraphics.moveTo(Math.cos(ang) * r1, Math.sin(ang) * r1)
+            .lineTo(Math.cos(midAng) * (r1 + r2) * 0.5, Math.sin(midAng) * (r1 + r2) * 0.5)
+            .lineTo(Math.cos(ang) * r2, Math.sin(ang) * r2)
+            .stroke({ width: 1.5, color: a % 2 === 0 ? 0xffffff : 0x38bdf8, alpha: 0.95 });
+          // Tiny discharge spark node at tip
+          this.auraGraphics.circle(Math.cos(ang) * r2, Math.sin(ang) * r2, 1.5).fill({ color: 0xffffff, alpha: 0.95 });
+        }
+        break;
+      }
+
+      case "mirror": {
+        const pulse = 0.8 + Math.sin(time * 10) * 0.2;
+        // Crystalline amber/gold reflective shield
+        this.auraGraphics.poly([
+          0, -14 * pulse,
+          10 * pulse, 0,
+          0, 14 * pulse,
+          -10 * pulse, 0,
+        ]).stroke({ width: 2.2, color: 0xfb923c, alpha: 0.90 });
+        this.auraGraphics.circle(0, 0, 8).fill({ color: 0xfdba74, alpha: 0.35 });
+        break;
+      }
+
+      case "tornado": {
+        // Swirling cyclonic wind vortex ring
+        this.auraGraphics.circle(0, 0, 13).stroke({ width: 2.0, color: 0x6ee7b7, alpha: 0.65 });
+        // 2 rotating wind vortex curls
+        for (let c = 0; c < 2; c++) {
+          const startA = time * 14 + c * Math.PI;
+          this.auraGraphics.arc(0, 0, 10 + c * 3, startA, startA + Math.PI * 0.75)
+            .stroke({ width: 2.2, color: c === 0 ? 0xffffff : 0x34d399, alpha: 0.85 });
+        }
+        break;
+      }
+
+      case "black": {
+        const pulse = 0.85 + Math.sin(time * 6) * 0.15;
+        // Deep obsidian void aura
+        this.auraGraphics.circle(0, 0, 13 * pulse).fill({ color: 0x581c87, alpha: 0.40 });
+        this.auraGraphics.circle(0, 0, 7).stroke({ width: 2.0, color: 0xc084fc, alpha: 0.85 });
+        break;
+      }
+    }
+
+    // 2. High-energy electric sparks emitted into world coordinates along bullet trajectory
+    if (effect === "lightning") {
+      for (let s = 0; s < 3; s++) {
+        const spAngle = Math.random() * Math.PI * 2;
+        const spSpeed = 30 + Math.random() * 65;
+        this.electricSparks.push({
+          x: this.currentX + (Math.random() - 0.5) * 6,
+          y: this.currentY + (Math.random() - 0.5) * 6,
+          vx: Math.cos(spAngle) * spSpeed,
+          vy: Math.sin(spAngle) * spSpeed,
+          life: 0,
+          maxLife: 8 + Math.random() * 10,
+          color: Math.random() > 0.4 ? 0xffffff : 0x67e8f9,
+          size: 1.2 + Math.random() * 1.8,
+        });
+      }
+    }
+
+    // Update and render electric sparks in weatherTrailGraphics
+    for (let i = this.electricSparks.length - 1; i >= 0; i--) {
+      const sp = this.electricSparks[i];
+      sp.life += dt * 1.3;
+      if (sp.life >= sp.maxLife) {
+        this.electricSparks.splice(i, 1);
+        continue;
+      }
+      sp.x += sp.vx * dt * 0.04;
+      sp.y += sp.vy * dt * 0.04;
+      const spAlpha = (1 - (sp.life / sp.maxLife)) * 0.95;
+
+      this.weatherTrailGraphics.circle(sp.x, sp.y, sp.size).fill({ color: sp.color, alpha: spAlpha });
+      const jx = (Math.random() - 0.5) * 5.0;
+      const jy = (Math.random() - 0.5) * 5.0;
+      this.weatherTrailGraphics.moveTo(sp.x, sp.y)
+        .lineTo(sp.x + jx, sp.y + jy)
+        .stroke({ width: 1.2, color: 0x38bdf8, alpha: spAlpha * 0.85 });
+    }
+
+    // 3. Draw energy ribbon trail in world coordinates behind the bullet
+    const trailSpan = 16;
+    const span = Math.min(this.progress, trailSpan);
+    if (span <= 0.5) return;
+
+    const sampleSteps = Math.floor(span * 2);
+    const pts: Point2D[] = [];
+    for (let s = 0; s <= sampleSteps; s++) {
+      const p = Math.max(0, this.progress - span * (s / sampleSteps));
+      pts.push(this.getPointAtProgress(p));
+    }
+    if (pts.length < 2) return;
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const frac = 1 - (i / (pts.length - 1)); // 1 at bullet, 0 at tail tip
+      const alpha = frac * 0.75;
+      const width = Math.max(1.0, frac * 5.0);
+
+      if (effect === "lightning") {
+        const jx = (Math.random() - 0.5) * 2.5;
+        const jy = (Math.random() - 0.5) * 2.5;
+        this.weatherTrailGraphics.moveTo(pts[i].x + jx, pts[i].y + jy)
+          .lineTo(pts[i + 1].x + jx, pts[i + 1].y + jy)
+          .stroke({ width: Math.max(1.5, width * 0.7), color: 0x38bdf8, alpha: alpha * 0.9 });
+        this.weatherTrailGraphics.moveTo(pts[i].x, pts[i].y)
+          .lineTo(pts[i + 1].x, pts[i + 1].y)
+          .stroke({ width: 1.2, color: 0xffffff, alpha });
+      } else {
+        let trailColor = 0xffffff;
+        if (effect === "sun") trailColor = 0xf59e0b;
+        else if (effect === "mirror") trailColor = 0xfb923c;
+        else if (effect === "tornado") trailColor = 0x6ee7b7;
+        else if (effect === "black") trailColor = 0xa855f7;
+
+        this.weatherTrailGraphics.moveTo(pts[i].x, pts[i].y)
+          .lineTo(pts[i + 1].x, pts[i + 1].y)
+          .stroke({ width, color: trailColor, alpha });
+      }
     }
   }
 

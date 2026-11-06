@@ -41,7 +41,8 @@ export class TerrainMask {
     // Beyond map bounds: abyss / bunge void
     if (ix < 0 || ix >= this.width) return this.height + 200;
 
-    const sy = Math.floor(startY);
+    // If startY is beyond map bottom, scan from top of the sky (0) to reliably locate ground surface
+    const sy = startY >= this.height ? 0 : Math.floor(startY);
 
     // If already inside solid ground, scan upward to find the true surface air pixel
     if (this.isPixelSolid(ix, sy)) {

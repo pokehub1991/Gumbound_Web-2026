@@ -1,6 +1,7 @@
 import { AnimatedSprite, Container, Graphics, Text, TextStyle } from "pixi.js";
 import { MobileSpriteManager, MobileAnimationTextures } from "../animation/MobileSpriteManager.js";
 import { MOBILES_DATA } from "../constants/mobiles.js";
+import { AudioManager } from "../audio/AudioManager.js";
 
 export interface MobileEntityConfig {
   id: string;
@@ -11,6 +12,26 @@ export interface MobileEntityConfig {
   hp?: number;
   x: number;
   y: number;
+}
+
+interface PowerupParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  alpha: number;
+  fadeRate: number;
+  color: number;
+  isStar?: boolean;
+}
+
+interface PowerupShockwave {
+  radius: number;
+  maxRadius: number;
+  alpha: number;
+  fadeRate: number;
+  delay: number;
 }
 
 interface DamageSmokeParticle {
@@ -61,6 +82,23 @@ export class MobileEntity extends Container {
   private smokeTimer: number = 0;
   private sparkTimer: number = 0;
 
+  // Native fluid Item Powerup effect (Dual, Teleport)
+  private powerupContainer: Container;
+  private powerupGfx: Graphics;
+  private powerupAuraGfx: Graphics;
+  private powerupParticles: PowerupParticle[] = [];
+  private powerupShockwaves: PowerupShockwave[] = [];
+  private isPowerupActive: boolean = false;
+  private powerupTime: number = 0;
+  private powerupDuration: number = 0;
+  private powerupType: "dual" | "teleport" = "dual";
+
+  // Chassis vehicle hop spring physics
+  private hopY: number = 0;
+  private hopVy: number = 0;
+  private hopScaleX: number = 1.0;
+  private hopScaleY: number = 1.0;
+
   // Floating Chat Bubble / Cloud
   private chatBubbleContainer?: Container;
   private chatBubbleTimeout?: number;
@@ -84,6 +122,13 @@ export class MobileEntity extends Container {
     this.smokeContainer = new Container();
     this.smokeGraphics = new Graphics();
     this.smokeContainer.addChild(this.smokeGraphics);
+
+    this.powerupContainer = new Container();
+    this.powerupAuraGfx = new Graphics();
+    this.powerupAuraGfx.blendMode = "add";
+    this.powerupGfx = new Graphics();
+    this.powerupContainer.addChild(this.powerupAuraGfx);
+    this.powerupContainer.addChild(this.powerupGfx);
 
     const teamColor = this.team === "A" ? 0x38bdf8 : 0xef4444;
 
@@ -133,6 +178,7 @@ export class MobileEntity extends Container {
     this.addChild(this.aimContainer);
     this.addChild(this.fallbackBody);
     this.addChild(this.spriteContainer);
+    this.addChild(this.powerupContainer);
     this.addChild(this.hpBarGraphics);
     this.addChild(this.nameText);
 
@@ -666,6 +712,62 @@ export class MobileEntity extends Container {
   }
 
   /**
+   * Native, fluid, synchronized Item Powerup effect (Dual, Teleport).
+   * - Vehicle chassis bounce / hop with spring physics.
+   * - Ascending vertical luminous energy pillar with additive blending.
+   * - Expanding ground shockwave rings radiating along vehicle base.
+   * - Upward shooting radiant starburst particles.
+   * - Plays authentic dual_snd.ogg.
+   */
+  public triggerPowerupEffect(itemType: "dual" | "teleport" = "dual") {
+    this.powerupType = itemType;
+    this.isPowerupActive = true;
+    this.powerupTime = 0;
+    this.powerupDuration = 650; // ms
+
+    // Vehicle hop / spring rebound
+    this.hopY = 0;
+    this.hopVy = -6.2;
+    this.hopScaleX = 0.88;
+    this.hopScaleY = 1.18;
+
+    // Reset concentric shockwaves
+    this.powerupShockwaves = [
+      { radius: 6, maxRadius: 44, alpha: 0.95, fadeRate: 0.038, delay: 0 },
+      { radius: 4, maxRadius: 52, alpha: 0.85, fadeRate: 0.032, delay: 6 },
+    ];
+
+    // Spawn 22 rising energetic photon stars & sparks
+    this.powerupParticles = [];
+    const isDual = itemType === "dual";
+    const colors = isDual
+      ? [0xffffff, 0xfde047, 0xfacc15, 0xf59e0b, 0xf97316]
+      : [0xffffff, 0x38bdf8, 0x60a5fa, 0x818cf8, 0xc084fc];
+
+    for (let i = 0; i < 22; i++) {
+      this.powerupParticles.push({
+        x: (Math.random() - 0.5) * 36,
+        y: 4 + Math.random() * 8,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: -(1.8 + Math.random() * 3.4),
+        size: 1.6 + Math.random() * 2.2,
+        alpha: 0.95,
+        fadeRate: 0.024 + Math.random() * 0.016,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        isStar: Math.random() > 0.35,
+      });
+    }
+
+    // Play authentic activation audio
+    AudioManager.play("dual_snd", 0.9);
+
+    // Play mobile animation if supported
+    this.playAnimation("item", false, () => {
+      this.playAnimation("normal", true);
+    });
+  }
+
+  /**
    * Dynamic damage smoke & spark breakdown system:
    * 1. Leve (HP 40% - 70%): Slow, gentle puffs of light translucent gray smoke from rear exhaust.
    * 2. Intenso (HP 20% - 40%): Dense dark soot smoke rising fast with occasional glowing embers.
@@ -675,6 +777,118 @@ export class MobileEntity extends Container {
    *    - Emitter 3 (Treads): Ground-level friction smoke dragging horizontally along terrain.
    */
   public update(dt: number) {
+    // -------------------------------------------------------------
+    // Update native item powerup effect (Chassis hop, aura, shockwaves, sparks)
+    // -------------------------------------------------------------
+    if (this.isPowerupActive) {
+      this.powerupTime += dt * 16.66;
+
+      // 1. Vehicle spring bounce physics
+      this.hopVy += 0.38 * dt; // Gravity
+      this.hopY += this.hopVy * dt;
+      if (this.hopY > 0) {
+        this.hopY = 0;
+        this.hopVy = -this.hopVy * 0.35; // Damped rebound
+        if (Math.abs(this.hopVy) < 0.2) this.hopVy = 0;
+      }
+      this.hopScaleX += (1.0 - this.hopScaleX) * 0.18 * dt;
+      this.hopScaleY += (1.0 - this.hopScaleY) * 0.18 * dt;
+
+      this.spriteContainer.y = this.hopY;
+      this.fallbackBody.y = this.hopY;
+      const baseScale = 1.25;
+      this.spriteContainer.scale.set(-this.facing * baseScale * this.hopScaleX, baseScale * this.hopScaleY);
+
+      // 2. Clear graphics
+      this.powerupAuraGfx.clear();
+      this.powerupGfx.clear();
+
+      const progress = Math.min(1.0, this.powerupTime / this.powerupDuration);
+      const auraAlpha = Math.max(0, Math.sin(progress * Math.PI) * 0.88);
+
+      if (auraAlpha > 0.01) {
+        const isDual = this.powerupType === "dual";
+        const primaryCol = isDual ? 0xf59e0b : 0x38bdf8;
+        const brightCol = isDual ? 0xfef08a : 0xbae6fd;
+
+        // Render luminous vertical ascending energy pillar & ribbons
+        const pillarW = 30 + Math.sin(this.powerupTime * 0.08) * 6;
+        const pillarH = 62;
+
+        // Outer aura
+        this.powerupAuraGfx.roundRect(-pillarW / 2, -pillarH + 10, pillarW, pillarH, 8);
+        this.powerupAuraGfx.fill({ color: primaryCol, alpha: auraAlpha * 0.45 });
+
+        // Inner incandescent core
+        this.powerupAuraGfx.roundRect(-pillarW * 0.35, -pillarH + 16, pillarW * 0.7, pillarH - 10, 4);
+        this.powerupAuraGfx.fill({ color: brightCol, alpha: auraAlpha * 0.75 });
+        this.powerupAuraGfx.roundRect(-pillarW * 0.15, -pillarH + 22, pillarW * 0.3, pillarH - 18, 2);
+        this.powerupAuraGfx.fill({ color: 0xffffff, alpha: auraAlpha * 0.95 });
+
+        // Ascending vertical photon ribbons
+        for (let s = 0; s < 3; s++) {
+          const sx = -14 + s * 14 + Math.sin(this.powerupTime * 0.1 + s) * 3;
+          const sy = 8 - ((this.powerupTime * 0.8 + s * 18) % 65);
+          this.powerupAuraGfx.rect(sx - 1.5, sy, 3, 16).fill({ color: 0xffffff, alpha: auraAlpha * 0.85 });
+        }
+      }
+
+      // 3. Expanding shockwave rings at vehicle base
+      for (const sw of this.powerupShockwaves) {
+        if (sw.delay > 0) {
+          sw.delay -= dt;
+          continue;
+        }
+        sw.radius += (sw.maxRadius - sw.radius) * 0.12 * dt + 0.8 * dt;
+        sw.alpha -= sw.fadeRate * dt;
+        if (sw.alpha > 0.02) {
+          const col = this.powerupType === "dual" ? 0xfde047 : 0x38bdf8;
+          this.powerupGfx.ellipse(0, 8, sw.radius, sw.radius * 0.42);
+          this.powerupGfx.stroke({ width: 2.2, color: col, alpha: sw.alpha });
+          this.powerupGfx.ellipse(0, 8, sw.radius * 0.75, sw.radius * 0.3);
+          this.powerupGfx.stroke({ width: 1.2, color: 0xffffff, alpha: sw.alpha * 0.8 });
+        }
+      }
+
+      // 4. Starburst particles shooting upwards
+      for (let i = this.powerupParticles.length - 1; i >= 0; i--) {
+        const p = this.powerupParticles[i];
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vy *= 0.97;
+        p.alpha -= p.fadeRate * dt;
+
+        if (p.alpha <= 0.01) {
+          this.powerupParticles.splice(i, 1);
+          continue;
+        }
+
+        if (p.isStar) {
+          const s = p.size;
+          this.powerupGfx.beginPath();
+          this.powerupGfx.moveTo(p.x, p.y - s * 1.5);
+          this.powerupGfx.lineTo(p.x + s * 0.6, p.y);
+          this.powerupGfx.lineTo(p.x, p.y + s * 1.5);
+          this.powerupGfx.lineTo(p.x - s * 0.6, p.y);
+          this.powerupGfx.closePath();
+          this.powerupGfx.fill({ color: p.color, alpha: p.alpha });
+          this.powerupGfx.circle(p.x, p.y, s * 0.35).fill({ color: 0xffffff, alpha: p.alpha });
+        } else {
+          this.powerupGfx.circle(p.x, p.y, p.size).fill({ color: p.color, alpha: p.alpha });
+        }
+      }
+
+      if (this.powerupTime >= this.powerupDuration && this.powerupParticles.length === 0) {
+        this.isPowerupActive = false;
+        this.powerupAuraGfx.clear();
+        this.powerupGfx.clear();
+        this.spriteContainer.y = 0;
+        this.fallbackBody.y = 0;
+        const baseScale = 1.25;
+        this.spriteContainer.scale.set(-this.facing * baseScale, baseScale);
+      }
+    }
+
     const hpRatio = this.maxHp > 0 ? this.hp / this.maxHp : 1.0;
 
     if (hpRatio < 0.70 && this.hp > 0) {
