@@ -7,7 +7,6 @@ const WEATHER_COLORS: Partial<Record<WeatherType, { fill: string; border: number
   tornado: { fill: "#38bdf8", border: 0x38bdf8, glow: "rgba(56, 189, 248, 0.7)" },
   mirror: { fill: "#fb923c", border: 0xfb923c, glow: "rgba(251, 146, 60, 0.7)" },
   black: { fill: "#c084fc", border: 0xc084fc, glow: "rgba(192, 132, 252, 0.7)" },
-  random: { fill: "#f97316", border: 0xf97316, glow: "rgba(249, 115, 22, 0.7)" },
 };
 
 const WEATHER_TITLES: Partial<Record<WeatherType, string>> = {
@@ -16,7 +15,6 @@ const WEATHER_TITLES: Partial<Record<WeatherType, string>> = {
   tornado: "TORNADO",
   mirror: "ESPEJO",
   black: "ECLIPSE",
-  random: "COMETA / RANDOM",
 };
 
 /**

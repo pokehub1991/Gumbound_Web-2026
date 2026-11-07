@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { WeatherDefinition, WeatherSlotItem } from "../../core/weather/WeatherManager.js";
+import { WeatherDefinition, WeatherSlotItem, WeatherRoundInfo } from "../../core/weather/WeatherManager.js";
 
 interface WeatherWidgetProps {
   currentWeather: WeatherDefinition;
   tapeSlice: WeatherSlotItem[];
+  roundInfo?: WeatherRoundInfo;
 }
 
 /**
@@ -14,11 +15,11 @@ interface WeatherWidgetProps {
  * - Same color palette (dark navy/slate background, pixel-art borders, neon cyan/yellow accents).
  * - Recessed 5-slot cassette tape track.
  * - Slot 0: Previous turn (grayscale, dimmed).
- * - Slot 1: Active turn (framed with glowing cyan/purple border & inward pointer arrows).
+ * - Slot 1: Active turn (framed with glowing cyan/purple border & inward pointer arrows) with round turn-pips.
  * - Slots 2..4: Upcoming turn previews with subtle separators.
- * - Detailed pixel-art hover tooltip with weather information.
+ * - Detailed pixel-art hover tooltip with weather information and round duration counter.
  */
-export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ currentWeather, tapeSlice }) => {
+export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ currentWeather, tapeSlice, roundInfo }) => {
   const [isHovered, setIsHovered] = useState<boolean>(false);
 
   // Fallback if tapeSlice is not yet populated
@@ -174,13 +175,45 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ currentWeather, ta
                     src={slot.iconActive}
                     alt={slot.name}
                     style={{
-                      width: "19px",
-                      height: "19px",
+                      width: "18px",
+                      height: "18px",
                       imageRendering: "pixelated",
                       display: "block",
                       filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.8))",
+                      marginTop: "-3px",
                     }}
                   />
+
+                  {/* Modern Turn Duration Pips (Round progress) */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: "2px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "3px",
+                    }}
+                    title={`Turno ${roundInfo?.turnInRound || 1} de ${roundInfo?.turnsPerRound || 2}`}
+                  >
+                    {Array.from({ length: roundInfo?.turnsPerRound || 2 }).map((_, pipIdx) => {
+                      const isCurrent = pipIdx === (roundInfo ? roundInfo.turnInRound - 1 : 0);
+                      const isElapsed = pipIdx < (roundInfo ? roundInfo.turnInRound - 1 : 0);
+                      return (
+                        <div
+                          key={`pip-${pipIdx}`}
+                          style={{
+                            width: "3.5px",
+                            height: "3.5px",
+                            borderRadius: "50%",
+                            background: isCurrent ? "#facc15" : isElapsed ? "#38bdf8" : "rgba(255,255,255,0.22)",
+                            boxShadow: isCurrent ? "0 0 5px #facc15" : "none",
+                            transition: "all 0.2s ease-out",
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
                 </div>
               );
             }
@@ -272,18 +305,40 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ currentWeather, ta
           </div>
           <div
             style={{
-              marginTop: "3px",
+              marginTop: "4px",
               borderTop: "1px dashed rgba(255,255,255,0.15)",
               paddingTop: "4px",
               fontSize: "9.5px",
               color: "#94a3b8",
               display: "flex",
-              justifyContent: "space-between",
+              flexDirection: "column",
+              gap: "3px",
               fontFamily: "var(--font-family)",
             }}
           >
-            <span>Turno activo</span>
-            <span style={{ color: "var(--color-primary)", fontWeight: "bold" }}>{activeSlot.name}</span>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Turno activo:</span>
+              <span style={{ color: "var(--color-primary)", fontWeight: "bold" }}>{activeSlot.name}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Ronda de clima:</span>
+              <span style={{ color: "#facc15", fontWeight: "bold" }}>
+                Turno {roundInfo?.turnInRound || 1} de {roundInfo?.turnsPerRound || 2}
+              </span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Próximo cambio:</span>
+              <span
+                style={{
+                  color: (roundInfo?.turnsRemaining ?? 0) === 0 ? "#ef4444" : "#38bdf8",
+                  fontWeight: "bold",
+                }}
+              >
+                {(roundInfo?.turnsRemaining ?? 0) === 0
+                  ? "¡Cambia en el próximo turno!"
+                  : `En ${roundInfo?.turnsRemaining} turno`}
+              </span>
+            </div>
           </div>
         </div>
       )}

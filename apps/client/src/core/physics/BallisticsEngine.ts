@@ -225,13 +225,10 @@ export class BallisticsEngine {
     let prevX = origin.x;
     let prevY = origin.y;
 
-    let tornadoPhase: 0 | 1 | 2 = 0; // 0 = outside, 1 = in 360 loop, 2 = exited loop
-    let tornadoLoopAngle = 0;
-    let tornadoLoopCenter = { x: 0, y: 0 };
-    let tornadoLoopRadius = 36;
-    let tornadoEntrySpeed = 0;
-    let tornadoDir = 1;
-    let tornadoProgress = 0;
+    // Authentic GunBound Tornado internal boundary reflection physics
+    let tornadoPhase: 0 | 1 | 2 = 0; // 0 = outside, 1 = bouncing inside vortex, 2 = exited vortex
+    let tornadoEntryDir = 1;
+    let tornadoBounces = 0;
 
     for (let tMs = 0; tMs <= maxMs; tMs += stepMs) {
       let x = origin.x;
@@ -260,66 +257,65 @@ export class BallisticsEngine {
             curVx = -curVx * 0.90;
             hasMirrored = true;
           } else if (col.type === "tornado") {
-            // Authentic GunBound Tornado cyclonic 360-degree vortex looping physics:
+            // Authentic GunBound Tornado physics:
+            // When a projectile enters the tornado vortex, it keeps moving under gravity,
+            // but reflects twice against the vortex column boundaries (forward -> bounce backward -> bounce forward)
+            // creating the iconic looping/zigzag path before exiting with its real momentum!
+            const xLeft = col.x - halfWidth;
+            const xRight = col.x + halfWidth;
+
             if (tornadoPhase === 0 && Math.abs(distFromCenter) <= halfWidth) {
               tornadoPhase = 1;
-              tornadoDir = curVx < 0 ? -1 : 1;
-              tornadoEntrySpeed = Math.hypot(curVx, curVy);
-              tornadoLoopRadius = Math.min(42, Math.max(28, col.width * 0.32));
-              tornadoLoopCenter = { x: col.x, y: curY - 10 };
-              tornadoLoopAngle = Math.atan2(curY - tornadoLoopCenter.y, curX - tornadoLoopCenter.x);
-              tornadoProgress = 0;
+              tornadoEntryDir = curVx >= 0 ? 1 : -1;
+              tornadoBounces = 0;
+              // Guarantee minimum horizontal spin velocity even for pure vertical 90-degree skybombs
+              if (Math.abs(curVx) < 55) {
+                curVx = tornadoEntryDir * 75;
+              }
             }
 
             if (tornadoPhase === 1) {
-              const angularSpeed = 16.0; // Fast and snappy 360-degree cyclonic loop (~0.39s)
-              tornadoProgress += angularSpeed * dt;
-              tornadoLoopAngle += angularSpeed * tornadoDir;
-              tornadoLoopCenter.y -= 130 * dt; // Cyclonic updraft suction lifts bullet
-              curX = tornadoLoopCenter.x + Math.cos(tornadoLoopAngle) * tornadoLoopRadius;
-              curY = tornadoLoopCenter.y + Math.sin(tornadoLoopAngle) * tornadoLoopRadius;
-              curVx = -Math.sin(tornadoLoopAngle) * tornadoLoopRadius * angularSpeed * tornadoDir;
-              curVy = Math.cos(tornadoLoopAngle) * tornadoLoopRadius * angularSpeed * tornadoDir - 130;
+              // Updraft cyclonic suction slightly dampens downward gravity inside the vortex
+              const updraftDamping = 0.82;
+              curVy += ay * updraftDamping * dt;
+              curY += curVy * dt;
 
-              if (tornadoProgress >= Math.PI * 2.15) {
-                tornadoPhase = 2; // Loop complete, exit funnel
-                curVx = tornadoDir * Math.max(280, tornadoEntrySpeed * 0.95);
-                curVy = -Math.max(120, tornadoEntrySpeed * 0.35);
-              }
-            }
-          } else if (col.type === "random" && Math.abs(distFromCenter) <= halfWidth) {
-            // Random column with cascading items (Sun, Lightning, Mirror, Tornado, Black):
-            // Calculate which cascading item is at current Y height!
-            // Items repeat in a 5-item cycle spaced every 140px, falling smoothly at 34px/s
-            const cycleHeight = 700;
-            const scrollOffset = (tMs * 0.034) % cycleHeight;
-            const normY = (((curY + scrollOffset) % cycleHeight) + cycleHeight) % cycleHeight;
-            const itemIdx = Math.floor(normY / 140); // 0 = sun, 1 = lightning, 2 = mirror, 3 = tornado, 4 = black
+              // Move horizontally
+              curX += curVx * dt;
 
-            if (itemIdx === 0) {
-              isSunBuffed = true;
-            } else if (itemIdx === 1) {
-              isLightningCharged = true;
-            } else if (itemIdx === 2 && !hasMirrored && tMs > 100) {
-              curVx = -curVx * 0.90;
-              hasMirrored = true;
-            } else if (itemIdx === 3) {
-              // Touching the Tornado badge triggers the cyclonic loop!
-              if (tornadoPhase === 0) {
-                tornadoPhase = 1;
-                tornadoDir = curVx < 0 ? -1 : 1;
-                tornadoEntrySpeed = Math.hypot(curVx, curVy);
-                tornadoLoopRadius = 32;
-                tornadoLoopCenter = { x: col.x, y: curY - 10 };
-                tornadoLoopAngle = Math.atan2(curY - tornadoLoopCenter.y, curX - tornadoLoopCenter.x);
-                tornadoProgress = 0;
+              if (tornadoBounces === 0) {
+                // Moving forward: hits far boundary and reflects backward!
+                if (tornadoEntryDir > 0 && curX >= xRight) {
+                  curX = xRight;
+                  curVx = -curVx * 0.94;
+                  tornadoBounces = 1;
+                } else if (tornadoEntryDir < 0 && curX <= xLeft) {
+                  curX = xLeft;
+                  curVx = -curVx * 0.94;
+                  tornadoBounces = 1;
+                }
+              } else if (tornadoBounces === 1) {
+                // Moving backward: hits opposite boundary and reflects back forward!
+                if (tornadoEntryDir > 0 && curX <= xLeft) {
+                  curX = xLeft;
+                  curVx = -curVx * 0.96;
+                  tornadoBounces = 2;
+                } else if (tornadoEntryDir < 0 && curX >= xRight) {
+                  curX = xRight;
+                  curVx = -curVx * 0.96;
+                  tornadoBounces = 2;
+                }
+              } else if (tornadoBounces >= 2) {
+                // Moving forward again: crosses the far boundary and exits vortex!
+                if ((tornadoEntryDir > 0 && curX > xRight) || (tornadoEntryDir < 0 && curX < xLeft)) {
+                  tornadoPhase = 2; // Exited vortex cleanly!
+                }
               }
-            } else if (itemIdx === 4) {
-              isBlackDamped = true;
             }
           }
         }
 
+        // Standard aerodynamic integration (only if not handled by internal tornado loop step)
         if (tornadoPhase !== 1) {
           curVx += ax * dt;
           curVy += ay * dt;

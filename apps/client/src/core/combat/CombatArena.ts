@@ -14,7 +14,7 @@ import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 import { AutumnLeavesEngine } from "../effects/AutumnLeavesEngine.js";
 import { ThorEntity } from "../effects/ThorEntity.js";
 import { DeathGhostEntity } from "../effects/DeathGhostEntity.js";
-import { WeatherManager, WeatherDefinition, WeatherSlotItem, ActiveWeatherColumn } from "../weather/WeatherManager.js";
+import { WeatherManager, WeatherDefinition, WeatherSlotItem, ActiveWeatherColumn, WeatherRoundInfo } from "../weather/WeatherManager.js";
 import { WeatherColumnEntity } from "../weather/WeatherColumnEntity.js";
 import { WeatherSkyMarker } from "../weather/WeatherSkyMarker.js";
 
@@ -22,7 +22,14 @@ export class CombatArena {
   public engine: GameEngine;
   public terrain: TerrainRenderer;
   public player: MobileEntity;
-  public bot: BotDummy;
+  public bots: BotDummy[] = [];
+  public get bot(): BotDummy {
+    return this.bots[0];
+  }
+  public set bot(b: BotDummy) {
+    this.bots[0] = b;
+  }
+  public actingBot: BotDummy | null = null;
   public aimController: AimController;
 
   public backgroundSprite?: Sprite;
@@ -41,6 +48,7 @@ export class CombatArena {
 
   public selectedShotType: number = 0; // 0 = Shot 1, 1 = Shot 2, 2 = SS
   public isSimulating: boolean = false;
+  private isTurnAdvancing: boolean = false;
 
   private activeProjectiles: ProjectileEntity[] = [];
   private orbitalEffectsContainer: Container;
@@ -49,7 +57,9 @@ export class CombatArena {
   public onWeatherUpdate?: (
     weather: WeatherDefinition,
     tapeSlice: WeatherSlotItem[],
-    column: ActiveWeatherColumn | null
+    column: ActiveWeatherColumn | null,
+    roundInfo?: WeatherRoundInfo,
+    didChangeWeather?: boolean
   ) => void;
   public onWindUpdate?: (power: number, angle: number) => void;
   public onPlayerAngleUpdate?: (angle: number) => void;
@@ -57,12 +67,25 @@ export class CombatArena {
   public onLastPowerUpdate?: (power: number | null) => void;
   public onTurnReady?: () => void;
   public onBotHpUpdate?: (hp: number, maxHp: number) => void;
+  public onBotCountChange?: (count: number) => void;
+  public onBotChat?: (nickname: string, text: string) => void;
   public onTurnUpdate?: (info: {
     turnNumber: number;
     maxTurns: number;
     activeTurn: "player" | "bot";
+    actingBotId?: string;
     playerDelay: number;
     botDelay: number;
+    bots: Array<{
+      id: string;
+      nickname: string;
+      mobileType: number;
+      delay: number;
+      hp: number;
+      maxHp: number;
+      isDead: boolean;
+      isImmortal: boolean;
+    }>;
   }) => void;
   public onActiveItemChange?: (item: "dual" | "teleport" | null) => void;
   public onChatMessage?: (msg: { sender: string; text: string; isSystem?: boolean }) => void;
@@ -145,10 +168,11 @@ export class CombatArena {
     this.player.setTilt(0);
     this.engine.mobilesContainer.addChild(this.player);
 
-    // 4. Initialize Bot Dummy on Metamine right side
+    // 4. Initialize Default Bot on Metamine right side
     const botSpawn = mapDef.botSpawn;
-    this.bot = new BotDummy(this.terrain, botSpawn.x, botSpawn.y, 1);
-    this.engine.mobilesContainer.addChild(this.bot);
+    const defaultBot = new BotDummy(this.terrain, botSpawn.x, botSpawn.y, 1, "Haris Pilton", 0);
+    this.bots = [defaultBot];
+    this.engine.mobilesContainer.addChild(defaultBot);
 
     // 5. Orbital Laser & Satellite effects container
     this.engine.worldContainer.addChild(this.orbitalEffectsContainer);
@@ -161,37 +185,39 @@ export class CombatArena {
     this.weatherSkyMarker = new WeatherSkyMarker();
     this.engine.uiContainer.addChild(this.weatherSkyMarker);
 
-    // Initialize authentic GunBound Weather System
-    this.weatherManager = new WeatherManager(this.terrain.mapWidth);
-    this.weatherManager.onWeatherChange = (weather, tapeSlice, column) => {
-      // Clean up previous active column immediately to avoid double-column ghosting/crossing
-      this.weatherContainer.removeChildren();
-      if (this.activeColumnEntity) {
-        this.activeColumnEntity.cleanup();
-        this.activeColumnEntity = undefined;
-      }
-      for (const oldCol of this.fadingColumnEntities) {
-        oldCol.cleanup();
-      }
-      this.fadingColumnEntities = [];
+    // Initialize authentic GunBound Weather System (2 turns per round for 1v1 match)
+    this.weatherManager = new WeatherManager(this.terrain.mapWidth, 2);
+    this.weatherManager.onWeatherChange = (weather, tapeSlice, column, roundInfo, didChangeWeather) => {
+      if (didChangeWeather) {
+        // Clean up previous active column immediately on weather transition
+        this.weatherContainer.removeChildren();
+        if (this.activeColumnEntity) {
+          this.activeColumnEntity.cleanup();
+          this.activeColumnEntity = undefined;
+        }
+        for (const oldCol of this.fadingColumnEntities) {
+          oldCol.cleanup();
+        }
+        this.fadingColumnEntities = [];
 
-      if (column) {
-        this.activeColumnEntity = new WeatherColumnEntity({
-          type: column.type,
-          x: column.x,
-          width: column.width,
-          mapHeight: this.terrain.mapHeight,
-        });
-        // Render inside dedicated weatherContainer (never disturbs worldContainer indices)
-        this.weatherContainer.addChild(this.activeColumnEntity);
-      }
+        if (column && weather.hasColumn) {
+          this.activeColumnEntity = new WeatherColumnEntity({
+            type: column.type,
+            x: column.x,
+            width: column.width,
+            mapHeight: this.terrain.mapHeight,
+          });
+          // Render inside dedicated weatherContainer (never disturbs worldContainer indices)
+          this.weatherContainer.addChild(this.activeColumnEntity);
+        }
 
-      if (this.thor) {
-        this.thor.setWeatherActive(weather.type === "thor");
+        if (this.thor) {
+          this.thor.setWeatherActive(weather.type === "thor");
+        }
       }
 
       if (this.onWeatherUpdate) {
-        this.onWeatherUpdate(weather, tapeSlice, column);
+        this.onWeatherUpdate(weather, tapeSlice, column, roundInfo, didChangeWeather);
       }
     };
 
@@ -303,8 +329,10 @@ export class CombatArena {
   public update(dt: number) {
     this.aimController.update(dt);
     this.player.update(dt);
-    this.bot.update(dt);
-    this.bot.checkGroundFall(dt);
+    for (const b of this.bots) {
+      b.update(dt);
+      b.checkGroundFall(dt);
+    }
     this.destructionParticles.update(dt);
     this.dynamicExplosionEngine.update(dt * 16.66);
     this.leavesEngine.update(
@@ -479,8 +507,8 @@ export class CombatArena {
       }
     }
 
-    if (this.onBotHpUpdate) {
-      this.onBotHpUpdate(this.bot.mobile.hp, this.bot.mobile.maxHp);
+    if (this.onBotHpUpdate && this.bots[0]) {
+      this.onBotHpUpdate(this.bots[0].mobile.hp, this.bots[0].mobile.maxHp);
     }
   }
 
@@ -503,8 +531,80 @@ export class CombatArena {
     }
   }
 
-  public setBotMobile(mobileId: number) {
-    this.bot.setMobileType(mobileId);
+  public setBotMobile(mobileId: number, botIndex: number = 0) {
+    const targetBot = this.bots[botIndex] || this.bots[0];
+    if (targetBot) {
+      targetBot.setMobileType(mobileId);
+    }
+  }
+
+  public broadcastTurnUpdate() {
+    if (this.onTurnUpdate) {
+      this.onTurnUpdate({
+        turnNumber: this.turnNumber,
+        maxTurns: this.maxTurns,
+        activeTurn: this.activeTurn,
+        actingBotId: this.actingBot?.mobile.id,
+        playerDelay: this.playerDelay,
+        botDelay: this.bots[0]?.delay ?? 960,
+        bots: this.bots.map((b) => ({
+          id: b.mobile.id,
+          nickname: b.mobile.nickname,
+          mobileType: b.mobile.mobileType,
+          delay: b.delay,
+          hp: b.mobile.hp,
+          maxHp: b.mobile.maxHp,
+          isDead: b.isDead,
+          isImmortal: b.isImmortal,
+        })),
+      });
+    }
+  }
+
+  public addBot(mobileType?: number, nickname?: string): BotDummy | null {
+    if (this.bots.length >= 3) return null;
+    const botIndex = this.bots.length;
+    const spawnPositions = [1140, 880, 640];
+    const spawnX = spawnPositions[botIndex] || (800 + botIndex * 150);
+    const groundY = this.terrain.findSurfaceY(spawnX, 402);
+    const placement = this.terrain.getMobileSurfacePlacement(spawnX, groundY);
+
+    const defaultMobileTypes = [1, 5, 7, 3, 2];
+    const mobType = mobileType !== undefined ? mobileType : defaultMobileTypes[botIndex % defaultMobileTypes.length];
+    const defaultNames = ["Haris Pilton", "CyberTroll", "BungeMaster", "AimGod_007", "DragonBot"];
+    const name = nickname || defaultNames[botIndex % defaultNames.length];
+
+    const newBot = new BotDummy(this.terrain, spawnX, placement.y, mobType, name, botIndex);
+    newBot.isImmortal = this.bots[0]?.isImmortal ?? true;
+    if (!newBot.isImmortal) {
+      newBot.mobile.maxHp = 1000;
+      newBot.mobile.hp = 1000;
+      newBot.mobile.updateHpBar();
+    }
+
+    this.bots.push(newBot);
+    this.engine.mobilesContainer.addChild(newBot);
+
+    if (this.onBotCountChange) {
+      this.onBotCountChange(this.bots.length);
+    }
+    this.broadcastTurnUpdate();
+    return newBot;
+  }
+
+  public resetToSingleBot() {
+    while (this.bots.length > 1) {
+      const removed = this.bots.pop();
+      if (removed) {
+        this.engine.mobilesContainer.removeChild(removed);
+        removed.destroy({ children: true });
+      }
+    }
+    this.resetBot(false);
+    if (this.onBotCountChange) {
+      this.onBotCountChange(this.bots.length);
+    }
+    this.broadcastTurnUpdate();
   }
 
   public setShootMode(mode: "space" | "drag") {
@@ -553,10 +653,14 @@ export class CombatArena {
   }
 
   public toggleBotImmortality(): boolean {
-    const isImmortal = this.bot.toggleImmortal();
-    if (this.onBotHpUpdate) {
-      this.onBotHpUpdate(this.bot.mobile.hp, this.bot.mobile.maxHp);
+    let isImmortal = false;
+    for (const b of this.bots) {
+      isImmortal = b.toggleImmortal();
     }
+    if (this.onBotHpUpdate && this.bots[0]) {
+      this.onBotHpUpdate(this.bots[0].mobile.hp, this.bots[0].mobile.maxHp);
+    }
+    this.broadcastTurnUpdate();
     return isImmortal;
   }
 
@@ -599,15 +703,7 @@ export class CombatArena {
       delayCost += 600; // Classic Dual delay penalty
     }
     this.playerDelay += delayCost;
-    if (this.onTurnUpdate) {
-      this.onTurnUpdate({
-        turnNumber: this.turnNumber,
-        maxTurns: this.maxTurns,
-        activeTurn: this.activeTurn,
-        playerDelay: this.playerDelay,
-        botDelay: this.botDelay,
-      });
-    }
+    this.broadcastTurnUpdate();
 
     // Trigger SS battlefield darkness if Shot 2 / SS
     if (shotType === 2) {
@@ -617,6 +713,10 @@ export class CombatArena {
     // Camera firmly holds on mobile during firing animation and resets manual camera override
     this.engine.userHasManualCamera = false;
     this.engine.panTo(this.player.x, this.player.y);
+
+    const allTargets = this.bots
+      .filter((b) => !b.isDead && b.mobile.hp > 0)
+      .map((b) => ({ id: b.mobile.id, x: b.mobile.x, y: b.mobile.y - 14, radius: 26 }));
 
     // Compute ballistics from mobile root coordinates (computeMuzzle calculates exact cannon pivot)
     const params: FireParams = {
@@ -633,9 +733,7 @@ export class CombatArena {
       isPixelSolid: (x, y) => this.terrain.isGround(x, y),
       mapWidth: this.terrain.mapWidth,
       mapHeight: this.terrain.mapHeight,
-      targets: !this.bot.isDead && this.bot.mobile.hp > 0
-        ? [{ id: "bot", x: this.bot.mobile.x, y: this.bot.mobile.y - 14, radius: 26 }]
-        : [],
+      targets: allTargets,
       activeWeatherColumn: this.weatherManager.activeColumn,
     };
 
@@ -696,20 +794,31 @@ export class CombatArena {
 
     setTimeout(() => {
       // 3. Real shot trigger: Projectiles launch with synchronized firing audio and muzzle blast effect
-      this.launchTrajectories(trajectories, undefined, isTeleport);
+      this.launchTrajectoriesFromMobile(this.player, trajectories, this.selectedShotType, undefined, isTeleport);
     }, blastDelayMs);
   }
 
   private launchTrajectories(trajectories: ShotTrajectory[], onFinish?: () => void, isTeleport: boolean = false) {
+    this.launchTrajectoriesFromMobile(this.player, trajectories, this.selectedShotType, onFinish, isTeleport);
+  }
+
+  public launchTrajectoriesFromMobile(
+    shooter: MobileEntity,
+    trajectories: ShotTrajectory[],
+    shotType: number,
+    onFinish?: () => void,
+    isTeleport: boolean = false
+  ) {
     let completedCount = 0;
+    let hasInvokedFinish = false;
     const total = trajectories.length;
 
-    const mobileDef = MOBILES_DATA[this.player.mobileType] || MOBILES_DATA[0];
-    const defaultSound = this.selectedShotType === 2 ? "12fire" : "11fire";
+    const mobileDef = MOBILES_DATA[shooter.mobileType] || MOBILES_DATA[0];
+    const defaultSound = shotType === 2 ? "12fire" : "11fire";
     const soundFire =
-      (this.selectedShotType === 2
+      (shotType === 2
         ? mobileDef.soundSS
-        : this.selectedShotType === 1
+        : shotType === 1
         ? mobileDef.sound2
         : mobileDef.sound1) || defaultSound;
 
@@ -723,21 +832,21 @@ export class CombatArena {
         AudioManager.play(soundToPlay, volume);
 
         // Trigger firing visual effect (muzzle flash, sparks and smoke) synchronized at muzzle position
-        const launchPos = traj.points[0] || { x: this.player.x, y: this.player.y };
+        const launchPos = traj.points[0] || { x: shooter.x, y: shooter.y };
         const launchAngle = traj.points.length > 1
           ? (Math.atan2(traj.points[1].y - traj.points[0].y, traj.points[1].x - traj.points[0].x) * 180) / Math.PI
-          : this.player.angleDeg;
-        this.destructionParticles.spawnMuzzleBlast(launchPos.x, launchPos.y, launchAngle, this.selectedShotType);
+          : shooter.angleDeg;
+        this.destructionParticles.spawnMuzzleBlast(launchPos.x, launchPos.y, launchAngle, shotType);
 
         const proj = new ProjectileEntity(
           traj.points,
-          this.player.mobileType,
-          this.selectedShotType,
+          shooter.mobileType,
+          shotType,
           () => {
-            if (isTeleport) {
+            if (isTeleport && shooter === this.player) {
               this.handleTeleportImpact(traj);
             } else {
-              this.handleImpact(traj);
+              this.handleImpact(traj, shooter);
             }
           },
           () => {
@@ -749,7 +858,8 @@ export class CombatArena {
             proj.destroy();
 
             completedCount++;
-            if (completedCount >= total) {
+            if (completedCount >= total && !hasInvokedFinish) {
+              hasInvokedFinish = true;
               if (onFinish) {
                 onFinish();
               } else {
@@ -788,7 +898,7 @@ export class CombatArena {
     }
   }
 
-  private handleImpact(traj: ShotTrajectory) {
+  private handleImpact(traj: ShotTrajectory, shooter: MobileEntity = this.player) {
     // Out-of-bounds shots vanish into the void without detonating an explosion, hole, or sound in the sky
     if (traj.hitType === "oob") {
       return;
@@ -803,7 +913,7 @@ export class CombatArena {
     this.destructionParticles.spawnExplosionDebris(x, y, traj.bungeRadius, traj.damage);
 
     // 2. Play detonation blast sound
-    const mobileDef = MOBILES_DATA[this.player.mobileType] || MOBILES_DATA[0];
+    const mobileDef = MOBILES_DATA[shooter.mobileType] || MOBILES_DATA[0];
     AudioManager.play(mobileDef.soundExplode || "11blast", 0.9);
 
     // 3. Screen rumble proportional to crater radius
@@ -813,14 +923,17 @@ export class CombatArena {
     // 4. Special satellite orbital beams (Aduka Thor, ASate, Knight, Lightning)
     this.handleSpecialOrbitalBeams(traj);
 
-    // 5. Bot Dummy collision damage check
-    const distToBot = Math.hypot(this.bot.mobile.x - x, this.bot.mobile.y - y);
+    // 5. Bot damage check across all active bots
     const blastRadius = traj.bungeRadius * 1.5;
+    for (const b of this.bots) {
+      if (b.isDead || b.mobile.hp <= 0) continue;
+      const distToBot = Math.hypot(b.mobile.x - x, b.mobile.y - y);
 
-    if (distToBot <= blastRadius) {
-      const falloff = 1 - distToBot / blastRadius;
-      const appliedDamage = Math.round(traj.damage * (0.45 + 0.55 * falloff));
-      this.bot.takeDamage(appliedDamage, x, y);
+      if (distToBot <= blastRadius) {
+        const falloff = 1 - distToBot / blastRadius;
+        const appliedDamage = Math.round(traj.damage * (0.45 + 0.55 * falloff));
+        b.takeDamage(appliedDamage, x, y);
+      }
     }
 
     // 6. Player explosion/collision damage check (Splash / Self-damage)
@@ -966,63 +1079,234 @@ export class CombatArena {
   }
 
   private onAllProjectilesFinished() {
+    if (this.isTurnAdvancing) return;
+    this.isTurnAdvancing = true;
+
     this.isSimulating = false;
     this.engine.setSSOverlay(false);
 
-    // Turn advancement and bot delay progression
+    // Turn advancement
     this.turnNumber = Math.min(this.maxTurns, this.turnNumber + 1);
-    this.botDelay += 850;
-    if (this.onTurnUpdate) {
-      this.onTurnUpdate({
-        turnNumber: this.turnNumber,
-        maxTurns: this.maxTurns,
-        activeTurn: this.activeTurn,
-        playerDelay: this.playerDelay,
-        botDelay: this.botDelay,
-      });
+    this.broadcastTurnUpdate();
+
+    // Trigger ascension for any dead bots
+    for (const b of this.bots) {
+      if (b.isDead) {
+        b.triggerAscension();
+      }
     }
 
-    // Wait for the impact explosion to complete, then start camera animation and advance weather
+    // Wait for the impact explosion to complete, then advance weather and decide next turn
     setTimeout(() => {
-      // 1. Camera animation starts towards the active player
-      this.engine.userHasManualCamera = false;
-      this.engine.panTo(this.player.x + 80, this.player.y - 40);
-
-      // 2. Right as camera starts panning, advance authentic GunBound weather tape!
-      const nextWeather = this.weatherManager.advanceTurn();
-
-      // If next weather is wind change, randomize wind
-      if (nextWeather.type === "wind") {
+      // 1. Advance authentic GunBound weather round
+      const { weather: nextWeather, didChange } = this.weatherManager.advanceTurn();
+      if (didChange && nextWeather.type === "wind") {
         this.randomizeWind();
       }
 
-      // 3. When camera pan settles, re-enable aim for active player
+      // 2. Identify combatants alive
+      const isPlayerAlive = this.player.hp > 0 && !this.isPlayerBunged;
+      const aliveBots = this.bots.filter((b) => !b.isDead && b.mobile.hp > 0);
+
+      // A. If no bots are alive, player takes the turn
+      if (aliveBots.length === 0) {
+        this.switchToPlayerTurn();
+        return;
+      }
+
+      // B. If player is dead, bot with lowest delay takes turn
+      if (!isPlayerAlive) {
+        const nextBot = aliveBots.reduce((min, b) => (b.delay < min.delay ? b : min), aliveBots[0]);
+        this.isTurnAdvancing = false;
+        this.executeBotTurn(nextBot);
+        return;
+      }
+
+      // C. Both player and bots are alive:
+      // If previous turn was player, pass turn to bot with lowest delay
+      if (this.activeTurn === "player") {
+        const nextBot = aliveBots.reduce((min, b) => (b.delay < min.delay ? b : min), aliveBots[0]);
+        this.isTurnAdvancing = false;
+        this.executeBotTurn(nextBot);
+        return;
+      }
+
+      // If previous turn was bot:
+      // Check if another alive bot has strictly lower delay than player
+      const nextBot = aliveBots.reduce((min, b) => (b.delay < min.delay ? b : min), aliveBots[0]);
+      if (nextBot.delay < this.playerDelay && nextBot !== this.actingBot) {
+        this.isTurnAdvancing = false;
+        this.executeBotTurn(nextBot);
+      } else {
+        this.switchToPlayerTurn();
+      }
+    }, 550);
+  }
+
+  private switchToPlayerTurn() {
+    this.activeTurn = "player";
+    this.actingBot = null;
+    this.broadcastTurnUpdate();
+
+    // 1. Pan camera to active player
+    this.engine.userHasManualCamera = false;
+    this.engine.panTo(this.player.x + 80, this.player.y - 40);
+
+    // 2. Re-enable player aim controller
+    setTimeout(() => {
+      this.aimController.enabled = true;
+      this.aimController.setActiveMobile(this.player);
+      this.isTurnAdvancing = false;
+
+      if (this.onTurnReady) {
+        this.onTurnReady();
+      }
+    }, 550);
+  }
+
+  public executeBotTurn(bot: BotDummy) {
+    if (this.isSimulating) return;
+    this.isSimulating = true;
+    this.activeTurn = "bot";
+    this.actingBot = bot;
+    this.aimController.enabled = false;
+    this.broadcastTurnUpdate();
+
+    // 1. Pan camera to acting bot
+    this.engine.userHasManualCamera = false;
+    this.engine.panTo(bot.mobile.x, bot.mobile.y);
+
+    // 2. Select target (Player or another Bot)
+    const isPlayerAlive = this.player.hp > 0 && !this.isPlayerBunged;
+    const otherAliveBots = this.bots.filter((b) => b !== bot && !b.isDead && b.mobile.hp > 0);
+
+    let targetMobile: { x: number; y: number; hp: number; maxHp: number; radius?: number };
+    if (isPlayerAlive && otherAliveBots.length > 0) {
+      if (Math.random() < 0.75) {
+        targetMobile = { x: this.player.x, y: this.player.y, hp: this.player.hp, maxHp: this.player.maxHp, radius: 26 };
+      } else {
+        const randOther = otherAliveBots[Math.floor(Math.random() * otherAliveBots.length)];
+        targetMobile = { x: randOther.mobile.x, y: randOther.mobile.y, hp: randOther.mobile.hp, maxHp: randOther.mobile.maxHp, radius: 26 };
+      }
+    } else if (isPlayerAlive) {
+      targetMobile = { x: this.player.x, y: this.player.y, hp: this.player.hp, maxHp: this.player.maxHp, radius: 26 };
+    } else if (otherAliveBots.length > 0) {
+      const randOther = otherAliveBots[Math.floor(Math.random() * otherAliveBots.length)];
+      targetMobile = { x: randOther.mobile.x, y: randOther.mobile.y, hp: randOther.mobile.hp, maxHp: randOther.mobile.maxHp, radius: 26 };
+    } else {
       setTimeout(() => {
-        this.aimController.enabled = true;
-        this.aimController.setActiveMobile(this.player);
+        this.onAllProjectilesFinished();
+      }, 800);
+      return;
+    }
 
-        if (this.bot.isDead) {
-          this.bot.triggerAscension();
-        }
+    // 3. Bot calculates shot trajectory taking wind and gravity into account
+    const solution = bot.calculateShot(
+      targetMobile,
+      this.windPower,
+      this.windAngle,
+      this.weatherManager.activeColumn
+    );
 
-        if (this.onTurnReady) {
-          this.onTurnReady();
-        }
-      }, 550);
-    }, 450);
+    // 4. Orient mobile facing and cannon angle
+    bot.mobile.setFacing(solution.facing);
+    bot.mobile.setAngle(solution.angle);
+
+    // 5. Display chat bubble if taunt is generated
+    if (solution.chatMessage) {
+      bot.mobile.showChatBubble(solution.chatMessage, 3200);
+      if (this.onBotChat) {
+        this.onBotChat(bot.mobile.nickname, solution.chatMessage);
+      }
+    }
+
+    // 6. Humanized thinking delay (~1100ms) before releasing fire
+    setTimeout(() => {
+      if (bot.isDead) {
+        this.onAllProjectilesFinished();
+        return;
+      }
+
+      // Update bot delay
+      const delayCost = solution.shotType === 2 ? 1200 : solution.shotType === 1 ? 900 : 740;
+      bot.delay += delayCost;
+      this.broadcastTurnUpdate();
+
+      // Trigger SS darkness overlay if SS
+      if (solution.shotType === 2) {
+        this.engine.setSSOverlay(true);
+      }
+
+      // Play firing animation
+      const fireAnim = solution.shotType === 2 ? "sfire" : solution.shotType === 1 ? "fire2" : "fire1";
+      const chargeToFireDelayMs = solution.shotType === 0 ? 10 : solution.shotType === 1 ? 120 : 90;
+
+      const startFiring = () => {
+        bot.mobile.playAnimation(fireAnim, false, () => {
+          bot.mobile.playAnimation("normal");
+        });
+      };
+
+      if (chargeToFireDelayMs > 0) {
+        setTimeout(startFiring, chargeToFireDelayMs);
+      } else {
+        startFiring();
+      }
+
+      // Simulate ballistics
+      const allTargets = [
+        ...(this.player.hp > 0 && !this.isPlayerBunged
+          ? [{ id: "player", x: this.player.x, y: this.player.y - 14, radius: 26 }]
+          : []),
+        ...this.bots
+          .filter((b) => b !== bot && !b.isDead && b.mobile.hp > 0)
+          .map((b) => ({ id: b.mobile.id, x: b.mobile.x, y: b.mobile.y - 14, radius: 26 })),
+      ];
+
+      const params: FireParams = {
+        x: bot.mobile.x,
+        y: bot.mobile.y,
+        rawAngle: solution.angle,
+        power: solution.power,
+        look: solution.facing === -1 ? 0 : 1,
+        bodyAngle: (bot.mobile.slopeAngle * 180) / Math.PI,
+        mobileId: bot.mobile.mobileType,
+        shotType: solution.shotType,
+        windPower: this.windPower,
+        windAngle: this.windAngle,
+        isPixelSolid: (x, y) => this.terrain.isGround(x, y),
+        mapWidth: this.terrain.mapWidth,
+        mapHeight: this.terrain.mapHeight,
+        targets: allTargets,
+        activeWeatherColumn: this.weatherManager.activeColumn,
+      };
+
+      const trajectories = BallisticsEngine.simulateShot(params);
+      const blastDelayMs = chargeToFireDelayMs + (solution.shotType === 2 ? 780 : solution.shotType === 1 ? 620 : 220);
+
+      setTimeout(() => {
+        this.launchTrajectoriesFromMobile(bot.mobile, trajectories, solution.shotType);
+      }, blastDelayMs);
+    }, 1100);
   }
 
   public resetBot(useRandomPos: boolean = false) {
     const mapDef = MAPS["metamine"];
-    const botSpawn = mapDef.botSpawn;
-    const groundPos = useRandomPos
-      ? this.terrain.getRandomGroundPosition(250, Math.min(1300, this.terrain.mapWidth - 200))
-      : botSpawn;
-    const placement = this.terrain.getMobileSurfacePlacement(groundPos.x, groundPos.y);
-    this.bot.spawnAt(groundPos.x, placement.y);
-    if (this.onBotHpUpdate) {
-      this.onBotHpUpdate(this.bot.mobile.hp, this.bot.mobile.maxHp);
+    const spawnPositions = [mapDef.botSpawn.x, 880, 640];
+
+    this.bots.forEach((b, idx) => {
+      const defaultX = spawnPositions[idx] || (800 + idx * 150);
+      const groundPos = useRandomPos
+        ? this.terrain.getRandomGroundPosition(350, Math.min(1300, this.terrain.mapWidth - 150))
+        : { x: defaultX, y: 402 };
+      const placement = this.terrain.getMobileSurfacePlacement(groundPos.x, groundPos.y);
+      b.spawnAt(groundPos.x, placement.y);
+    });
+
+    if (this.onBotHpUpdate && this.bots[0]) {
+      this.onBotHpUpdate(this.bots[0].mobile.hp, this.bots[0].mobile.maxHp);
     }
+    this.broadcastTurnUpdate();
   }
 
   public resetCamera() {
@@ -1035,7 +1319,11 @@ export class CombatArena {
     this.playerDelay = 0;
     this.botDelay = 960;
     this.activeTurn = "player";
+    this.actingBot = null;
     this.isPlayerBunged = false;
+    for (const b of this.bots) {
+      b.delay = 960 + b.botIndex * 40;
+    }
     if (this.playerGhostEntity) {
       this.playerGhostEntity.cleanup();
       this.playerGhostEntity = undefined;
@@ -1047,15 +1335,7 @@ export class CombatArena {
     if (this.onLastPowerUpdate) {
       this.onLastPowerUpdate(null as unknown as number);
     }
-    if (this.onTurnUpdate) {
-      this.onTurnUpdate({
-        turnNumber: this.turnNumber,
-        maxTurns: this.maxTurns,
-        activeTurn: this.activeTurn,
-        playerDelay: this.playerDelay,
-        botDelay: this.botDelay,
-      });
-    }
+    this.broadcastTurnUpdate();
 
     this.destructionParticles.clear();
     this.dynamicExplosionEngine.clear();
@@ -1099,5 +1379,9 @@ export class CombatArena {
       col.cleanup();
     }
     this.fadingColumnEntities = [];
+    for (const b of this.bots) {
+      b.destroy({ children: true });
+    }
+    this.bots = [];
   }
 }

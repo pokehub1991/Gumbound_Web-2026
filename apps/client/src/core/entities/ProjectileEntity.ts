@@ -42,8 +42,19 @@ export class ProjectileEntity extends Container {
 
   private onImpactCallback?: () => void;
   private onCompleteCallback?: () => void;
+  private hasCompleted: boolean = false;
   public isExploding: boolean = false;
   private explosionTimer: number = 0;
+
+  private invokeComplete() {
+    if (this.hasCompleted) return;
+    this.hasCompleted = true;
+    if (this.onCompleteCallback) {
+      const cb = this.onCompleteCallback;
+      this.onCompleteCallback = undefined;
+      cb();
+    }
+  }
 
   public currentX: number = 0;
   public currentY: number = 0;
@@ -194,7 +205,7 @@ export class ProjectileEntity extends Container {
     if (this.isExploding) {
       this.explosionTimer += dt * 16.66;
       if (this.explosionTimer > 600) {
-        if (this.onCompleteCallback) this.onCompleteCallback();
+        this.invokeComplete();
       }
       return;
     }
@@ -364,13 +375,15 @@ export class ProjectileEntity extends Container {
       }
 
       case "tornado": {
-        // Swirling cyclonic wind vortex ring
-        this.auraGraphics.circle(0, 0, 13).stroke({ width: 2.0, color: 0x6ee7b7, alpha: 0.65 });
-        // 2 rotating wind vortex curls
-        for (let c = 0; c < 2; c++) {
-          const startA = time * 14 + c * Math.PI;
-          this.auraGraphics.arc(0, 0, 10 + c * 3, startA, startA + Math.PI * 0.75)
-            .stroke({ width: 2.2, color: c === 0 ? 0xffffff : 0x34d399, alpha: 0.85 });
+        // Authentic GunBound swirling cyclonic wind vortex ring
+        const tPulse = 0.9 + Math.sin(time * 8) * 0.1;
+        this.auraGraphics.circle(0, 0, 14 * tPulse).stroke({ width: 2.0, color: 0x38bdf8, alpha: 0.70 });
+        this.auraGraphics.circle(0, 0, 9 * tPulse).stroke({ width: 1.6, color: 0x6ee7b7, alpha: 0.85 });
+        // 3 interlocking rotating wind vortex curls spinning around missile
+        for (let c = 0; c < 3; c++) {
+          const startA = time * 16 + c * ((Math.PI * 2) / 3);
+          this.auraGraphics.arc(0, 0, 11 + c * 2.5, startA, startA + Math.PI * 0.65)
+            .stroke({ width: 2.2, color: c === 0 ? 0xffffff : c === 1 ? 0x38bdf8 : 0x34d399, alpha: 0.90 });
         }
         break;
       }
@@ -597,9 +610,7 @@ export class ProjectileEntity extends Container {
 
     // Out of bounds / void shots vanish quietly without detonating an explosion in the sky
     if (this.hitType === "oob") {
-      if (this.onCompleteCallback) {
-        this.onCompleteCallback();
-      }
+      this.invokeComplete();
       return;
     }
 
@@ -613,13 +624,13 @@ export class ProjectileEntity extends Container {
           this.bungeRadius,
           this.damage,
           () => {
-            if (this.onCompleteCallback) this.onCompleteCallback();
+            this.invokeComplete();
           },
           this.shotType
         );
       } else {
         setTimeout(() => {
-          if (this.onCompleteCallback) this.onCompleteCallback();
+          this.invokeComplete();
         }, 400);
       }
     } else if (this.explodeSprite) {
@@ -638,7 +649,7 @@ export class ProjectileEntity extends Container {
           }
           if (fadeAlpha <= 0) {
             clearInterval(fadeInterval);
-            if (this.onCompleteCallback) this.onCompleteCallback();
+            this.invokeComplete();
           }
         }, 25);
       };
@@ -655,7 +666,7 @@ export class ProjectileEntity extends Container {
         this.fallbackExplosion.alpha = Math.max(0, 1 - elapsed / 280);
         if (elapsed >= 280) {
           clearInterval(interval);
-          if (this.onCompleteCallback) this.onCompleteCallback();
+          this.invokeComplete();
         }
       }, 20);
     }

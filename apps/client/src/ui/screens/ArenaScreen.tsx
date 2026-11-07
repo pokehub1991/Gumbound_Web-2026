@@ -4,7 +4,7 @@ import { MobileSelector } from "../components/MobileSelector.js";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
 import { AudioManager } from "../../core/audio/AudioManager.js";
 import { WeatherWidget } from "../components/WeatherWidget.js";
-import { WeatherDefinition, WeatherSlotItem, WEATHER_DEFINITIONS } from "../../core/weather/WeatherManager.js";
+import { WeatherDefinition, WeatherSlotItem, WeatherRoundInfo, WEATHER_DEFINITIONS } from "../../core/weather/WeatherManager.js";
 
 interface ArenaScreenProps {
   arena: CombatArena | null;
@@ -42,6 +42,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [weatherTapeSlice, setWeatherTapeSlice] = useState<WeatherSlotItem[]>(
     arena?.weatherManager?.getTapeSlice() || []
   );
+  const [weatherRoundInfo, setWeatherRoundInfo] = useState<WeatherRoundInfo>(
+    arena?.weatherManager?.getRoundInfo() || { turnInRound: 1, turnsPerRound: 2, turnsRemaining: 1 }
+  );
 
   const [, setBotHp] = useState<number>(1000);
   const [, setBotMaxHp] = useState<number>(1000);
@@ -61,7 +64,20 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [maxTurns, setMaxTurns] = useState<number>(40);
   const [activeTurn, setActiveTurn] = useState<"player" | "bot">("player");
   const [playerDelay, setPlayerDelay] = useState<number>(0);
-  const [botDelay, setBotDelay] = useState<number>(960);
+  const [, setBotDelay] = useState<number>(960);
+  const [botCount, setBotCount] = useState<number>(1);
+  const [botsInfo, setBotsInfo] = useState<
+    Array<{
+      id: string;
+      nickname: string;
+      mobileType: number;
+      delay: number;
+      hp: number;
+      maxHp: number;
+      isDead: boolean;
+      isImmortal: boolean;
+    }>
+  >([]);
 
   // Compact Chat System
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
@@ -243,7 +259,23 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     setActiveTurn(arena.activeTurn);
     setPlayerDelay(arena.playerDelay);
     setBotDelay(arena.botDelay);
+    setBotCount(arena.bots.length);
     arena.setShootMode(shootMode);
+
+    arena.onBotCountChange = (count) => {
+      setBotCount(count);
+    };
+
+    arena.onBotChat = (nickname, text) => {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          sender: `[BOT] ${nickname}`,
+          text,
+          isSystem: false,
+        },
+      ]);
+    };
 
     arena.onTurnUpdate = (info) => {
       setTurnNumber(info.turnNumber);
@@ -251,6 +283,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       setActiveTurn(info.activeTurn);
       setPlayerDelay(info.playerDelay);
       setBotDelay(info.botDelay);
+      if (info.bots) {
+        setBotsInfo(info.bots);
+      }
       setTurnCountdown(20);
     };
 
@@ -291,11 +326,15 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     if (arena.weatherManager) {
       setCurrentWeather(arena.weatherManager.activeWeather);
       setWeatherTapeSlice(arena.weatherManager.getTapeSlice());
+      setWeatherRoundInfo(arena.weatherManager.getRoundInfo());
     }
 
-    arena.onWeatherUpdate = (weather, tape) => {
+    arena.onWeatherUpdate = (weather, tape, _col, roundInfo) => {
       setCurrentWeather(weather);
       setWeatherTapeSlice(tape);
+      if (roundInfo) {
+        setWeatherRoundInfo(roundInfo);
+      }
       if (weather.type === "no_items") {
         setActiveItemSlot(null);
       }
@@ -404,60 +443,59 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     }, 40);
   };
 
-  // Turn List always prioritizes the active turn entity at index 0 (top row)
-  const turnList = activeTurn === "player"
-    ? [
-        {
-          id: "player",
-          turnIndex: 0,
-          rankIcon: "🐣",
-          name: "Player [Tú]",
-          isActive: true,
-          orderBoxBg: "#f59e0b",
-          orderBoxBorder: "#b45309",
-          nameColor: "#f59e0b",
-          delayStr: "0",
-          delayColor: "#ffffff",
-        },
-        {
-          id: "bot",
-          turnIndex: 1,
-          rankIcon: "🔨",
-          name: "Haris Pilton",
-          isActive: false,
-          orderBoxBg: "#38bdf8",
-          orderBoxBorder: "#0284c7",
-          nameColor: "#38bdf8",
-          delayStr: `+${Math.max(0, botDelay - playerDelay || 960)}`,
-          delayColor: "#94a3b8",
-        },
-      ]
-    : [
-        {
-          id: "bot",
-          turnIndex: 0,
-          rankIcon: "🔨",
-          name: "Haris Pilton",
-          isActive: true,
-          orderBoxBg: "#f59e0b",
-          orderBoxBorder: "#b45309",
-          nameColor: "#38bdf8",
-          delayStr: "0",
-          delayColor: "#ffffff",
-        },
-        {
-          id: "player",
-          turnIndex: 1,
-          rankIcon: "🐣",
-          name: "Player [Tú]",
-          isActive: false,
-          orderBoxBg: "#38bdf8",
-          orderBoxBorder: "#0284c7",
-          nameColor: "#f59e0b",
-          delayStr: `+${Math.max(0, playerDelay - botDelay || 960)}`,
-          delayColor: "#94a3b8",
-        },
-      ];
+  // Turn List dynamically formats the combatants list, prioritizing active turn entity at index 0 (top row)
+  const rankIcons = ["🔨", "⚔️", "👑", "⭐"];
+  const botParticipants = botsInfo.length > 0
+    ? botsInfo
+    : (arena?.bots || []).map((b) => ({
+        id: b.mobile.id,
+        nickname: b.mobile.nickname,
+        mobileType: b.mobile.mobileType,
+        delay: b.delay,
+        hp: b.mobile.hp,
+        maxHp: b.mobile.maxHp,
+        isDead: b.isDead,
+        isImmortal: b.isImmortal,
+      }));
+
+  const allCombatants = [
+    {
+      id: "player",
+      name: "Player [Tú]",
+      rankIcon: "🐣",
+      delay: playerDelay,
+      isActive: activeTurn === "player",
+      nameColor: "#f59e0b",
+    },
+    ...botParticipants.map((b, idx) => ({
+      id: b.id,
+      name: b.nickname,
+      rankIcon: rankIcons[idx % rankIcons.length],
+      delay: b.delay,
+      isActive: activeTurn === "bot" && (arena?.actingBot?.mobile.id === b.id || (!arena?.actingBot && idx === 0)),
+      nameColor: "#38bdf8",
+    })),
+  ];
+
+  const minDelay = Math.min(...allCombatants.map((c) => c.delay));
+  const sortedCombatants = [...allCombatants].sort((a, b) => {
+    if (a.isActive && !b.isActive) return -1;
+    if (!a.isActive && b.isActive) return 1;
+    return a.delay - b.delay;
+  });
+
+  const turnList = sortedCombatants.map((c, idx) => ({
+    id: c.id,
+    turnIndex: idx,
+    rankIcon: c.rankIcon,
+    name: c.name,
+    isActive: c.isActive,
+    orderBoxBg: c.isActive ? "#f59e0b" : "#38bdf8",
+    orderBoxBorder: c.isActive ? "#b45309" : "#0284c7",
+    nameColor: c.nameColor,
+    delayStr: c.isActive ? "0" : `+${Math.max(0, c.delay - minDelay)}`,
+    delayColor: c.isActive ? "#ffffff" : "#94a3b8",
+  }));
 
   return (
     <div style={{
@@ -574,7 +612,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         {/* Center: Weather Widget Capsule + Wind & Compass Capsule */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
           {/* Authentic GunBound Weather Slime Capsule Widget */}
-          <WeatherWidget currentWeather={currentWeather} tapeSlice={weatherTapeSlice} />
+          <WeatherWidget currentWeather={currentWeather} tapeSlice={weatherTapeSlice} roundInfo={weatherRoundInfo} />
 
           {/* Wind & Compass Capsule */}
           <div className="pixel-box" style={{
@@ -762,6 +800,44 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               title="Reaparecer Bot en terreno aleatorio (Respawn)"
             >
               🎲
+            </button>
+
+            {/* Subtle Vertical Divider */}
+            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
+
+            {/* Icon-Only Bot Spawner Button (Add up to max 3 bots in combat) */}
+            <button
+              className={`pixel-btn ${botCount < 3 ? "pixel-btn-primary" : "pixel-btn-slate"}`}
+              onClick={() => {
+                if (arena) {
+                  if (arena.bots.length < 3) {
+                    arena.addBot();
+                    AudioManager.play("click", 0.8);
+                  } else {
+                    arena.resetToSingleBot();
+                    AudioManager.play("click", 0.7);
+                  }
+                  setBotCount(arena.bots.length);
+                }
+              }}
+              style={{
+                borderRadius: "3px",
+                width: "24px",
+                height: "24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "12px",
+                cursor: "pointer",
+                border: "none",
+              }}
+              title={
+                botCount < 3
+                  ? `Agregar bot en combate (${botCount}/3)`
+                  : "Máximo 3 bots alcanzados (Click para reiniciar a 1 bot)"
+              }
+            >
+              🤖
             </button>
           </div>
 
