@@ -370,26 +370,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     description: "Ultraliviano. Curvatura de gancho pronunciada con viento a favor o en contra.",
     soundMove: "14move",
   },
-  16: {
-    id: 16,
-    key: "electrico",
-    name: "Electrico",
-    file: "Electrico2Dt1.png",
-    minAngle: 25,
-    maxAngle: 60,
-    ax: 65.5,
-    ay: 0.72,
-    bx: 0,
-    by: 398,
-    delays: { shot1: 700, shot2: 1350, ss: 1250 },
-    palaBunge: { shot1: 35, shot2: 45, ss: 50 },
-    baseDamage: { shot1: 170, shot2: 207, ss: 400 },
-    bullets: [11, 11, 40],
-    explodes: [8, 8, 30],
-    playerOffset: { x: 5, y: -41 },
-    description: "Bobinas Tesla móviles con pulsos de plasma.",
-    soundMove: "4move",
-  },
+
   17: {
     id: 17,
     key: "grub",
@@ -410,26 +391,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     description: "Bolas rodantes que rebotan en las colinas siguiendo el relieve del suelo.",
     soundMove: "71move",
   },
-  18: {
-    id: 18,
-    key: "dragon2",
-    name: "Dragon II",
-    file: "Dragon2D.png",
-    minAngle: 20,
-    maxAngle: 60,
-    ax: 90.0,
-    ay: 0.74,
-    bx: 0,
-    by: 398,
-    delays: { shot1: 800, shot2: 950, ss: 1350 },
-    palaBunge: { shot1: 45, shot2: 50, ss: 60 },
-    baseDamage: { shot1: 220, shot2: 234, ss: 400 },
-    bullets: [52, 57, 58],
-    explodes: [45, 45, 46],
-    playerOffset: { x: 7, y: -38 },
-    description: "Versión reforzada de Dragón con meteoros ionizados.",
-    soundMove: "10move",
-  },
+
   19: {
     id: 19,
     key: "raon",
@@ -450,27 +412,7 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
     description: "Tiro 2 despliega 2 minas caminantes autónomas; SS genera Baby Raon caminante.",
     soundMove: "71move",
   },
-  20: {
-    id: 20,
-    key: "copyloid",
-    name: "Copyloid",
-    file: "Copyloid2D.png",
-    minAngle: 20,
-    maxAngle: 60,
-    ax: 73.5,
-    ay: 0.74,
-    bx: 0,
-    by: 398,
-    delays: { shot1: 680, shot2: 830, ss: 1280 },
-    palaBunge: { shot1: 38, shot2: 40, ss: 50 },
-    baseDamage: { shot1: 400, shot2: 375, ss: 1100 },
-    bullets: [0, 1, 2],
-    explodes: [0, 1, 2],
-    playerOffset: { x: 2, y: -40 },
-    description: "Androide mimético capaz de replicar armas y posturas.",
-    soundMove: "1move",
-    soundStop: "1nmove",
-  },
+
   21: {
     id: 21,
     key: "frog",
@@ -582,11 +524,8 @@ export const MOBILE_WALK_SPEEDS: Record<number, number> = {
   13: 1.10, // Mage (70% statmov - levitating wand)
   14: 0.85, // Turtle (40% statmov - heavy crawler)
   15: 0.95, // Boomer (50% statmov - wooden wheels)
-  16: 0.65, // Electrico (10% statmov)
   17: 0.95, // Grub (50% statmov)
-  18: 0.65, // Dragon (10% statmov)
   19: 0.85, // Raon Launcher (40% statmov)
-  20: 0.95, // Copyloid (50% statmov)
   21: 0.85, // Frog (40% statmov)
   22: 1.10, // Kalsiddon (70% statmov)
   23: 0.95, // Maya (50% statmov)

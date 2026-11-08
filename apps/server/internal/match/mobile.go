@@ -17,11 +17,8 @@ const (
 	MobileMage       = 13
 	MobileTurtle     = 14
 	MobileBoomer     = 15
-	MobileElectrico  = 16
 	MobileGrub       = 17
-	MobileDragon2    = 18
 	MobileRaon       = 19
-	MobileRandomizer = 20
 	MobileFrog       = 21
 	MobileKalsiddon  = 22
 	MobileMaya       = 23
@@ -146,36 +143,21 @@ var Mobiles = map[int]MobileStats{
 		Shot1Damage: 150, Shot2Damage: 120, SSDamage: 400, BlastRadius: 30,
 		By: 244, Bx: 0, Ax: 62.5, Ay: 1.395, MinAngle: 10, MaxAngle: 90,
 	},
-	MobileElectrico: {
-		ID: 16, Name: "Electrico", MaxHP: 960,
-		BaseDelay: 500, Shot1Delay: 750, Shot2Delay: 900, SSDelay: 1300,
-		Shot1Damage: 170, Shot2Damage: 240, SSDamage: 400, BlastRadius: 38,
-		By: 390, Bx: 0, Ax: 66.0, Ay: 0.71, MinAngle: 18, MaxAngle: 55,
-	},
+
 	MobileGrub: {
 		ID: 17, Name: "Grub", MaxHP: 960,
 		BaseDelay: 500, Shot1Delay: 760, Shot2Delay: 910, SSDelay: 1310,
 		Shot1Damage: 220, Shot2Damage: 110, SSDamage: 400, BlastRadius: 38,
 		By: 398, Bx: 0, Ax: 61.0, Ay: 0.65, MinAngle: 30, MaxAngle: 60,
 	},
-	MobileDragon2: {
-		ID: 18, Name: "Dragon2", MaxHP: 1100,
-		BaseDelay: 530, Shot1Delay: 840, Shot2Delay: 1020, SSDelay: 1480,
-		Shot1Damage: 220, Shot2Damage: 260, SSDamage: 500, BlastRadius: 44,
-		By: 385, Bx: 0, Ax: 70.0, Ay: 0.72, MinAngle: 15, MaxAngle: 65,
-	},
+
 	MobileRaon: {
 		ID: 19, Name: "Raon", MaxHP: 940,
 		BaseDelay: 500, Shot1Delay: 750, Shot2Delay: 910, SSDelay: 1310,
 		Shot1Damage: 70, Shot2Damage: 100, SSDamage: 400, BlastRadius: 25,
 		By: 398, Bx: 0, Ax: 73.5, Ay: 0.74, MinAngle: 30, MaxAngle: 60,
 	},
-	MobileRandomizer: {
-		ID: 20, Name: "Randomizer", MaxHP: 1000,
-		BaseDelay: 500, Shot1Delay: 760, Shot2Delay: 920, SSDelay: 1320,
-		Shot1Damage: 70, Shot2Damage: 150, SSDamage: 400, BlastRadius: 38,
-		By: 390, Bx: 0, Ax: 70.0, Ay: 0.70, MinAngle: 20, MaxAngle: 60,
-	},
+
 	MobileFrog: {
 		ID: 21, Name: "Frog", MaxHP: 960,
 		BaseDelay: 500, Shot1Delay: 750, Shot2Delay: 900, SSDelay: 1300,

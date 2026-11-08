@@ -52,7 +52,7 @@ start_servers() {
   # 2. Cliente Vite (:3000)
   if ! check_port 3000; then
     echo "  [*] Levantando Cliente Web en puerto 3000..."
-    (cd "$ROOT_DIR/apps/client" && CI=true nohup ./node_modules/.bin/vite --port 3000 > /tmp/gumbound_client.log 2>&1 &)
+    (cd "$ROOT_DIR/apps/client" && nohup ./node_modules/.bin/vite --port 3000 < /dev/null > /tmp/gumbound_client.log 2>&1 &)
   else
     echo "  [i] El Cliente Web ya está activo en el puerto 3000."
   fi

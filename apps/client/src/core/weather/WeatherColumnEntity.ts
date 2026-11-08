@@ -66,6 +66,11 @@ export class WeatherColumnEntity extends Container {
   // Authentic GunBound Mirror Sprite Layer
   private mirrorTiling?: TilingSprite;
 
+  // Authentic GunBound Random Weather Sprite Layer
+  private randomTiling?: TilingSprite;
+  private randomIconContainer?: Container;
+  public randomSprites: Array<{ sprite: Sprite; weatherType: WeatherType; baseOffset: number }> = [];
+
   private time: number = 0;
 
   // Particle systems
@@ -104,7 +109,7 @@ export class WeatherColumnEntity extends Container {
     this.fxGfx = new Graphics();
     this.addChild(this.fxGfx);
 
-    if (this.weatherType === "sun" || this.weatherType === "lightning" || this.weatherType === "mirror") {
+    if (this.weatherType === "sun" || this.weatherType === "lightning" || this.weatherType === "mirror" || this.weatherType === "random") {
       this.columnGfx.blendMode = "add";
       this.fxGfx.blendMode = "add";
     }
@@ -113,6 +118,8 @@ export class WeatherColumnEntity extends Container {
       this.initSunforce();
     } else if (this.weatherType === "mirror") {
       this.initMirror();
+    } else if (this.weatherType === "random") {
+      this.initRandom();
     }
 
     this.initParticles();
@@ -200,6 +207,67 @@ export class WeatherColumnEntity extends Container {
       this.addChildAt(this.mirrorTiling, 0);
     } catch (e) {
       console.warn("[WeatherColumnEntity] Error loading mirrorforce sprite:", e);
+    }
+  }
+
+  private async initRandom() {
+    try {
+      const totalH = this.endY - this.startY;
+
+      // 1. Authentic GunBound randomforce.png background conduit
+      const conduitTex = await Assets.load<Texture>("/sprites/weather/randomforce.png");
+      if (this.isDestroyed) return;
+
+      this.randomTiling = new TilingSprite({
+        texture: conduitTex,
+        width: 128,
+        height: totalH,
+      });
+      this.randomTiling.anchor.set(0.5, 0);
+      this.randomTiling.position.set(0, this.startY);
+      this.randomTiling.scale.set(0.58, 1.0);
+      this.randomTiling.blendMode = "add";
+      this.randomTiling.alpha = 0.75;
+      this.addChildAt(this.randomTiling, 0);
+
+      // 2. Cascading authentic GunBound weather item sprites flowing inside the column
+      this.randomIconContainer = new Container();
+      this.addChild(this.randomIconContainer);
+
+      const itemsDef: Array<{ type: WeatherType; path: string }> = [
+        { type: "sun", path: "/sprites/weather/weather_3_active.png" },
+        { type: "lightning", path: "/sprites/weather/weather_4_active.png" },
+        { type: "mirror", path: "/sprites/weather/weather_7_active.png" },
+        { type: "tornado", path: "/sprites/weather/weather_8_active.png" },
+        { type: "black", path: "/sprites/weather/weather_5_active.png" },
+      ];
+
+      const loadedTextures = await Promise.all(
+        itemsDef.map((it) => Assets.load<Texture>(it.path))
+      );
+
+      if (this.isDestroyed || !this.randomIconContainer) return;
+
+      const spacing = 180;
+      const count = Math.ceil(totalH / spacing);
+
+      for (let i = 0; i < count; i++) {
+        const itemIdx = i % itemsDef.length;
+        const tex = loadedTextures[itemIdx];
+        const spr = new Sprite(tex);
+        spr.anchor.set(0.5, 0.5);
+        spr.scale.set(0.82, 0.82);
+        spr.alpha = 0.95;
+        this.randomIconContainer.addChild(spr);
+
+        this.randomSprites.push({
+          sprite: spr,
+          weatherType: itemsDef[itemIdx].type,
+          baseOffset: i * spacing,
+        });
+      }
+    } catch (e) {
+      console.warn("[WeatherColumnEntity] Error loading randomforce sprites:", e);
     }
   }
 
@@ -337,6 +405,21 @@ export class WeatherColumnEntity extends Container {
           color: Math.random() > 0.5 ? 0xa855f7 : 0x581c87,
         };
       }
+      case "random": {
+        const rainbowColors = [0x38bdf8, 0xa855f7, 0xfacc15, 0x4ade80, 0xfb923c, 0xffffff];
+        return {
+          x: (Math.random() - 0.5) * (this.columnWidth * 0.85),
+          y: randomY ? this.startY + Math.random() * yRange : this.startY + Math.random() * yRange,
+          vx: (Math.random() - 0.5) * 1.2,
+          vy: -(1.6 + Math.random() * 2.5),
+          size: 1.8 + Math.random() * 2.2,
+          alpha: 0,
+          maxAlpha: 0.85,
+          color: rainbowColors[Math.floor(Math.random() * rainbowColors.length)],
+          life: 0,
+          maxLife: 35 + Math.random() * 30,
+        };
+      }
       default:
         return { x: 0, y: 0, vx: 0, vy: 0, size: 2, alpha: 0.5, maxAlpha: 0.5, color: 0xffffff };
     }
@@ -448,6 +531,23 @@ export class WeatherColumnEntity extends Container {
     if (this.weatherType === "mirror" && this.mirrorTiling) {
       this.mirrorTiling.tilePosition.y -= dt * 0.95;
       this.mirrorTiling.alpha = 0.80 + Math.sin(this.time * 3.2) * 0.15;
+    }
+
+    // Authentic Random Weather: icons descend smoothly at a gentle 28px/s
+    if (this.weatherType === "random") {
+      if (this.randomTiling) {
+        this.randomTiling.tilePosition.y += dt * 0.85;
+        this.randomTiling.alpha = 0.75 + Math.sin(this.time * 2.8) * 0.12;
+      }
+      if (this.randomSprites.length > 0) {
+        const totalSpan = this.endY - this.startY;
+        const scrollOffset = (this.time * 28) % totalSpan;
+        for (const item of this.randomSprites) {
+          const yPos = this.startY + ((item.baseOffset + scrollOffset) % totalSpan);
+          item.sprite.position.set(0, yPos);
+          item.sprite.alpha = 0.88 + Math.sin(this.time * 3.5 + item.baseOffset * 0.02) * 0.12;
+        }
+      }
     }
 
     // Render 100% native graphics
@@ -689,12 +789,42 @@ export class WeatherColumnEntity extends Container {
 
       case "black": {
         const pulse = 0.85 + Math.sin(this.time * 2.5) * 0.15;
-        // Deep obsidian void column
-        this.columnGfx.rect(-w * 0.32, sY, w * 0.64, h).fill({ color: 0x090314, alpha: 0.92 });
-        // Gravitational event horizon aura
-        this.columnGfx.rect(-w * 0.50, sY, w, h).fill({ color: 0x581c87, alpha: 0.25 * pulse });
-        // Core dark distortion line
-        this.columnGfx.moveTo(0, sY).lineTo(0, eY).stroke({ width: 2.5, color: 0xc084fc, alpha: 0.75 * pulse });
+        // 1. Soft cosmic gravitational event horizon falloff
+        this.columnGfx.rect(-w * 0.55, sY, w * 1.10, h).fill({ color: 0x2e1065, alpha: 0.15 * pulse });
+        this.columnGfx.rect(-w * 0.42, sY, w * 0.84, h).fill({ color: 0x581c87, alpha: 0.28 * pulse });
+        // 2. High-density dark matter core (0.97 alpha prevents background terrain textures from cutting through)
+        this.columnGfx.rect(-w * 0.32, sY, w * 0.64, h).fill({ color: 0x090314, alpha: 0.97 });
+        this.columnGfx.rect(-w * 0.18, sY, w * 0.36, h).fill({ color: 0x020108, alpha: 1.0 });
+        // 3. Singularity event horizon filament
+        this.columnGfx.moveTo(0, sY).lineTo(0, eY).stroke({ width: 2.5, color: 0xc084fc, alpha: 0.85 * pulse });
+        this.columnGfx.moveTo(0, sY).lineTo(0, eY).stroke({ width: 1.0, color: 0xffffff, alpha: 0.95 * pulse });
+        break;
+      }
+
+      case "random": {
+        // Holographic conduit cylinder with prismatic energy rails
+        const pulse = 0.85 + Math.sin(this.time * 3.0) * 0.15;
+        // 1. Outer prismatic chromatic aura
+        this.columnGfx.rect(-w * 0.60, sY, w * 1.20, h).fill({ color: 0x38bdf8, alpha: 0.08 * pulse });
+        this.columnGfx.rect(-w * 0.45, sY, w * 0.90, h).fill({ color: 0xa855f7, alpha: 0.14 * pulse });
+        this.columnGfx.rect(-w * 0.30, sY, w * 0.60, h).fill({ color: 0xfacc15, alpha: 0.18 * pulse });
+
+        // 2. Boundary energy rails
+        const rails = [-w * 0.48, w * 0.48];
+        for (const rx of rails) {
+          this.columnGfx.moveTo(rx, sY).lineTo(rx, eY).stroke({ width: 2.2, color: 0x38bdf8, alpha: 0.75 * pulse });
+          this.columnGfx.moveTo(rx, sY).lineTo(rx, eY).stroke({ width: 1.0, color: 0xffffff, alpha: 0.90 });
+        }
+
+        // 3. Gliding horizontal laser node rings
+        const nodeSpacing = 160;
+        const nodeScroll = (this.time * 28) % nodeSpacing;
+        for (let base = sY - nodeSpacing; base <= eY + nodeSpacing; base += nodeSpacing) {
+          const ny = base + nodeScroll;
+          if (ny < sY || ny > eY) continue;
+          this.columnGfx.moveTo(-w * 0.48, ny).lineTo(w * 0.48, ny)
+            .stroke({ width: 1.2, color: 0x38bdf8, alpha: 0.35 * pulse });
+        }
         break;
       }
     }
@@ -844,6 +974,18 @@ export class WeatherColumnEntity extends Container {
           this.fxGfx.moveTo(p.x - 3, p.y).lineTo(p.x + 3, p.y)
             .stroke({ width: 1.0, color: 0x67e8f9, alpha: p.alpha * 0.80 });
         }
+      } else if (this.weatherType === "random") {
+        if (p.life !== undefined && p.maxLife !== undefined) {
+          p.life++;
+          if (p.life >= p.maxLife) {
+            this.particles[i] = this.createParticle(false);
+            continue;
+          }
+          const fade = Math.sin((p.life / p.maxLife) * Math.PI);
+          p.alpha = fade * p.maxAlpha;
+        }
+        this.fxGfx.circle(p.x, p.y, p.size).fill({ color: p.color, alpha: p.alpha });
+        this.fxGfx.circle(p.x, p.y, p.size * 0.5).fill({ color: 0xffffff, alpha: p.alpha * 0.95 });
       } else {
         this.fxGfx.circle(p.x, p.y, p.size).fill({ color: p.color, alpha: p.alpha });
       }
@@ -871,6 +1013,18 @@ export class WeatherColumnEntity extends Container {
     if (this.mirrorTiling) {
       this.mirrorTiling.destroy();
       this.mirrorTiling = undefined;
+    }
+    if (this.randomTiling) {
+      this.randomTiling.destroy();
+      this.randomTiling = undefined;
+    }
+    for (const item of this.randomSprites) {
+      item.sprite.destroy();
+    }
+    this.randomSprites = [];
+    if (this.randomIconContainer) {
+      this.randomIconContainer.destroy({ children: true });
+      this.randomIconContainer = undefined;
     }
     for (const spr of this.sunTipSprites) {
       spr.destroy();

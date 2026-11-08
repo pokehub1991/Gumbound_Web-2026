@@ -162,7 +162,7 @@ export class MobileEntity extends Container {
 
     // Nickname Label - positioned below HP bar underneath the mobile (GunBound retro comic style)
     const textStyle = new TextStyle({
-      fontFamily: ["Pixelify Sans", "sans-serif"],
+      fontFamily: ["GameFont", "Pixelify Sans", "Silkscreen", "sans-serif"],
       fontSize: 12,
       fontWeight: "bold",
       fill: config.team === "A" ? "#f59e0b" : "#38bdf8",
@@ -465,10 +465,23 @@ export class MobileEntity extends Container {
   public playAnimation(name: string, loop: boolean = true, onComplete?: () => void) {
     if (!this.animSprite || !this.animTextures) return;
 
-    // Authentic breathing idle: prefer "wnormal" over static "normal"
+    // Authentic idle & move animations based on health status:
+    // In GunBound, "normal" and "move" are used when healthy (HP > 30%).
+    // "wnormal" and "wmove" (Wounded Normal / Wounded Move) are ONLY used when HP <= 30% (critical/damaged state).
     let animKey = name;
-    if (name === "normal" && this.animTextures.animations["wnormal"]) {
-      animKey = "wnormal";
+    const isWounded = this.hp <= this.maxHp * 0.30;
+    if (isWounded) {
+      if (name === "normal" && this.animTextures.animations["wnormal"]) {
+        animKey = "wnormal";
+      } else if (name === "move" && this.animTextures.animations["wmove"]) {
+        animKey = "wmove";
+      }
+    } else {
+      if (name === "wnormal" || name === "normal") {
+        animKey = "normal";
+      } else if (name === "wmove" || name === "move") {
+        animKey = "move";
+      }
     }
 
     if (this.currentAnimName === animKey && this.animSprite.playing) return;
@@ -509,8 +522,10 @@ export class MobileEntity extends Container {
       this.animSprite.animationSpeed = 0.30; // Hit reaction
     } else if (animKey === "dead") {
       this.animSprite.animationSpeed = 0.25;
+    } else if (animKey === "normal") {
+      this.animSprite.animationSpeed = 0.22; // Authentic idle breathing/settling cycle
     } else if (animKey === "wnormal") {
-      this.animSprite.animationSpeed = 0.22; // Authentic gentle breathing cycle
+      this.animSprite.animationSpeed = 0.20; // Critical wounded stagger
     } else {
       this.animSprite.animationSpeed = 0.30;
     }
@@ -590,24 +605,76 @@ export class MobileEntity extends Container {
     const container = new Container();
     this.chatBubbleContainer = container;
 
-    const textStyle = new TextStyle({
-      fontFamily: ["Pixelify Sans", "sans-serif"],
-      fontSize: 12,
-      fontWeight: "bold",
-      fill: "#000000",
-      wordWrap: true,
-      wordWrapWidth: 160,
-      align: "center",
-      lineHeight: 15,
-    });
+    // Mixed font text layout: Pixelify Sans for text, Silkscreen for numbers
+    const textContent = new Container();
+    const words = message.trim().split(/(\s+)/);
+    const maxWrapWidth = 160;
+    const lines: Container[] = [];
+    let currentLine = new Container();
+    let currentLineWidth = 0;
 
-    const textObj = new Text({ text: message.trim(), style: textStyle });
-    textObj.anchor.set(0.5, 0.5);
+    for (const token of words) {
+      if (!token) continue;
+      if (/^\s+$/.test(token)) {
+        currentLineWidth += 5; // standard space width
+        continue;
+      }
+
+      // Split words into text parts and number parts
+      const subTokens = token.split(/(\d+)/).filter(Boolean);
+      const wordGroup = new Container();
+      let wordGroupWidth = 0;
+
+      for (const st of subTokens) {
+        const isNum = /^\d+$/.test(st);
+        const stText = new Text({
+          text: st,
+          style: new TextStyle({
+            fontFamily: isNum ? ["Silkscreen", "monospace"] : ["Pixelify Sans", "sans-serif"],
+            fontSize: isNum ? 11 : 13,
+            fontWeight: "bold",
+            fill: "#000000",
+            lineHeight: 16,
+          }),
+        });
+        stText.x = wordGroupWidth;
+        stText.y = isNum ? 1.5 : 0;
+        wordGroup.addChild(stText);
+        wordGroupWidth += stText.width;
+      }
+
+      if (currentLineWidth > 0 && currentLineWidth + wordGroupWidth > maxWrapWidth) {
+        lines.push(currentLine);
+        currentLine = new Container();
+        currentLineWidth = 0;
+      }
+
+      wordGroup.x = currentLineWidth;
+      currentLine.addChild(wordGroup);
+      currentLineWidth += wordGroupWidth + 4;
+    }
+    if (currentLine.children.length > 0) {
+      lines.push(currentLine);
+    }
+
+    const lineHeight = 16;
+    let totalTextWidth = 0;
+    for (let l = 0; l < lines.length; l++) {
+      const line = lines[l];
+      totalTextWidth = Math.max(totalTextWidth, line.width);
+      line.y = l * lineHeight;
+    }
+
+    for (const line of lines) {
+      line.x = -line.width / 2;
+      textContent.addChild(line);
+    }
+    const totalTextHeight = Math.max(16, lines.length * lineHeight);
 
     const paddingX = 12;
     const paddingY = 8;
-    const bubbleWidth = Math.max(50, Math.min(190, Math.ceil(textObj.width) + paddingX * 2));
-    const bubbleHeight = Math.ceil(textObj.height) + paddingY * 2;
+    const bubbleWidth = Math.max(50, Math.min(195, Math.ceil(totalTextWidth) + paddingX * 2));
+    const bubbleHeight = Math.ceil(totalTextHeight) + paddingY * 2;
 
     const bubbleGfx = new Graphics();
 
@@ -640,11 +707,11 @@ export class MobileEntity extends Container {
     bubbleGfx.lineTo(4, -8);
     bubbleGfx.stroke({ width: 3, color: 0xffffff });
 
-    // Optical centering for Pixelify Sans (compensated by -2.5px vertically)
-    textObj.position.set(0, Math.round(-bubbleHeight / 2 - 8 - 2.5));
+    // Center text vertically in bubble body
+    textContent.position.set(0, Math.round(-bubbleHeight - 8 + paddingY));
 
     container.addChild(bubbleGfx);
-    container.addChild(textObj);
+    container.addChild(textContent);
 
     // Position above mobile body
     container.position.set(0, -42);

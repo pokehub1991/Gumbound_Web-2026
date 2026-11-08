@@ -74,10 +74,11 @@ export class BallisticsEngine {
       return { ax: 0, ay: mobile.by };
     }
     const rad = (windAngleDeg * Math.PI) / 180;
-    const b0 = Math.round(Math.floor(Math.cos(rad) * windPower * mobile.by)) / 100;
-    const b1 = Math.round(Math.floor(Math.sin(rad) * windPower * mobile.by - mobile.bx)) / 100;
-    const ax = Math.round(0 - b0);
-    const ay = Math.round(mobile.by - b1);
+    // Authentic GunBound ballistics:
+    // 0 deg = Wind blowing Right (+X), 180 deg = Wind blowing Left (-X)
+    // 90 deg = Wind blowing Up (-Y, lifting against gravity), 270 deg = Wind blowing Down (+Y, pulling down)
+    const ax = Math.round((Math.cos(rad) * windPower * mobile.by) / 100);
+    const ay = Math.round(mobile.by - (Math.sin(rad) * windPower * mobile.by) / 100);
     return { ax, ay };
   }
 
@@ -253,6 +254,9 @@ export class BallisticsEngine {
             isLightningCharged = true;
           } else if (col.type === "black" && Math.abs(distFromCenter) <= halfWidth) {
             isBlackDamped = true;
+          } else if (col.type === "random" && Math.abs(distFromCenter) <= halfWidth) {
+            isSunBuffed = true;
+            isLightningCharged = true;
           } else if (col.type === "mirror" && !hasMirrored && Math.abs(distFromCenter) <= 18 && tMs > 100) {
             curVx = -curVx * 0.90;
             hasMirrored = true;
@@ -454,6 +458,14 @@ export class BallisticsEngine {
     }
     if (isBlackDamped) {
       damage = Math.round(damage * 0.75);
+    }
+    if (hasMirrored) {
+      damage = Math.round(damage * 1.15);
+      bunge = Math.round(bunge * 1.10);
+    }
+    if (tornadoPhase > 0) {
+      damage = Math.round(damage * 1.15);
+      bunge = Math.round(bunge * 1.20);
     }
 
     return {

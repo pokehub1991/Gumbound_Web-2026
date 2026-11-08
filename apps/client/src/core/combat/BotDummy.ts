@@ -22,7 +22,7 @@ export class BotDummy extends Container {
   public botIndex: number = 0;
   public delay: number = 960;
   public ssCooldown: number = 0;
-  public difficulty: number = 0.88; // 88% accuracy base with humanized variance
+  public difficulty: number = 0.78; // Calibrated human baseline (~68-75% accuracy, fails realistically)
 
   public isDead: boolean = false;
   public isImmortal: boolean = true;
@@ -46,6 +46,7 @@ export class BotDummy extends Container {
     this.spawnY = spawnY;
     this.botIndex = botIndex;
     this.delay = 960 + botIndex * 40;
+    this.difficulty = 0.76 + (botIndex === 0 ? 0.04 : (Math.random() - 0.5) * 0.08);
 
     this.damageNumbersContainer = new Container();
 
@@ -213,11 +214,42 @@ export class BotDummy extends Container {
       }
     }
 
-    // 4. Humanized Precision Jitter (simulates competitive player execution)
-    const maxPowerJitter = (1.0 - this.difficulty) * 7.0; // +/- 0.8% with 0.88 difficulty
-    const jitter = (Math.random() - 0.5) * maxPowerJitter;
-    const finalPower = Math.max(15, Math.min(100, Math.round(bestPower + jitter)));
-    const finalAngle = bestAngle;
+    // 4. Humanized Precision & Inaccuracy Model (Simulates real human players who don't have 100% precision)
+    const targetDist = Math.abs(dx);
+    // Base skill threshold calibrated to human player performance:
+    // Close range: ~80-85% accuracy. Long range & high wind: ~55-65% accuracy. Overall average ~68-72%
+    const distFactor = Math.min(0.20, (targetDist / 1200) * 0.20);
+    const windFactor = Math.min(0.12, (windPower / 26) * 0.12);
+    const hitThreshold = Math.max(0.50, Math.min(0.85, this.difficulty - distFactor - windFactor));
+
+    const accuracyRoll = Math.random();
+    let powerError = 0;
+    let angleError = 0;
+
+    if (accuracyRoll < hitThreshold) {
+      // Precision Hit (~65-72% of shots):
+      // Minor human timing jitter when releasing spacebar/mouse (+/- 0.6% to 1.2% power)
+      powerError = (Math.random() - 0.5) * 1.8;
+      angleError = 0;
+    } else if (accuracyRoll < hitThreshold + 0.20) {
+      // Near Miss / Splash Damage (~18-22% of shots):
+      // Player slightly underpowers or overpowers (+/- 2.2% to 4.5% power error)
+      const errorSign = Math.random() < 0.5 ? -1 : 1;
+      powerError = errorSign * (2.2 + Math.random() * 2.3);
+      // Rare slight angle slip (+/- 1 degree)
+      if (Math.random() < 0.25) {
+        angleError = errorSign;
+      }
+    } else {
+      // Clear Whiff / Wind Miscalculation (~8-12% of shots):
+      // Player misreads wind arc or elevation, resulting in a distinct miss (+/- 4.5% to 8.0% power error)
+      const errorSign = Math.random() < 0.5 ? -1 : 1;
+      powerError = errorSign * (4.5 + Math.random() * 3.5);
+      angleError = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 2));
+    }
+
+    const finalPower = Math.max(12, Math.min(100, Math.round(bestPower + powerError)));
+    const finalAngle = Math.max(10, Math.min(85, bestAngle + angleError));
 
     return {
       angle: finalAngle,
@@ -225,7 +257,7 @@ export class BotDummy extends Container {
       shotType,
       facing,
       chatMessage,
-      expectedHit: bestDist <= 35,
+      expectedHit: accuracyRoll < hitThreshold,
     };
   }
 

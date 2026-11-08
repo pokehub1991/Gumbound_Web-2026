@@ -7,6 +7,7 @@ export type WeatherType =
   | "sun"
   | "lightning"
   | "black"
+  | "random"
   | "mirror"
   | "tornado";
 
@@ -119,6 +120,18 @@ export const WEATHER_DEFINITIONS: Record<number, WeatherDefinition> = {
     columnTexture: "/sprites/weather/blackforce.png",
     color: "#a855f7",
   },
+  6: {
+    id: 6,
+    type: "random",
+    name: "Random",
+    nameEs: "Clima Aleatorio",
+    description: "Columna de energía con íconos de clima descendiendo. Otorga el efecto del ícono impactado.",
+    iconActive: "/sprites/weather/weather_6_active.png",
+    iconInactive: "/sprites/weather/weather_6_inactive.png",
+    hasColumn: true,
+    columnTexture: "/sprites/weather/randomforce.png",
+    color: "#e879f9",
+  },
   7: {
     id: 7,
     type: "mirror",
@@ -152,11 +165,12 @@ export function getWeatherColumnWidth(type: WeatherType): number {
     case "lightning": return 52; // Ancho ampliado y reforzado con más arcos y chispas
     case "mirror": return 32; // Ancho esbelto y auténtico para la barrera de espejo
     case "black": return 38;
+    case "random": return 38;
     default: return 40;
   }
 }
 
-// Balanced weighted distribution ensuring all 8 classic weathers (Thor, Wind, No Items, Sun, Lightning, Black, Mirror, Tornado) appear regularly
+// Balanced weighted distribution ensuring all 8 classic weathers (Thor, Wind, No Items, Sun, Lightning, Black, Random, Mirror, Tornado) appear regularly
 const WEATHER_WEIGHTS: number[] = [
   0, 0, // Thor (2x)
   1, 1, // Wind (2x)
@@ -164,6 +178,7 @@ const WEATHER_WEIGHTS: number[] = [
   3, 3, // Sun / Force (2x)
   4, 4, // Lightning (2x)
   5, 5, // Black / Eclipse (2x)
+  6, 6, // Random (2x)
   7, 7, // Mirror (2x)
   8, 8, // Tornado (2x)
 ];
@@ -287,31 +302,31 @@ export class WeatherManager {
   /**
    * Directly sets the current weather slot (ideal for testing, sandbox, and practice).
    */
-  public setWeatherId(id: number) {
+  public setWeatherId(id: number, forcedX?: number) {
     this.currentTurnInRound = 1;
     if (this.tapeIndex < this.tape.length) {
       this.tape[this.tapeIndex] = id;
     }
-    this.syncCurrentWeather(true, true);
+    this.syncCurrentWeather(true, true, forcedX);
   }
 
-  public setWeatherType(type: WeatherType) {
+  public setWeatherType(type: WeatherType, forcedX?: number) {
     const entry = Object.values(WEATHER_DEFINITIONS).find((w) => w.type === type);
     if (entry) {
-      this.setWeatherId(entry.id);
+      this.setWeatherId(entry.id, forcedX);
     }
   }
 
-  private syncCurrentWeather(notify: boolean = true, didChange: boolean = true) {
+  private syncCurrentWeather(notify: boolean = true, didChange: boolean = true, forcedX?: number) {
     const weatherId = this.tape[this.tapeIndex] ?? 0;
     this.activeWeather = WEATHER_DEFINITIONS[weatherId] || WEATHER_DEFINITIONS[0];
 
-    // Handle in-world column positioning for column weathers (Sun, Lightning, Black, Mirror, Tornado)
+    // Handle in-world column positioning for column weathers (Sun, Lightning, Black, Mirror, Tornado, Random)
     if (this.activeWeather.hasColumn) {
       if (didChange || !this.activeColumn) {
         const minX = 260;
         const maxX = Math.max(minX + 200, this.mapWidth - 260);
-        const posX = Math.floor(minX + Math.random() * (maxX - minX));
+        const posX = forcedX !== undefined ? forcedX : Math.floor(minX + Math.random() * (maxX - minX));
         const colWidth = getWeatherColumnWidth(this.activeWeather.type);
 
         this.activeColumn = {

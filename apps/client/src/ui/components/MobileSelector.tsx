@@ -40,7 +40,6 @@ export const MobileSelector: React.FC<MobileSelectorProps> = ({
       case 13: return "#06b6d4"; // Mage
       case 14: return "#2dd4bf"; // Turtle
       case 15: return "#eab308"; // Boomer
-      case 16: return "#a855f7"; // Electrico
       case 17: return "#84cc16"; // Grub
       case 19: return "#fb7185"; // Raon
       case 21: return "#10b981"; // Frog

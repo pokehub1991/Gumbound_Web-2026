@@ -7,6 +7,7 @@ const WEATHER_COLORS: Partial<Record<WeatherType, { fill: string; border: number
   tornado: { fill: "#38bdf8", border: 0x38bdf8, glow: "rgba(56, 189, 248, 0.7)" },
   mirror: { fill: "#fb923c", border: 0xfb923c, glow: "rgba(251, 146, 60, 0.7)" },
   black: { fill: "#c084fc", border: 0xc084fc, glow: "rgba(192, 132, 252, 0.7)" },
+  random: { fill: "#e879f9", border: 0xe879f9, glow: "rgba(232, 121, 249, 0.7)" },
 };
 
 const WEATHER_TITLES: Partial<Record<WeatherType, string>> = {
@@ -15,6 +16,7 @@ const WEATHER_TITLES: Partial<Record<WeatherType, string>> = {
   tornado: "TORNADO",
   mirror: "ESPEJO",
   black: "ECLIPSE",
+  random: "ALEATORIO",
 };
 
 /**
@@ -31,7 +33,12 @@ export class WeatherSkyMarker extends Container {
   private titleText: Text;
   private time: number = 0;
   private currentType?: WeatherType;
-  private currentY: number = 22;
+  private currentY: number = 20;
+  private centerHudBounds: { left: number; right: number; bottom: number } | null = null;
+
+  public setCenterHudBounds(left: number, right: number, bottom: number) {
+    this.centerHudBounds = { left, right, bottom };
+  }
 
   constructor() {
     super();
@@ -89,21 +96,28 @@ export class WeatherSkyMarker extends Container {
     const maxX = screenW - 75;
     const clampedX = Math.max(minX, Math.min(maxX, rawScreenX));
 
-    // Exact top HUD obstacle avoidance:
-    // Center HUD (Clima + Wind) accurately spans from [screenW/2 - 235] to [screenW/2 + 115] (~405px to 755px at 1280w)
-    // Left controls (Zoom & map) span from 0 to 215px; Right HUD (turn list/timer) spans from (screenW - 370px) to screenW
-    const isUnderCenterHud = clampedX > (screenW / 2 - 235) && clampedX < (screenW / 2 + 115);
-    const isUnderLeftHud = clampedX < 215;
-    const isUnderRightHud = clampedX > (screenW - 370);
-    const isUnderAnyHud = isUnderCenterHud || isUnderLeftHud || isUnderRightHud;
+    const markerHalfW = (this.titleText.width + 24) / 2;
 
-    // In open sky, badge sits sleekly right at monitor top edge (22px); under widgets, drops to 56px
-    const targetBaseY = isUnderAnyHud ? 56 : 22;
-    // Rapid, responsive lerp so the badge rises and drops without lag
-    this.currentY += (targetBaseY - this.currentY) * 0.28;
+    // Accurate HUD obstacle avoidance:
+    // If exact centerHudBounds are supplied from React DOM, use them with subpixel precision;
+    // Otherwise fallback to measured center capsule range (approx 340px centered slightly left of middle).
+    let isUnderCenterHud = false;
+    let hudDropY = 54;
+    if (this.centerHudBounds) {
+      isUnderCenterHud = (clampedX + markerHalfW > this.centerHudBounds.left) &&
+                         (clampedX - markerHalfW < this.centerHudBounds.right);
+      hudDropY = Math.max(52, this.centerHudBounds.bottom + 6);
+    } else {
+      isUnderCenterHud = clampedX > (screenW / 2 - 180) && clampedX < (screenW / 2 + 40);
+    }
+
+    // In open sky, badge sits sleekly right at monitor top edge (20px); only drops when directly under top center widgets
+    const targetBaseY = isUnderCenterHud ? hudDropY : 20;
+    // Rapid, responsive transition so badge returns to top edge without lingering delay
+    this.currentY += (targetBaseY - this.currentY) * 0.45;
     const bob = Math.sin(this.time * 3) * 1.5;
     this.x = clampedX;
-    this.y = this.currentY + bob;
+    this.y = Math.round(this.currentY + bob);
 
     // Direction indicators if column is off-screen
     let prefix = "▼ ";

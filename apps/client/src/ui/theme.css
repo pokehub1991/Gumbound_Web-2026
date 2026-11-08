@@ -265,3 +265,18 @@ textarea {
 .pixel-scrollbar::-webkit-scrollbar-corner {
   background: #060a14;
 }
+
+@keyframes pixelIntroPop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.65);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.06);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.0);
+  }
+}

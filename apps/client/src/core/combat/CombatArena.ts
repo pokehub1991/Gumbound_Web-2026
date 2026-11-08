@@ -9,12 +9,14 @@ import { BallisticsEngine, ShotTrajectory, FireParams } from "../physics/Ballist
 import { MOBILES_DATA } from "../constants/mobiles.js";
 import { MAPS } from "../constants/maps.js";
 import { AudioManager } from "../audio/AudioManager.js";
+
+export const PLAYABLE_BOT_MOBILES: number[] = [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 17, 19, 21, 22, 23, 24];
 import { DestructionParticles } from "../effects/DestructionParticles.js";
 import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 import { AutumnLeavesEngine } from "../effects/AutumnLeavesEngine.js";
 import { ThorEntity } from "../effects/ThorEntity.js";
 import { DeathGhostEntity } from "../effects/DeathGhostEntity.js";
-import { WeatherManager, WeatherDefinition, WeatherSlotItem, ActiveWeatherColumn, WeatherRoundInfo } from "../weather/WeatherManager.js";
+import { WeatherManager, WeatherDefinition, WeatherType, WeatherSlotItem, ActiveWeatherColumn, WeatherRoundInfo } from "../weather/WeatherManager.js";
 import { WeatherColumnEntity } from "../weather/WeatherColumnEntity.js";
 import { WeatherSkyMarker } from "../weather/WeatherSkyMarker.js";
 
@@ -89,6 +91,9 @@ export class CombatArena {
   }) => void;
   public onActiveItemChange?: (item: "dual" | "teleport" | null) => void;
   public onChatMessage?: (msg: { sender: string; text: string; isSystem?: boolean }) => void;
+  public onBattleIntro?: (phase: "ready" | "fight" | null) => void;
+  public battleIntroPhase: "ready" | "fight" | null = null;
+  public hasStartedIntro: boolean = false;
 
   // Active Battle Item (Dual, Teleport)
   public activeItem: "dual" | "teleport" | null = null;
@@ -106,8 +111,8 @@ export class CombatArena {
   private isPlayerBunged: boolean = false;
   public playerGhostEntity?: DeathGhostEntity;
 
-  // Wind settings (disabled by default as requested: wind = 0)
-  public isWindEnabled: boolean = false;
+  // Wind settings (active by default in combat)
+  public isWindEnabled: boolean = true;
 
   // Drag Shoot Mode
   public shootMode: "space" | "drag" = "space";
@@ -168,9 +173,10 @@ export class CombatArena {
     this.player.setTilt(0);
     this.engine.mobilesContainer.addChild(this.player);
 
-    // 4. Initialize Default Bot on Metamine right side
+    // 4. Initialize Default Bot on Metamine right side with random playable mobile
     const botSpawn = mapDef.botSpawn;
-    const defaultBot = new BotDummy(this.terrain, botSpawn.x, botSpawn.y, 1, "Haris Pilton", 0);
+    const initialBotMobile = PLAYABLE_BOT_MOBILES[Math.floor(Math.random() * PLAYABLE_BOT_MOBILES.length)];
+    const defaultBot = new BotDummy(this.terrain, botSpawn.x, botSpawn.y, initialBotMobile, "Haris Pilton", 0);
     this.bots = [defaultBot];
     this.engine.mobilesContainer.addChild(defaultBot);
 
@@ -255,9 +261,9 @@ export class CombatArena {
       this.selectedShotType = type;
     };
 
-    // 7. Initial Wind (Disabled by default: 0)
-    this.windPower = 0;
-    this.windAngle = 0;
+    // 7. Initial Wind (Active by default in combat)
+    this.isWindEnabled = true;
+    this.randomizeWind();
 
     // 8. Center Camera across the battlefield with authentic framing and start smooth cinematic intro zoom from frame 1
     this.engine.panTo(704.5, 420, true);
@@ -265,6 +271,9 @@ export class CombatArena {
 
     // 9. Play Battle Music
     AudioManager.playMusic("dbBattleMiramoTown.mp3");
+
+    // Start epic battle intro sequence with title banner ("¿ESTÁS LISTO?" -> "¡A COMBATIR!")
+    this.startBattleIntroSequence();
 
     // 10. Frame Ticker
     this.engine.app.ticker.add((ticker) => {
@@ -569,8 +578,9 @@ export class CombatArena {
     const groundY = this.terrain.findSurfaceY(spawnX, 402);
     const placement = this.terrain.getMobileSurfacePlacement(spawnX, groundY);
 
-    const defaultMobileTypes = [1, 5, 7, 3, 2];
-    const mobType = mobileType !== undefined ? mobileType : defaultMobileTypes[botIndex % defaultMobileTypes.length];
+    const mobType = mobileType !== undefined
+      ? mobileType
+      : PLAYABLE_BOT_MOBILES[Math.floor(Math.random() * PLAYABLE_BOT_MOBILES.length)];
     const defaultNames = ["Haris Pilton", "CyberTroll", "BungeMaster", "AimGod_007", "DragonBot"];
     const name = nickname || defaultNames[botIndex % defaultNames.length];
 
@@ -640,6 +650,23 @@ export class CombatArena {
     this.setWind(power, angle);
   }
 
+  public evolveWind() {
+    if (!this.isWindEnabled) {
+      this.windPower = 0;
+      this.windAngle = 0;
+      if (this.onWindUpdate) this.onWindUpdate(0, 0);
+      return;
+    }
+    // Turn-to-turn organic breeze evolution matching GunBound / DragonBound:
+    // Angle drifts smoothly (+/- 15° to 25°)
+    const angleDelta = Math.round((Math.random() - 0.5) * 30);
+    const newAngle = (this.windAngle + angleDelta + 360) % 360;
+    // Power drifts smoothly (+/- 1 to 3, bounded 1 to 26)
+    const powerDelta = Math.round((Math.random() - 0.5) * 4);
+    const newPower = Math.max(1, Math.min(26, this.windPower + powerDelta));
+    this.setWind(newPower, newAngle);
+  }
+
   public toggleWind(): boolean {
     this.isWindEnabled = !this.isWindEnabled;
     if (this.isWindEnabled) {
@@ -697,10 +724,18 @@ export class CombatArena {
       }
     }
 
-    // Update delay points for turn order
-    let delayCost = shotType === 2 ? 1200 : shotType === 1 ? 900 : 740;
+    // Update delay points using mobile definitions and item costs
+    const playerDef = MOBILES_DATA[this.player.mobileType] || MOBILES_DATA[0];
+    let delayCost = shotType === 2
+      ? playerDef.delays.ss
+      : shotType === 1
+      ? playerDef.delays.shot2
+      : playerDef.delays.shot1;
+
     if (itemUsed === "dual") {
-      delayCost += 600; // Classic Dual delay penalty
+      delayCost += 250; // Authentic GunBound Dual item delay
+    } else if (itemUsed === "teleport") {
+      delayCost += 100; // Authentic GunBound Teleport item delay
     }
     this.playerDelay += delayCost;
     this.broadcastTurnUpdate();
@@ -1023,7 +1058,16 @@ export class CombatArena {
     // 1. If Thor Weather is active, Thor fires orbital laser on ANY projectile hit!
     if (this.weatherManager.isThorActive()) {
       if (this.thor) {
-        this.thor.fireBeam(x, y, 120, this.engine.effectsContainer);
+        const thorDamage = 75 + this.thor.level * 25;
+        this.thor.fireBeam(x, y, thorDamage, this.engine.effectsContainer);
+        for (const b of this.bots) {
+          if (!b.isDead && b.mobile.hp > 0 && Math.hypot(b.mobile.x - x, b.mobile.y - y) <= 45) {
+            b.takeDamage(thorDamage, x, y);
+          }
+        }
+        if (Math.hypot(this.player.x - x, this.player.y - y) <= 45) {
+          this.damagePlayer(thorDamage, x, y);
+        }
       }
     } else if (traj.subType === "aduka_thor_tracker" || this.player.mobileType === 2) {
       // Aduka: Authentic Thor Satellite Orbital Laser strike
@@ -1051,6 +1095,14 @@ export class CombatArena {
     if (traj.isLightningCharged) {
       this.drawDescendingLaser(x, y, 0x60a5fa, 12, 300);
       AudioManager.play("12blast", 0.9);
+      for (const b of this.bots) {
+        if (!b.isDead && b.mobile.hp > 0 && Math.hypot(b.mobile.x - x, b.mobile.y - y) <= 40) {
+          b.takeDamage(55, x, y);
+        }
+      }
+      if (Math.hypot(this.player.x - x, this.player.y - y) <= 40) {
+        this.damagePlayer(55, x, y);
+      }
     }
   }
 
@@ -1096,12 +1148,14 @@ export class CombatArena {
       }
     }
 
-    // Wait for the impact explosion to complete, then advance weather and decide next turn
+    // Wait 3.0s strategic pause between turns (breathing time for combatants & explosions to settle)
     setTimeout(() => {
-      // 1. Advance authentic GunBound weather round
+      // 1. Advance authentic GunBound weather round in the HUD roulette
       const { weather: nextWeather, didChange } = this.weatherManager.advanceTurn();
       if (didChange && nextWeather.type === "wind") {
         this.randomizeWind();
+      } else if (this.isWindEnabled) {
+        this.evolveWind();
       }
 
       // 2. Identify combatants alive
@@ -1122,31 +1176,24 @@ export class CombatArena {
         return;
       }
 
-      // C. Both player and bots are alive:
-      // If previous turn was player, pass turn to bot with lowest delay
-      if (this.activeTurn === "player") {
-        const nextBot = aliveBots.reduce((min, b) => (b.delay < min.delay ? b : min), aliveBots[0]);
-        this.isTurnAdvancing = false;
-        this.executeBotTurn(nextBot);
-        return;
-      }
-
-      // If previous turn was bot:
-      // Check if another alive bot has strictly lower delay than player
-      const nextBot = aliveBots.reduce((min, b) => (b.delay < min.delay ? b : min), aliveBots[0]);
-      if (nextBot.delay < this.playerDelay && nextBot !== this.actingBot) {
-        this.isTurnAdvancing = false;
-        this.executeBotTurn(nextBot);
-      } else {
+      // C. Both player and bots are alive: whoever has lowest total accumulated delay goes next!
+      const minBot = aliveBots.reduce((min, b) => (b.delay < min.delay ? b : min), aliveBots[0]);
+      if (this.playerDelay <= minBot.delay) {
         this.switchToPlayerTurn();
+      } else {
+        this.isTurnAdvancing = false;
+        this.executeBotTurn(minBot);
       }
-    }, 550);
+    }, 3000);
   }
 
   private switchToPlayerTurn() {
     this.activeTurn = "player";
     this.actingBot = null;
     this.broadcastTurnUpdate();
+
+    // Authentic GunBound turn alert sound
+    AudioManager.play("turn.ogg", 0.95);
 
     // 1. Pan camera to active player
     this.engine.userHasManualCamera = false;
@@ -1161,7 +1208,7 @@ export class CombatArena {
       if (this.onTurnReady) {
         this.onTurnReady();
       }
-    }, 550);
+    }, 400);
   }
 
   public executeBotTurn(bot: BotDummy) {
@@ -1169,6 +1216,11 @@ export class CombatArena {
     this.isSimulating = true;
     this.activeTurn = "bot";
     this.actingBot = bot;
+
+    // Authentic GunBound turn alert sound
+    AudioManager.play("turn.ogg", 0.95);
+
+    this.broadcastTurnUpdate();
     this.aimController.enabled = false;
     this.broadcastTurnUpdate();
 
@@ -1227,8 +1279,13 @@ export class CombatArena {
         return;
       }
 
-      // Update bot delay
-      const delayCost = solution.shotType === 2 ? 1200 : solution.shotType === 1 ? 900 : 740;
+      // Update bot delay using authentic mobile delay definitions
+      const botDef = MOBILES_DATA[bot.mobile.mobileType] || MOBILES_DATA[0];
+      const delayCost = solution.shotType === 2
+        ? botDef.delays.ss
+        : solution.shotType === 1
+        ? botDef.delays.shot2
+        : botDef.delays.shot1;
       bot.delay += delayCost;
       this.broadcastTurnUpdate();
 
@@ -1290,11 +1347,15 @@ export class CombatArena {
     }, 1100);
   }
 
-  public resetBot(useRandomPos: boolean = false) {
+  public resetBot(useRandomPos: boolean = false, changeMobile: boolean = true) {
     const mapDef = MAPS["metamine"];
     const spawnPositions = [mapDef.botSpawn.x, 880, 640];
 
     this.bots.forEach((b, idx) => {
+      if (changeMobile) {
+        const nextMob = PLAYABLE_BOT_MOBILES[Math.floor(Math.random() * PLAYABLE_BOT_MOBILES.length)];
+        b.setMobileType(nextMob);
+      }
       const defaultX = spawnPositions[idx] || (800 + idx * 150);
       const groundPos = useRandomPos
         ? this.terrain.getRandomGroundPosition(350, Math.min(1300, this.terrain.mapWidth - 150))
@@ -1312,6 +1373,54 @@ export class CombatArena {
   public resetCamera() {
     this.engine.panTo(704.5, 420);
     this.engine.playIntroZoom(0.52, 1.20);
+  }
+
+  public setWeather(idOrType: number | WeatherType, forcedX?: number) {
+    if (typeof idOrType === "number") {
+      this.weatherManager.setWeatherId(idOrType, forcedX);
+    } else {
+      this.weatherManager.setWeatherType(idOrType, forcedX);
+    }
+  }
+
+  public setCenterHudBounds(left: number, right: number, bottom: number) {
+    if (this.weatherSkyMarker) {
+      this.weatherSkyMarker.setCenterHudBounds(left, right, bottom);
+    }
+  }
+
+  public startBattleIntroSequence() {
+    this.hasStartedIntro = true;
+    this.battleIntroPhase = "ready";
+    this.aimController.enabled = false;
+    this.isSimulating = true;
+
+    // Play classic GunBound battle start fanfare
+    AudioManager.play("start.mp3", 0.95);
+
+    if (this.onBattleIntro) {
+      this.onBattleIntro("ready");
+    }
+
+    setTimeout(() => {
+      this.battleIntroPhase = "fight";
+      if (this.onBattleIntro) {
+        this.onBattleIntro("fight");
+      }
+      AudioManager.play("11fire", 0.7);
+    }, 1400);
+
+    setTimeout(() => {
+      this.battleIntroPhase = null;
+      if (this.onBattleIntro) {
+        this.onBattleIntro(null);
+      }
+    }, 2800);
+
+    setTimeout(() => {
+      this.isSimulating = false;
+      this.switchToPlayerTurn();
+    }, 3000);
   }
 
   public async resetMap() {
@@ -1357,6 +1466,7 @@ export class CombatArena {
     this.resetBot(false);
     this.resetCamera();
     this.randomizeWind();
+    this.startBattleIntroSequence();
   }
 
   public setDynamicExplosions(enabled: boolean) {

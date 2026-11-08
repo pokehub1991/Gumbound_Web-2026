@@ -24,16 +24,12 @@ export const CANONICAL_BULLET_MAP: Record<number, string[]> = {
   13: ["mage1", "mage2a", "magess"],
   14: ["turtle1", "turtle2a", "turtless"],
   15: ["boomer12", "boomer12", "boomerss"],
-  16: ["lightning12", "lightning12", "trico2"],
   17: ["grub1", "grub2", "grubss"],
-  18: ["dragon1", "dragon2_ss", "dragon2_ss_ion"],
   19: ["raon1", "raon2", "raonss"],
-  20: ["armor1", "armor2", "armorss"],
   21: ["frog12", "frog12", "frogss"],
   22: ["kalsiddon1_tiny", "kalsiddon2_tiny", "kalsiddonss_tiny"],
   23: ["armor1", "armor2", "armorss"],
   24: ["dragon1", "dragon2_ss", "dragon2_ss_ion"],
-  25: ["armor1", "armor2", "armorss"],
 };
 
 export const CANONICAL_EXPLODE_MAP: Record<number, string[]> = {
@@ -53,16 +49,12 @@ export const CANONICAL_EXPLODE_MAP: Record<number, string[]> = {
   13: ["mage1", "asate2", "magess"],
   14: ["turtle1", "turtle2", "turtless"],
   15: ["boomer12", "boomer12", "boomerss"],
-  16: ["electric", "electric", "electric"],
   17: ["grub1", "grub2", "grubss"],
-  18: ["dragon1", "dragon2", "dragonss"],
   19: ["raon1", "raon2", "raonss"],
-  20: ["armor1", "armor2", "armorss"],
   21: ["mage1", "grub2", "grubss"],
   22: ["bigfoot2", "bigfoot2", "bigfoot1ss"],
   23: ["armor1", "armor2", "armorss"],
   24: ["dragon1", "dragon2", "dragonss"],
-  25: ["armor1", "armor2", "armorss"],
 };
 
 export class ProjectileSpriteManager {

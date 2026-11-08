@@ -8,7 +8,9 @@ export class AudioManager {
   public static volume: number = 0.7;
 
   public static preload(soundNames: string[]) {
-    for (const soundName of soundNames) {
+    for (let soundName of soundNames) {
+      if (soundName === "turn") soundName = "turn.ogg";
+      if (soundName === "start") soundName = "start.mp3";
       const path = soundName.endsWith(".mp3") || soundName.endsWith(".wav") || soundName.endsWith(".ogg")
         ? `/audio/${soundName}`
         : `/audio/${soundName}.wav`;
@@ -25,11 +27,15 @@ export class AudioManager {
     if (this.isMuted) return;
 
     try {
+      let sound = soundName;
+      if (sound === "turn") sound = "turn.ogg";
+      if (sound === "start") sound = "start.mp3";
+
       let path = "";
-      if (soundName.endsWith(".mp3") || soundName.endsWith(".wav") || soundName.endsWith(".ogg")) {
-        path = `/audio/${soundName}`;
+      if (sound.endsWith(".mp3") || sound.endsWith(".wav") || sound.endsWith(".ogg")) {
+        path = `/audio/${sound}`;
       } else {
-        path = `/audio/${soundName}.wav`;
+        path = `/audio/${sound}.wav`;
       }
 
       let audio = this.audioCache.get(path);

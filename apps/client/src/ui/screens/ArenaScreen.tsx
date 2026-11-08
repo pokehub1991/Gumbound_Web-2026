@@ -33,7 +33,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [chassisAngle, setChassisAngle] = useState<number>(45);
   const [windPower, setWindPower] = useState<number>(0);
   const [windAngle, setWindAngle] = useState<number>(0);
-  const [isWindEnabled, setIsWindEnabled] = useState<boolean>(false);
+  const [isWindEnabled, setIsWindEnabled] = useState<boolean>(true);
 
   // Authentic Weather System state (Thor, Wind, Force, Lightning, Mirror, Tornado, etc.)
   const [currentWeather, setCurrentWeather] = useState<WeatherDefinition>(
@@ -58,6 +58,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
   const [currentZoom, setCurrentZoom] = useState<number>(1.2);
   const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
+
+  // Epic Battle Intro Phase ("ready" -> "¿ESTÁS LISTO?", "fight" -> "¡QUE EMPIECE EL COMBATE!")
+  const [battleIntroPhase, setBattleIntroPhase] = useState<"ready" | "fight" | null>(null);
+  const centerHudRef = useRef<HTMLDivElement>(null);
 
   // Turn System (Lista de Turnos)
   const [turnNumber, setTurnNumber] = useState<number>(1);
@@ -270,7 +274,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       setChatMessages((prev) => [
         ...prev,
         {
-          sender: `[BOT] ${nickname}`,
+          sender: nickname,
           text,
           isSystem: false,
         },
@@ -352,6 +356,35 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     arena.onTurnReady = () => {
       if (powerBarFillRef.current) powerBarFillRef.current.style.width = "0%";
       setTurnCountdown(20);
+    };
+
+    // Battle Intro Sequence listener & initial sync
+    if (arena.battleIntroPhase) {
+      setBattleIntroPhase(arena.battleIntroPhase);
+    }
+    arena.onBattleIntro = (phase) => {
+      setBattleIntroPhase(phase);
+    };
+
+    // If intro hasn't started yet on fresh arena mount, trigger it now
+    if (arena.turnNumber === 1 && !arena.hasStartedIntro) {
+      arena.startBattleIntroSequence();
+    }
+
+    // Dynamic HUD bounds measuring to keep WeatherSkyMarker accurately pinned
+    const updateHudBounds = () => {
+      if (centerHudRef.current && arena) {
+        const rect = centerHudRef.current.getBoundingClientRect();
+        arena.setCenterHudBounds(rect.left - 8, rect.right + 8, rect.bottom);
+      }
+    };
+    updateHudBounds();
+    window.addEventListener("resize", updateHudBounds);
+    const hudTimer = setTimeout(updateHudBounds, 250);
+
+    return () => {
+      window.removeEventListener("resize", updateHudBounds);
+      clearTimeout(hudTimer);
     };
   }, [arena]);
 
@@ -610,7 +643,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         </div>
 
         {/* Center: Weather Widget Capsule + Wind & Compass Capsule */}
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
+        <div ref={centerHudRef} style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
           {/* Authentic GunBound Weather Slime Capsule Widget */}
           <WeatherWidget currentWeather={currentWeather} tapeSlice={weatherTapeSlice} roundInfo={weatherRoundInfo} />
 
@@ -635,8 +668,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             <div style={{ position: "relative", width: "24px", height: "24px", opacity: isWindEnabled ? 1 : 0.45 }}>
               <svg width="24" height="24" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="16" fill="#0f172a" stroke="#000000" strokeWidth="2.5" />
-                <g transform={`rotate(${windAngle}, 18, 18)`}>
-                  <polygon points="18,4 24,27 18,21 12,27" fill={isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)"} stroke="#000000" strokeWidth="1" />
+                <g transform={`rotate(${-windAngle}, 18, 18)`}>
+                  <polygon points="30,18 9,12 14,18 9,24" fill={isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)"} stroke="#000000" strokeWidth="1" />
                   <circle cx="18" cy="18" r="3" fill="#ffffff" />
                 </g>
               </svg>
@@ -1480,20 +1513,23 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 paddingRight: "4px",
               }}
             >
-              {chatMessages.map((msg, idx) => (
-                <div key={idx} style={{ fontSize: "12px", lineHeight: "1.4", letterSpacing: "0.2px", fontFamily: "var(--font-game)" }}>
-                  {msg.isSystem ? (
-                    <span style={{ color: "var(--color-success)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
-                  ) : (
-                    <span>
-                      <strong style={{ color: msg.sender === "Tú" ? "var(--color-warning)" : "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
-                        [{renderPixelText(msg.sender)}]:{" "}
-                      </strong>
-                      <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
-                    </span>
-                  )}
-                </div>
-              ))}
+              {chatMessages.map((msg, idx) => {
+                const cleanSender = msg.sender.replace(/^\[?\(?BOT\)?\]?\s*/i, "").trim();
+                return (
+                  <div key={idx} style={{ fontSize: "12px", lineHeight: "1.4", letterSpacing: "0.2px", fontFamily: "var(--font-game)" }}>
+                    {msg.isSystem ? (
+                      <span style={{ color: "var(--color-success)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
+                    ) : (
+                      <span>
+                        <strong style={{ color: cleanSender === "Tú" ? "var(--color-warning)" : "var(--color-primary)", textShadow: "var(--text-shadow-pixel)" }}>
+                          [{renderPixelText(cleanSender)}]:{" "}
+                        </strong>
+                        <span style={{ color: "var(--color-slate-200)", textShadow: "var(--text-shadow-pixel)" }}>{renderPixelText(msg.text)}</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
               <div ref={chatBottomRef} />
             </div>
 
@@ -1654,6 +1690,71 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           )}
         </button>
       </div>
+
+      {/* ============================================================ */}
+      {/* EPIC RETRO BATTLE INTRO BANNER ("¿ESTÁS LISTO?" -> "¡QUE EMPIECE EL COMBATE!") */}
+      {/* ============================================================ */}
+      {battleIntroPhase && (
+        <div style={{
+          position: "fixed",
+          top: "40%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 95,
+          pointerEvents: "none",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          animation: "pixelIntroPop 0.28s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
+        }}>
+          <div
+            className="pixel-box"
+            style={{
+              padding: "18px 48px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "8px",
+              background: battleIntroPhase === "ready"
+                ? "radial-gradient(ellipse at center, rgba(15, 23, 42, 0.96) 0%, rgba(2, 6, 23, 0.98) 100%)"
+                : "radial-gradient(ellipse at center, rgba(69, 10, 10, 0.96) 0%, rgba(26, 4, 4, 0.98) 100%)",
+              border: battleIntroPhase === "ready"
+                ? "3.5px solid #38bdf8"
+                : "3.5px solid #ef4444",
+              boxShadow: battleIntroPhase === "ready"
+                ? "0 0 45px rgba(56, 189, 248, 0.8), inset 0 0 24px rgba(56, 189, 248, 0.4), 0 10px 40px rgba(0,0,0,0.9)"
+                : "0 0 55px rgba(239, 68, 68, 0.9), inset 0 0 30px rgba(249, 115, 22, 0.5), 0 10px 40px rgba(0,0,0,0.9)",
+              borderRadius: "6px",
+            }}
+          >
+            <div style={{
+              fontFamily: "var(--font-game)",
+              fontSize: battleIntroPhase === "ready" ? "42px" : "44px",
+              fontWeight: 900,
+              letterSpacing: "3px",
+              color: battleIntroPhase === "ready" ? "#38bdf8" : "#ef4444",
+              textShadow: battleIntroPhase === "ready"
+                ? "0 0 16px rgba(56, 189, 248, 0.95), 3px 3px 0px #000, -2px -2px 0px #000"
+                : "0 0 20px rgba(239, 68, 68, 0.98), 3px 3px 0px #000, -2px -2px 0px #000",
+              textTransform: "uppercase",
+              whiteSpace: "nowrap",
+            }}>
+              {battleIntroPhase === "ready" ? "¿ESTÁS LISTO?" : "¡QUE EMPIECE EL COMBATE!"}
+            </div>
+            <div style={{
+              fontFamily: "var(--font-num)",
+              fontSize: "13px",
+              fontWeight: 700,
+              letterSpacing: "3px",
+              color: battleIntroPhase === "ready" ? "#facc15" : "#f97316",
+              textShadow: "1px 1px 0px #000",
+              textTransform: "uppercase",
+            }}>
+              {battleIntroPhase === "ready" ? "PREPÁRATE PARA EL COMBATE" : "¡FUEGO A DISCRECIÓN!"}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

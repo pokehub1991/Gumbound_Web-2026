@@ -35,16 +35,12 @@ export const CANONICAL_MOBILE_KEYS: Record<number, string> = {
   13: "mage",
   14: "turtle",
   15: "boomer",
-  16: "electrico",
   17: "grub",
-  18: "dragon",
   19: "raon",
-  20: "copyloid",
   21: "frog",
   22: "kalsiddon",
   23: "maya",
   24: "phoenix",
-  25: "copyloid",
 };
 
 export class MobileSpriteManager {
