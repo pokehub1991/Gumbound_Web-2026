@@ -65,34 +65,6 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ currentWeather, ta
           border: "2px solid #000000",
         }}
       >
-        {/* Left Mini Badge Label: "CLIMA" */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "#080e1c",
-            border: "1px solid #1e3a5f",
-            borderRadius: "3px",
-            padding: "2px 5px",
-            height: "24px",
-            boxSizing: "border-box",
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-family)",
-              fontSize: "9px",
-              fontWeight: "900",
-              color: "var(--color-primary)",
-              letterSpacing: "0.5px",
-              textShadow: "var(--text-shadow-pixel)",
-            }}
-          >
-            CLIMA
-          </span>
-        </div>
-
         {/* Recessed Tape Cassette Track */}
         <div
           style={{

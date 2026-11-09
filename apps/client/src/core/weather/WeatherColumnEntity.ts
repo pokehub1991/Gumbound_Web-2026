@@ -26,6 +26,8 @@ interface WeatherParticle {
   rotSpeed?: number;
   isDebris?: boolean;
   shape?: number;
+  isOutwardWind?: boolean;
+  expansionSpeed?: number;
 }
 
 interface LightningSegment {
@@ -65,11 +67,9 @@ export class WeatherColumnEntity extends Container {
 
   // Authentic GunBound Mirror Sprite Layer
   private mirrorTiling?: TilingSprite;
-
-  // Authentic GunBound Random Weather Sprite Layer
-  private randomTiling?: TilingSprite;
-  private randomIconContainer?: Container;
-  public randomSprites: Array<{ sprite: Sprite; weatherType: WeatherType; baseOffset: number }> = [];
+  private mirrorTextures: Texture[] = [];
+  private mirrorFrameIndex: number = 0;
+  private mirrorFrameTimer: number = 0;
 
   private time: number = 0;
 
@@ -109,7 +109,7 @@ export class WeatherColumnEntity extends Container {
     this.fxGfx = new Graphics();
     this.addChild(this.fxGfx);
 
-    if (this.weatherType === "sun" || this.weatherType === "lightning" || this.weatherType === "mirror" || this.weatherType === "random") {
+    if (this.weatherType === "sun" || this.weatherType === "lightning" || this.weatherType === "mirror") {
       this.columnGfx.blendMode = "add";
       this.fxGfx.blendMode = "add";
     }
@@ -118,8 +118,6 @@ export class WeatherColumnEntity extends Container {
       this.initSunforce();
     } else if (this.weatherType === "mirror") {
       this.initMirror();
-    } else if (this.weatherType === "random") {
-      this.initRandom();
     }
 
     this.initParticles();
@@ -190,90 +188,38 @@ export class WeatherColumnEntity extends Container {
 
   private async initMirror() {
     try {
-      const tex = await Assets.load<Texture>("/sprites/weather/mirrorforce.png");
+      const tex = await Assets.load<Texture>("/sprites/weather/mirror2.png");
       if (this.isDestroyed) return;
 
       const totalH = this.endY - this.startY;
+
+      // Authentic GunBound/DragonBound 8-frame animated mirror sprite sheet
+      // mirror2.png is 128x1024 with 8 frames of 128x512 stepped every 64px vertically
+      this.mirrorTextures = [];
+      for (let f = 0; f < 8; f++) {
+        const frameRect = new Rectangle(0, f * 64, 128, 512);
+        this.mirrorTextures.push(new Texture({ source: tex.source, frame: frameRect }));
+      }
+
       this.mirrorTiling = new TilingSprite({
-        texture: tex,
+        texture: this.mirrorTextures[0],
         width: 128,
         height: totalH,
       });
       this.mirrorTiling.anchor.set(0.5, 0);
       this.mirrorTiling.position.set(0, this.startY);
-      this.mirrorTiling.scale.set(0.52, 1.0); // Ajuste proporcional a los 32px de ancho del espejo
+      this.mirrorTiling.scale.set(0.46, 1.0); // Exact 32-38px reflective column
       this.mirrorTiling.blendMode = "add";
-      this.mirrorTiling.alpha = 0.85;
+      this.mirrorTiling.alpha = 0.90;
       this.addChildAt(this.mirrorTiling, 0);
     } catch (e) {
-      console.warn("[WeatherColumnEntity] Error loading mirrorforce sprite:", e);
-    }
-  }
-
-  private async initRandom() {
-    try {
-      const totalH = this.endY - this.startY;
-
-      // 1. Authentic GunBound randomforce.png background conduit
-      const conduitTex = await Assets.load<Texture>("/sprites/weather/randomforce.png");
-      if (this.isDestroyed) return;
-
-      this.randomTiling = new TilingSprite({
-        texture: conduitTex,
-        width: 128,
-        height: totalH,
-      });
-      this.randomTiling.anchor.set(0.5, 0);
-      this.randomTiling.position.set(0, this.startY);
-      this.randomTiling.scale.set(0.58, 1.0);
-      this.randomTiling.blendMode = "add";
-      this.randomTiling.alpha = 0.75;
-      this.addChildAt(this.randomTiling, 0);
-
-      // 2. Cascading authentic GunBound weather item sprites flowing inside the column
-      this.randomIconContainer = new Container();
-      this.addChild(this.randomIconContainer);
-
-      const itemsDef: Array<{ type: WeatherType; path: string }> = [
-        { type: "sun", path: "/sprites/weather/weather_3_active.png" },
-        { type: "lightning", path: "/sprites/weather/weather_4_active.png" },
-        { type: "mirror", path: "/sprites/weather/weather_7_active.png" },
-        { type: "tornado", path: "/sprites/weather/weather_8_active.png" },
-        { type: "black", path: "/sprites/weather/weather_5_active.png" },
-      ];
-
-      const loadedTextures = await Promise.all(
-        itemsDef.map((it) => Assets.load<Texture>(it.path))
-      );
-
-      if (this.isDestroyed || !this.randomIconContainer) return;
-
-      const spacing = 180;
-      const count = Math.ceil(totalH / spacing);
-
-      for (let i = 0; i < count; i++) {
-        const itemIdx = i % itemsDef.length;
-        const tex = loadedTextures[itemIdx];
-        const spr = new Sprite(tex);
-        spr.anchor.set(0.5, 0.5);
-        spr.scale.set(0.82, 0.82);
-        spr.alpha = 0.95;
-        this.randomIconContainer.addChild(spr);
-
-        this.randomSprites.push({
-          sprite: spr,
-          weatherType: itemsDef[itemIdx].type,
-          baseOffset: i * spacing,
-        });
-      }
-    } catch (e) {
-      console.warn("[WeatherColumnEntity] Error loading randomforce sprites:", e);
+      console.warn("[WeatherColumnEntity] Error loading mirror2 sprite:", e);
     }
   }
 
   private initParticles() {
     this.particles = [];
-    const count = this.weatherType === "tornado" ? 95 : this.weatherType === "lightning" ? 90 : this.weatherType === "sun" ? 75 : this.weatherType === "mirror" ? 80 : this.maxParticles;
+    const count = this.weatherType === "tornado" ? 115 : this.weatherType === "lightning" ? 90 : this.weatherType === "sun" ? 75 : this.weatherType === "mirror" ? 80 : this.maxParticles;
     for (let i = 0; i < count; i++) {
       this.particles.push(this.createParticle(true));
     }
@@ -285,8 +231,30 @@ export class WeatherColumnEntity extends Container {
 
     switch (this.weatherType) {
       case "tornado": {
-        const isDebris = Math.random() > 0.45; // 55% authentic debris & rocks, 45% ice-blue wind vapor
-        if (isDebris) {
+        const roll = Math.random();
+        if (roll < 0.38) {
+          // Subtle outward wind motes: start deep inside tornado core, spiral outward into the air, and fade away
+          const outwardPalette = [0xffffff, 0xf0f9ff, 0xe0f2fe, 0xbae6fd, 0x7dd3fc, 0x38bdf8];
+          const color = outwardPalette[Math.floor(Math.random() * outwardPalette.length)];
+          const orbitRadius = 2 + Math.random() * 8; // Start near the inner eye/core
+          return {
+            x: 0,
+            y: randomY ? this.startY + Math.random() * yRange : this.startY + Math.random() * yRange,
+            vx: 0,
+            vy: -(2.2 + Math.random() * 3.6), // Gentle rising updraft
+            size: 1.0 + Math.random() * 1.5, // Small, delicate, subtle particle
+            alpha: 0.1,
+            maxAlpha: 0.55 + Math.random() * 0.35,
+            orbitAngle: Math.random() * Math.PI * 2,
+            orbitRadius,
+            orbitSpeed: (0.07 + Math.random() * 0.11) * (Math.random() > 0.5 ? 1 : -1),
+            expansionSpeed: 0.50 + Math.random() * 0.70, // Expands outward from inside to outside
+            life: 0,
+            maxLife: 45 + Math.floor(Math.random() * 40),
+            color,
+            isOutwardWind: true,
+          };
+        } else if (roll < 0.72) {
           // Authentic tumbling debris: slate rocks, mud clods, terracotta fragments, leaves, metal scraps
           const debrisPalette = [
             0x1e293b, 0x334155, 0x475569, // Dark slate rock
@@ -527,27 +495,18 @@ export class WeatherColumnEntity extends Container {
       }
     }
 
-    // Authentic Mirror crystalline dust shimmer animation
+    // Authentic Mirror 8-frame cyclic animation & vertical laser shimmer
     if (this.weatherType === "mirror" && this.mirrorTiling) {
-      this.mirrorTiling.tilePosition.y -= dt * 0.95;
-      this.mirrorTiling.alpha = 0.80 + Math.sin(this.time * 3.2) * 0.15;
-    }
-
-    // Authentic Random Weather: icons descend smoothly at a gentle 28px/s
-    if (this.weatherType === "random") {
-      if (this.randomTiling) {
-        this.randomTiling.tilePosition.y += dt * 0.85;
-        this.randomTiling.alpha = 0.75 + Math.sin(this.time * 2.8) * 0.12;
-      }
-      if (this.randomSprites.length > 0) {
-        const totalSpan = this.endY - this.startY;
-        const scrollOffset = (this.time * 28) % totalSpan;
-        for (const item of this.randomSprites) {
-          const yPos = this.startY + ((item.baseOffset + scrollOffset) % totalSpan);
-          item.sprite.position.set(0, yPos);
-          item.sprite.alpha = 0.88 + Math.sin(this.time * 3.5 + item.baseOffset * 0.02) * 0.12;
+      this.mirrorTiling.tilePosition.y -= dt * 0.85;
+      if (this.mirrorTextures.length > 0) {
+        this.mirrorFrameTimer += dt * 16.66;
+        if (this.mirrorFrameTimer >= 50) { // Authentic 50ms per frame from GunBound / DragonBound
+          this.mirrorFrameTimer = 0;
+          this.mirrorFrameIndex = (this.mirrorFrameIndex + 1) % this.mirrorTextures.length;
+          this.mirrorTiling.texture = this.mirrorTextures[this.mirrorFrameIndex];
         }
       }
+      this.mirrorTiling.alpha = 0.82 + Math.sin(this.time * 3.2) * 0.12;
     }
 
     // Render 100% native graphics
@@ -718,71 +677,45 @@ export class WeatherColumnEntity extends Container {
         // Authentic GunBound Crystalline Laser Mirror Barrier
         const pulse = 0.88 + Math.sin(this.time * 3.5) * 0.12;
 
-        // 1. Soft atmospheric amber warmth & prismatic glass base (smooth horizontal edge fade)
-        this.columnGfx.rect(-w * 0.75, sY, w * 1.50, h).fill({ color: 0xfb923c, alpha: 0.08 * pulse });
-        this.columnGfx.rect(-w * 0.52, sY, w * 1.04, h).fill({ color: 0xfacc15, alpha: 0.14 * pulse });
-        this.columnGfx.rect(-w * 0.40, sY, w * 0.80, h).fill({ color: 0x38bdf8, alpha: 0.18 * pulse });
-        this.columnGfx.rect(-w * 0.22, sY, w * 0.44, h).fill({ color: 0xbae6fd, alpha: 0.26 * pulse });
+        // 1. Soft prismatic crystal edge aura (smooth horizontal gradient)
+        this.columnGfx.rect(-w * 0.60, sY, w * 1.20, h).fill({ color: 0x38bdf8, alpha: 0.08 * pulse });
+        this.columnGfx.rect(-w * 0.40, sY, w * 0.80, h).fill({ color: 0xbae6fd, alpha: 0.14 * pulse });
+        this.columnGfx.rect(-w * 0.20, sY, w * 0.40, h).fill({ color: 0xffffff, alpha: 0.18 * pulse });
 
-        // 2. Iconic Left & Right Boundary Rails (dual laser energy rails)
-        const railPositions = [-w * 0.5, w * 0.5];
+        // 2. Dual Boundary Energy Rails (sleek crystal edge containment)
+        const railPositions = [-w * 0.48, w * 0.48];
         for (const rX of railPositions) {
-          // Outer vibrant amber/orange corona
+          // Soft outer cyan corona
           this.columnGfx.moveTo(rX, sY).lineTo(rX, eY)
-            .stroke({ width: 3.8, color: 0xf97316, alpha: 0.45 * pulse });
-          // Bright golden rail line
+            .stroke({ width: 3.2, color: 0x38bdf8, alpha: 0.40 * pulse });
+          // Bright crystal rail line
           this.columnGfx.moveTo(rX, sY).lineTo(rX, eY)
-            .stroke({ width: 2.0, color: 0xfdba74, alpha: 0.85 * pulse });
-          // Sharp incandescent white filament
+            .stroke({ width: 1.6, color: 0x7dd3fc, alpha: 0.85 * pulse });
+          // Incandescent white filament
           this.columnGfx.moveTo(rX, sY).lineTo(rX, eY)
-            .stroke({ width: 1.0, color: 0xffffff, alpha: 0.95 });
+            .stroke({ width: 0.8, color: 0xffffff, alpha: 0.95 });
         }
 
-        // 3. Central Reflective Prismatic Laser Core
+        // 3. Central Reflective Crystal Guide
         this.columnGfx.moveTo(0, sY).lineTo(0, eY)
-          .stroke({ width: 4.5, color: 0x7dd3fc, alpha: 0.35 * pulse });
+          .stroke({ width: 2.0, color: 0x7dd3fc, alpha: 0.28 * pulse });
         this.columnGfx.moveTo(0, sY).lineTo(0, eY)
-          .stroke({ width: 2.0, color: 0xffffff, alpha: 0.92 * pulse });
+          .stroke({ width: 1.0, color: 0xffffff, alpha: 0.85 * pulse });
 
         // 4. Gliding Refractive Diagonal Light Sheens (soft glass reflection sweep)
-        const sheenSpacing = 160;
-        const sheenScroll = (this.time * 130) % sheenSpacing;
+        const sheenSpacing = 180;
+        const sheenScroll = (this.time * 120) % sheenSpacing;
         for (let base = sY - sheenSpacing; base <= eY + sheenSpacing; base += sheenSpacing) {
           const sy = base + sheenScroll;
           if (sy < sY || sy > eY) continue;
-          const sheenAlpha = (0.45 + Math.sin(this.time * 4.0 + sy * 0.02) * 0.20) * pulse;
+          const sheenAlpha = (0.38 + Math.sin(this.time * 4.0 + sy * 0.02) * 0.18) * pulse;
 
-          // Soft outer cyan sheen
-          this.columnGfx.moveTo(-w * 0.46, sy)
-            .lineTo(w * 0.46, sy - 34)
-            .stroke({ width: 3.5, color: 0x67e8f9, alpha: sheenAlpha * 0.45 });
-          // Bright refractive crystal glint
-          this.columnGfx.moveTo(-w * 0.46, sy)
-            .lineTo(w * 0.46, sy - 34)
-            .stroke({ width: 1.8, color: 0xffffff, alpha: sheenAlpha });
-        }
-
-        // 5. Upward subtle secondary counter-sheen
-        const counterSpacing = 240;
-        const counterScroll = (-this.time * 85) % counterSpacing;
-        for (let base = sY - counterSpacing; base <= eY + counterSpacing; base += counterSpacing) {
-          const sy = base + counterScroll;
-          if (sy < sY || sy > eY) continue;
-          this.columnGfx.moveTo(-w * 0.46, sy)
-            .lineTo(w * 0.46, sy + 30)
-            .stroke({ width: 2.0, color: 0xfed7aa, alpha: 0.35 * pulse });
-        }
-
-        // 6. Subtle laser node pulse points along the rails
-        const nodeSpacing = 140;
-        const nodeScroll = (this.time * 50) % nodeSpacing;
-        for (let base = sY - nodeSpacing; base <= eY + nodeSpacing; base += nodeSpacing) {
-          const ny = base + nodeScroll;
-          if (ny < sY || ny > eY) continue;
-          this.columnGfx.moveTo(-w * 0.5, ny).lineTo(w * 0.5, ny)
-            .stroke({ width: 1.2, color: 0x38bdf8, alpha: 0.38 * pulse });
-          this.columnGfx.circle(-w * 0.5, ny, 1.8).fill({ color: 0xffffff, alpha: 0.90 });
-          this.columnGfx.circle(w * 0.5, ny, 1.8).fill({ color: 0xffffff, alpha: 0.90 });
+          this.columnGfx.moveTo(-w * 0.44, sy)
+            .lineTo(w * 0.44, sy - 28)
+            .stroke({ width: 2.4, color: 0x67e8f9, alpha: sheenAlpha * 0.35 });
+          this.columnGfx.moveTo(-w * 0.44, sy)
+            .lineTo(w * 0.44, sy - 28)
+            .stroke({ width: 1.2, color: 0xffffff, alpha: sheenAlpha * 0.85 });
         }
         break;
       }
@@ -800,33 +733,6 @@ export class WeatherColumnEntity extends Container {
         this.columnGfx.moveTo(0, sY).lineTo(0, eY).stroke({ width: 1.0, color: 0xffffff, alpha: 0.95 * pulse });
         break;
       }
-
-      case "random": {
-        // Holographic conduit cylinder with prismatic energy rails
-        const pulse = 0.85 + Math.sin(this.time * 3.0) * 0.15;
-        // 1. Outer prismatic chromatic aura
-        this.columnGfx.rect(-w * 0.60, sY, w * 1.20, h).fill({ color: 0x38bdf8, alpha: 0.08 * pulse });
-        this.columnGfx.rect(-w * 0.45, sY, w * 0.90, h).fill({ color: 0xa855f7, alpha: 0.14 * pulse });
-        this.columnGfx.rect(-w * 0.30, sY, w * 0.60, h).fill({ color: 0xfacc15, alpha: 0.18 * pulse });
-
-        // 2. Boundary energy rails
-        const rails = [-w * 0.48, w * 0.48];
-        for (const rx of rails) {
-          this.columnGfx.moveTo(rx, sY).lineTo(rx, eY).stroke({ width: 2.2, color: 0x38bdf8, alpha: 0.75 * pulse });
-          this.columnGfx.moveTo(rx, sY).lineTo(rx, eY).stroke({ width: 1.0, color: 0xffffff, alpha: 0.90 });
-        }
-
-        // 3. Gliding horizontal laser node rings
-        const nodeSpacing = 160;
-        const nodeScroll = (this.time * 28) % nodeSpacing;
-        for (let base = sY - nodeSpacing; base <= eY + nodeSpacing; base += nodeSpacing) {
-          const ny = base + nodeScroll;
-          if (ny < sY || ny > eY) continue;
-          this.columnGfx.moveTo(-w * 0.48, ny).lineTo(w * 0.48, ny)
-            .stroke({ width: 1.2, color: 0x38bdf8, alpha: 0.35 * pulse });
-        }
-        break;
-      }
     }
   }
 
@@ -838,6 +744,12 @@ export class WeatherColumnEntity extends Container {
 
       if (p.orbitAngle !== undefined && p.orbitRadius !== undefined && p.orbitSpeed !== undefined) {
         p.orbitAngle += p.orbitSpeed;
+
+        // Outward expansion for tornado centrifugal wind motes
+        if (p.isOutwardWind && p.expansionSpeed) {
+          p.orbitRadius += p.expansionSpeed;
+        }
+
         p.x = Math.cos(p.orbitAngle) * p.orbitRadius;
         p.y += p.vy;
 
@@ -908,7 +820,21 @@ export class WeatherColumnEntity extends Container {
           this.fxGfx.circle(p.x, p.y, p.size * 0.45).fill({ color: 0xffffff, alpha: p.alpha * 0.90 });
         }
       } else if (this.weatherType === "tornado") {
-        if (p.isDebris) {
+        if (p.isOutwardWind) {
+          if (p.life !== undefined && p.maxLife !== undefined) {
+            p.life++;
+            const progress = p.life / p.maxLife;
+            // Smoothly fades away into the open air as it travels outward from within the tornado
+            p.alpha = Math.max(0, (1 - Math.pow(progress, 1.35)) * p.maxAlpha);
+            if (p.life >= p.maxLife || p.alpha <= 0.01) {
+              this.particles[i] = this.createParticle(false);
+              continue;
+            }
+          }
+          // Delicate glowing wind particle fading into thin air
+          this.fxGfx.circle(p.x, p.y, p.size).fill({ color: p.color, alpha: p.alpha });
+          this.fxGfx.circle(p.x, p.y, p.size * 0.45).fill({ color: 0xffffff, alpha: p.alpha * 0.90 });
+        } else if (p.isDebris) {
           // Dynamic tumbling debris chunks (slate rock, mud, terracotta, leaves, metal scrap)
           if (p.rotation !== undefined && p.rotSpeed !== undefined) {
             p.rotation += p.rotSpeed;
@@ -1014,18 +940,10 @@ export class WeatherColumnEntity extends Container {
       this.mirrorTiling.destroy();
       this.mirrorTiling = undefined;
     }
-    if (this.randomTiling) {
-      this.randomTiling.destroy();
-      this.randomTiling = undefined;
+    for (const tex of this.mirrorTextures) {
+      tex.destroy(true);
     }
-    for (const item of this.randomSprites) {
-      item.sprite.destroy();
-    }
-    this.randomSprites = [];
-    if (this.randomIconContainer) {
-      this.randomIconContainer.destroy({ children: true });
-      this.randomIconContainer = undefined;
-    }
+    this.mirrorTextures = [];
     for (const spr of this.sunTipSprites) {
       spr.destroy();
     }

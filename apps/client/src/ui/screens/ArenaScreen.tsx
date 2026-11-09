@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { CombatArena } from "../../core/combat/CombatArena.js";
-import { MobileSelector } from "../components/MobileSelector.js";
 import { MOBILES_DATA } from "../../core/constants/mobiles.js";
 import { AudioManager } from "../../core/audio/AudioManager.js";
 import { WeatherWidget } from "../components/WeatherWidget.js";
@@ -25,7 +24,8 @@ const renderPixelText = (text: string) => {
 
 export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [playerMobileId, setPlayerMobileId] = useState<number>(0);
-  const [botMobileId, setBotMobileId] = useState<number>(1);
+  const [playerGender, setPlayerGender] = useState<"male" | "female">("male");
+  const [, setBotMobileId] = useState<number>(1);
   const [shotType, setShotType] = useState<number>(0);
 
   const [angle, setAngle] = useState<number>(45);
@@ -49,15 +49,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [, setBotHp] = useState<number>(1000);
   const [, setBotMaxHp] = useState<number>(1000);
 
-  const [isSelectorOpen, setIsSelectorOpen] = useState<boolean>(false);
-  const [selectorTarget, setSelectorTarget] = useState<"player" | "bot">("player");
   const [shootMode, setShootMode] = useState<"space" | "drag">("space");
   const [lastPower, setLastPower] = useState<number | null>(null);
 
-  // Audio and Camera
-  const [isMusicActive, setIsMusicActive] = useState<boolean>(!AudioManager.isMusicMuted);
-  const [currentZoom, setCurrentZoom] = useState<number>(1.2);
-  const [isBotImmortal, setIsBotImmortal] = useState<boolean>(true);
+  // Audio and Settings Modal
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [musicVol, setMusicVol] = useState<number>(Math.round(AudioManager.musicVolume * 100));
+  const [sfxVol, setSfxVol] = useState<number>(Math.round(AudioManager.sfxVolume * 100));
+  const [isTimerFrozen, setIsTimerFrozen] = useState<boolean>(false);
 
   // Epic Battle Intro Phase ("ready" -> "¿ESTÁS LISTO?", "fight" -> "¡QUE EMPIECE EL COMBATE!")
   const [battleIntroPhase, setBattleIntroPhase] = useState<"ready" | "fight" | null>(null);
@@ -68,7 +67,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [maxTurns, setMaxTurns] = useState<number>(40);
   const [activeTurn, setActiveTurn] = useState<"player" | "bot">("player");
   const [playerDelay, setPlayerDelay] = useState<number>(0);
-  const [, setBotDelay] = useState<number>(960);
+  const [, setBotDelay] = useState<number>(10);
   const [botCount, setBotCount] = useState<number>(1);
   const [botsInfo, setBotsInfo] = useState<
     Array<{
@@ -85,14 +84,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
   // Compact Chat System
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; isSystem?: boolean }>>([
-    { sender: "Sistema", text: "¡Bienvenido a Meta Mine!", isSystem: true },
-  ]);
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; isSystem?: boolean }>>([]);
   const [chatInput, setChatInput] = useState<string>("");
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
   const chatInputRef = useRef<HTMLInputElement>(null);
   const chatInactivityTimeoutRef = useRef<number | null>(null);
+  const handleSendChatMessageRef = useRef<() => void>(() => {});
 
   // Anti-Spam & Chat Cooldown (Max 200 chars, mute 60s if same msg sent > 3 times)
   const [chatMuteRemaining, setChatMuteRemaining] = useState<number>(0);
@@ -144,27 +142,39 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   // 20-Second Turn Countdown (GunBound Authentic)
   const [turnCountdown, setTurnCountdown] = useState<number>(20);
 
-  // Battle Item Slots (Dual, Dual, TP) - Only 1 active at a time
+  // Battle Item Inventory & Slots (Dual, Dual, TP) - Permanently consumed on use leaving a hollow socket
+  const [playerItems, setPlayerItems] = useState<("dual" | "teleport" | null)[]>(
+    arena?.playerItems || ["dual", "dual", "teleport"]
+  );
   const [activeItemSlot, setActiveItemSlot] = useState<number | null>(null);
+  const [hasUsedItemThisTurn, setHasUsedItemThisTurn] = useState<boolean>(false);
+
+  const isPlayerTurnActive = activeTurn === "player" && !arena?.isSimulating && !arena?.isBattleIntroActive && !arena?.isTurnAdvancing;
 
   const handleToggleItemSlot = (slotIndex: number, itemType: "dual" | "teleport") => {
+    if (playerItems[slotIndex] === null) return; // Empty socket ("hueco") cannot be activated
+    if (hasUsedItemThisTurn || !isPlayerTurnActive || currentWeather.type === "no_items") return;
     if (activeItemSlot === slotIndex) {
       setActiveItemSlot(null);
       if (arena) arena.activateItem(null);
       AudioManager.play("click", 0.7);
     } else {
       setActiveItemSlot(slotIndex);
-      if (arena) arena.activateItem(itemType);
-      AudioManager.play("dual_snd", 0.85);
+      if (arena) arena.activateItem(itemType, slotIndex);
     }
   };
 
-  // Turn Countdown Timer Interval: ticks every single second from the beginning
+  // Turn Countdown Timer Interval: ticks every single second when not frozen or simulating, and only AFTER intro completes
   useEffect(() => {
     const timer = setInterval(() => {
       setTurnCountdown((prev) => {
-        if (!arena || arena.isSimulating) return prev;
-        if (prev <= 1) return 0;
+        if (activeTurn !== "player" || battleIntroPhase || arena?.isBattleIntroActive || !arena || arena.isSimulating || arena.isTurnTimerFrozen || isTimerFrozen) return prev;
+        if (prev <= 1) {
+          if (prev === 1) {
+            arena.handleTurnTimeout();
+          }
+          return 0;
+        }
         const next = prev - 1;
         // Sonido del temporizador suena en cada segundo desde el principio (respetando silenciar música/audio)
         if (next > 0 && !AudioManager.isMusicMuted && !AudioManager.isMuted) {
@@ -174,17 +184,49 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [arena]);
+  }, [arena, isTimerFrozen, battleIntroPhase, activeTurn]);
 
-  // Keyboard listeners: Enter opens chat; Shift cycles shot types (S1 -> S2 -> SS -> S1)
+  // Keyboard listeners: ESC opens/closes settings modal & chat; Enter handles chat; Shift cycles shot types
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+
+      // Priority Escape handling: ALWAYS closes settings modal if open, closes chat if open, or opens settings modal
+      if (e.key === "Escape" || e.code === "Escape") {
+        e.preventDefault();
+        if (target) {
+          try {
+            target.blur();
+          } catch {}
+        }
+        if (isSettingsOpen) {
+          setIsSettingsOpen(false);
+          AudioManager.play("click", 0.7);
+        } else if (isChatOpen) {
+          setIsChatOpen(false);
+        } else {
+          setIsSettingsOpen(true);
+          AudioManager.play("click", 0.7);
+        }
         return;
       }
+
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) {
+        return;
+      }
+
+      // Authentic GunBound Pass Turn hotkey: F9 exclusively
+      if (e.key === "F9" || e.code === "F9") {
+        e.preventDefault();
+        if (arena && isPlayerTurnActive) {
+          arena.passTurn();
+        }
+        return;
+      }
+
       if (e.key === "Shift" || e.code === "ShiftLeft" || e.code === "ShiftRight") {
         e.preventDefault();
+        if (!isPlayerTurnActive) return;
         setShotType((prev) => {
           const next = (prev + 1) % 3;
           if (arena) arena.setShotType(next);
@@ -195,15 +237,23 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       }
       if (e.code === "Enter") {
         e.preventDefault();
-        setIsChatOpen(true);
-        setTimeout(() => {
-          chatInputRef.current?.focus();
-        }, 50);
+        if (!isChatOpen) {
+          setIsChatOpen(true);
+          setTimeout(() => {
+            chatInputRef.current?.focus();
+          }, 50);
+        } else {
+          if (!chatInput.trim()) {
+            setIsChatOpen(false);
+          } else {
+            handleSendChatMessageRef.current();
+          }
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [arena]);
+  }, [arena, isChatOpen, chatInput, isSettingsOpen, isPlayerTurnActive]);
 
   const resetChatInactivityTimer = useCallback(() => {
     if (chatInactivityTimeoutRef.current) {
@@ -257,7 +307,6 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     setWindPower(arena.windPower);
     setWindAngle(arena.windAngle);
     setIsWindEnabled(arena.isWindEnabled);
-    setIsBotImmortal(arena.bot.isImmortal);
     setTurnNumber(arena.turnNumber);
     setMaxTurns(arena.maxTurns);
     setActiveTurn(arena.activeTurn);
@@ -285,12 +334,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       setTurnNumber(info.turnNumber);
       setMaxTurns(info.maxTurns);
       setActiveTurn(info.activeTurn);
+      if (info.activeTurn !== "player") {
+        setActiveItemSlot(null);
+      }
       setPlayerDelay(info.playerDelay);
       setBotDelay(info.botDelay);
       if (info.bots) {
         setBotsInfo(info.bots);
       }
-      setTurnCountdown(20);
     };
 
     arena.onWindUpdate = (pw, ang) => {
@@ -327,6 +378,18 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       }
     };
 
+    arena.onItemUsedThisTurnChange = (used) => {
+      setHasUsedItemThisTurn(used);
+      if (used) {
+        setActiveItemSlot(null);
+      }
+    };
+
+    setPlayerItems([...arena.playerItems]);
+    arena.onPlayerItemsChange = (items) => {
+      setPlayerItems([...items]);
+    };
+
     if (arena.weatherManager) {
       setCurrentWeather(arena.weatherManager.activeWeather);
       setWeatherTapeSlice(arena.weatherManager.getTapeSlice());
@@ -356,6 +419,24 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     arena.onTurnReady = () => {
       if (powerBarFillRef.current) powerBarFillRef.current.style.width = "0%";
       setTurnCountdown(20);
+      setIsTimerFrozen(false);
+      setHasUsedItemThisTurn(false);
+      setActiveItemSlot(null);
+    };
+
+    arena.onTurnTimerFreeze = () => {
+      setIsTimerFrozen(true);
+    };
+
+    arena.onTurnTimerReset = (secs = 20) => {
+      setTurnCountdown(secs);
+      setIsTimerFrozen(false);
+    };
+
+    arena.onMatchReset = () => {
+      setChatMessages([]);
+      setUnreadChatCount(0);
+      setHasNewChatAlert(false);
     };
 
     // Battle Intro Sequence listener & initial sync
@@ -389,6 +470,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   }, [arena]);
 
   const handleSelectShotType = (type: number) => {
+    if (!isPlayerTurnActive) return;
     setShotType(type);
     if (arena) {
       arena.setShotType(type);
@@ -396,38 +478,26 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     }
   };
 
-  const handleMobileSelect = (id: number) => {
-    if (!arena) return;
-    if (selectorTarget === "player") {
-      setPlayerMobileId(id);
+  const handleSelectPlayerMobile = (id: number) => {
+    setPlayerMobileId(id);
+    if (arena) {
       arena.setPlayerMobile(id);
-    } else {
-      setBotMobileId(id);
-      arena.setBotMobile(id);
-    }
-    setIsSelectorOpen(false);
-  };
-
-  const handleRandomizeWind = () => {
-    if (arena) {
-      arena.randomizeWind();
       AudioManager.play("click", 0.7);
     }
   };
 
-  const handleToggleWind = () => {
+  const handleSelectPlayerGender = (gender: "male" | "female") => {
+    setPlayerGender(gender);
     if (arena) {
-      const enabled = arena.toggleWind();
-      setIsWindEnabled(enabled);
-      setWindPower(arena.windPower);
-      setWindAngle(arena.windAngle);
+      arena.setPlayerGender(gender);
       AudioManager.play("click", 0.7);
     }
   };
 
-  const handleToggleMusic = () => {
-    const active = AudioManager.toggleMusic();
-    setIsMusicActive(active);
+  const handleSetBotCount = (targetCount: number) => {
+    if (!arena) return;
+    arena.setBotCount(targetCount);
+    setBotCount(arena.bots.length);
     AudioManager.play("click", 0.7);
   };
 
@@ -475,6 +545,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 40);
   };
+  handleSendChatMessageRef.current = handleSendChatMessage;
 
   // Turn List dynamically formats the combatants list, prioritizing active turn entity at index 0 (top row)
   const rankIcons = ["🔨", "⚔️", "👑", "⭐"];
@@ -510,25 +581,28 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     })),
   ];
 
-  const minDelay = Math.min(...allCombatants.map((c) => c.delay));
+  const activeCombatant = allCombatants.find((c) => c.isActive) || allCombatants[0];
   const sortedCombatants = [...allCombatants].sort((a, b) => {
     if (a.isActive && !b.isActive) return -1;
     if (!a.isActive && b.isActive) return 1;
     return a.delay - b.delay;
   });
 
-  const turnList = sortedCombatants.map((c, idx) => ({
-    id: c.id,
-    turnIndex: idx,
-    rankIcon: c.rankIcon,
-    name: c.name,
-    isActive: c.isActive,
-    orderBoxBg: c.isActive ? "#f59e0b" : "#38bdf8",
-    orderBoxBorder: c.isActive ? "#b45309" : "#0284c7",
-    nameColor: c.nameColor,
-    delayStr: c.isActive ? "0" : `+${Math.max(0, c.delay - minDelay)}`,
-    delayColor: c.isActive ? "#ffffff" : "#94a3b8",
-  }));
+  const turnList = sortedCombatants.map((c, idx) => {
+    const delta = c.delay - activeCombatant.delay;
+    return {
+      id: c.id,
+      turnIndex: idx,
+      rankIcon: c.rankIcon,
+      name: c.name,
+      isActive: c.isActive,
+      orderBoxBg: c.isActive ? "#f59e0b" : "#38bdf8",
+      orderBoxBorder: c.isActive ? "#b45309" : "#0284c7",
+      nameColor: c.nameColor,
+      delayStr: c.isActive ? "0" : delta >= 0 ? `+${delta}` : `${delta}`,
+      delayColor: c.isActive ? "#ffffff" : "#94a3b8",
+    };
+  });
 
   return (
     <div style={{
@@ -558,49 +632,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         gap: "10px",
         width: "100%",
       }}>
-        {/* Left: Stacked Segmented Zoom Pill (top) & Map Info (bottom) */}
+        {/* Left: Map Info */}
         <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
-          {/* Compact Segmented Zoom Pill */}
-          <div className="pixel-box" style={{
-            borderRadius: "4px",
-            padding: "3px 6px",
-            height: "36px",
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            gap: "3px",
-            pointerEvents: "auto",
-          }}>
-            <span style={{ fontSize: "12px", color: "var(--color-slate-500)", margin: "0 2px" }}>🔍</span>
-            {[
-              { label: "1.2x", val: 1.2, title: "Zoom normal (1.2x)" },
-              { label: "0.85x", val: 0.85, title: "Vista amplia (0.85x)" },
-              { label: "0.55x", val: 0.55, title: "Vista panorámica (0.55x)" },
-            ].map((item) => (
-              <button
-                key={item.label}
-                className={`pixel-btn ${currentZoom === item.val ? "pixel-btn-primary" : "pixel-btn-slate"}`}
-                onClick={() => {
-                  if (arena) arena.engine.setPresetZoom(item.val);
-                  setCurrentZoom(item.val);
-                  AudioManager.play("click", 0.6);
-                }}
-                style={{
-                  borderRadius: "3px",
-                  padding: "2px 6px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  height: "26px",
-                  textShadow: "var(--text-shadow-pixel)",
-                }}
-                title={item.title}
-              >
-                {renderPixelText(item.label)}
-              </button>
-            ))}
-          </div>
-
           {/* Map Pill */}
           <div className="pixel-box" style={{
             borderRadius: "4px",
@@ -677,310 +710,74 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
             <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
               <span className="num-font" style={{ color: isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)", fontSize: "15px", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
-                {isWindEnabled ? windPower : 0}
+                {isWindEnabled ? Math.round(windPower) : 0}
               </span>
               <span className={isWindEnabled ? "num-font" : undefined} style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
-                {isWindEnabled ? `${windAngle}°` : "OFF"}
+                {isWindEnabled ? `${Math.round(windAngle)}°` : "OFF"}
               </span>
             </div>
-
-            {/* Toggle Wind Button */}
-            <button
-              className={`pixel-btn ${isWindEnabled ? "pixel-btn-primary" : "pixel-btn-slate"}`}
-              onClick={handleToggleWind}
-              style={{
-                borderRadius: "3px",
-                width: "26px",
-                height: "26px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "13px",
-                cursor: "pointer",
-              }}
-              title={isWindEnabled ? "Desactivar viento (0 por defecto)" : "Activar viento"}
-            >
-              🌬️
-            </button>
-
-            {isWindEnabled && (
-              <button
-                className="pixel-btn pixel-btn-slate"
-                onClick={handleRandomizeWind}
-                style={{
-                  color: "var(--color-primary)",
-                  borderRadius: "3px",
-                  width: "26px",
-                  height: "26px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-                title="Aleatorizar dirección y fuerza de viento"
-              >
-                🎲
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Right: Player Mobile Selector + Bot Immortal Toggle + Turn Countdown Timer */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", pointerEvents: "auto" }}>
-          {/* Mobile Selector Capsule with integrated Music Toggle */}
-          <div
-            className="pixel-box"
-            style={{
-              borderRadius: "4px",
-              padding: "3px 8px",
-              height: "36px",
-              boxSizing: "border-box",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              pointerEvents: "auto",
-            }}
-          >
-            <button
-              className="pixel-btn"
-              onClick={() => {
-                setSelectorTarget("player");
-                setIsSelectorOpen(true);
-                AudioManager.play("click", 0.7);
-              }}
+        {/* Right: Turn Countdown Timer */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", pointerEvents: "auto", minHeight: "36px" }}>
+          {/* Turn Countdown Timer Widget (20s) in Top-Right Corner - Only visible when it's the main player's turn */}
+          {activeTurn === "player" && !battleIntroPhase && !arena?.isBattleIntroActive && (
+            <div
+              className="pixel-box"
               style={{
-                background: "transparent",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: "7px",
-                color: "#ffffff",
-                fontSize: "12px",
-                fontWeight: 700,
-                cursor: "pointer",
-                padding: 0,
-                textShadow: "1px 1px 0 #000",
-              }}
-              title="Elegir móvil del jugador (25 móviles disponibles)"
-            >
-              {/* User Rank Box */}
-              <div style={{
-                width: "20px",
-                height: "20px",
-                background: "var(--bg-well-dark)",
-                border: "1.5px solid var(--color-warning)",
-                borderRadius: "3px",
+                borderRadius: "4px",
+                width: "72px",
+                height: "36px",
+                boxSizing: "border-box",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "11px",
-                boxShadow: "inset 1px 1px 0 rgba(255,255,255,0.25)",
-              }}>
-                🐣
-              </div>
-              <span style={{ color: "var(--color-primary)" }}>{currentMob.name}</span>
-              <span style={{ fontSize: "10px", color: "var(--color-slate-400)" }}>▾</span>
-            </button>
-
-            {/* Subtle Vertical Divider */}
-            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
-
-            {/* Integrated Music Toggle Button */}
-            <button
-              className={`pixel-btn ${isMusicActive ? "pixel-btn-success" : "pixel-btn-danger"}`}
-              onClick={handleToggleMusic}
-              style={{
-                borderRadius: "3px",
-                width: "24px",
-                height: "24px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "12px",
-                cursor: "pointer",
+                gap: "2px",
+                pointerEvents: "auto",
+                background: turnCountdown <= 5
+                  ? "var(--bg-panel-critical)"
+                  : "var(--bg-panel-slate)",
+                border: turnCountdown <= 5 ? "var(--border-pixel-danger)" : "var(--border-pixel-black)",
+                boxShadow: turnCountdown <= 5
+                  ? "var(--shadow-glow-red)"
+                  : "var(--shadow-bevel-btn)",
               }}
-              title={isMusicActive ? "Silenciar música" : "Activar música"}
+              title="Tiempo restante de turno (20 segundos)"
             >
-              {isMusicActive ? "🔊" : "🔇"}
-            </button>
-
-            {/* Subtle Vertical Divider */}
-            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
-
-            {/* Random Bot Respawn Button */}
-            <button
-              className="pixel-btn pixel-btn-primary"
-              onClick={() => {
-                if (arena) {
-                  arena.resetBot(true);
-                  setBotHp(arena.bot.mobile.maxHp);
-                  setBotMaxHp(arena.bot.mobile.maxHp);
-                  AudioManager.play("click", 0.7);
-                }
-              }}
-              style={{
-                borderRadius: "3px",
-                width: "24px",
-                height: "24px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "12px",
-                cursor: "pointer",
-                border: "none",
-              }}
-              title="Reaparecer Bot en terreno aleatorio (Respawn)"
-            >
-              🎲
-            </button>
-
-            {/* Subtle Vertical Divider */}
-            <div style={{ width: "1px", height: "18px", background: "var(--color-slate-700)" }} />
-
-            {/* Icon-Only Bot Spawner Button (Add up to max 3 bots in combat) */}
-            <button
-              className={`pixel-btn ${botCount < 3 ? "pixel-btn-primary" : "pixel-btn-slate"}`}
-              onClick={() => {
-                if (arena) {
-                  if (arena.bots.length < 3) {
-                    arena.addBot();
-                    AudioManager.play("click", 0.8);
-                  } else {
-                    arena.resetToSingleBot();
-                    AudioManager.play("click", 0.7);
-                  }
-                  setBotCount(arena.bots.length);
-                }
-              }}
-              style={{
-                borderRadius: "3px",
-                width: "24px",
-                height: "24px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "12px",
-                cursor: "pointer",
-                border: "none",
-              }}
-              title={
-                botCount < 3
-                  ? `Agregar bot en combate (${botCount}/3)`
-                  : "Máximo 3 bots alcanzados (Click para reiniciar a 1 bot)"
-              }
-            >
-              🤖
-            </button>
-          </div>
-
-          {/* Bot Immortal / Mortal Toggle Button */}
-          <button
-            className={`pixel-btn ${isBotImmortal ? "pixel-btn-success" : "pixel-btn-danger"}`}
-            onClick={() => {
-              if (arena) {
-                const next = arena.toggleBotImmortality();
-                setIsBotImmortal(next);
-                AudioManager.play("click", 0.7);
-              }
-            }}
-            style={{
-              borderRadius: "4px",
-              width: "36px",
-              height: "36px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "16px",
-              cursor: "pointer",
-              boxSizing: "border-box",
-              boxShadow: isBotImmortal ? "var(--shadow-glow-green)" : "var(--shadow-glow-red)",
-            }}
-            title={isBotImmortal ? "Bot Inmortal (click para hacerlo mortal)" : "Bot Mortal (click para hacerlo inmortal)"}
-          >
-            {isBotImmortal ? "🛡️" : "⚔️"}
-          </button>
-
-          {/* Turn Countdown Timer Widget (20s) in Top-Right Corner */}
-          <div
-            className="pixel-box"
-            style={{
-              borderRadius: "4px",
-              width: "72px",
-              height: "36px",
-              boxSizing: "border-box",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: "2px",
-              pointerEvents: "auto",
-              background: turnCountdown <= 5
-                ? "var(--bg-panel-critical)"
-                : "var(--bg-panel-slate)",
-              border: turnCountdown <= 5 ? "var(--border-pixel-danger)" : "var(--border-pixel-black)",
-              boxShadow: turnCountdown <= 5
-                ? "var(--shadow-glow-red)"
-                : "var(--shadow-bevel-btn)",
-            }}
-            title="Tiempo restante de turno (20 segundos)"
-          >
-            <span
-              className="num-font"
-              style={{
-                fontSize: "19px",
-                fontWeight: 700,
-                lineHeight: "1",
-                color: turnCountdown <= 5 ? "var(--color-danger)" : turnCountdown <= 10 ? "var(--color-warning-light)" : "var(--color-success)",
-                textShadow: "var(--text-shadow-pixel-bold)",
-                textAlign: "right",
-                display: "inline-block",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {turnCountdown}
-            </span>
-            <span
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                fontFamily: "var(--font-game)",
-                lineHeight: "1",
-                color: turnCountdown <= 5 ? "var(--color-danger-light)" : turnCountdown <= 10 ? "var(--color-warning-soft)" : "var(--color-success-light)",
-                textShadow: "var(--text-shadow-pixel)",
-                marginTop: "2px",
-              }}
-            >
-              s
-            </span>
-          </div>
+              <span
+                className="num-font"
+                style={{
+                  fontSize: "19px",
+                  fontWeight: 700,
+                  lineHeight: "1",
+                  color: turnCountdown <= 5 ? "var(--color-danger)" : turnCountdown <= 10 ? "var(--color-warning-light)" : "var(--color-success)",
+                  textShadow: "var(--text-shadow-pixel-bold)",
+                  textAlign: "right",
+                  display: "inline-block",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {turnCountdown}
+              </span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  fontFamily: "var(--font-game)",
+                  lineHeight: "1",
+                  color: turnCountdown <= 5 ? "var(--color-danger-light)" : turnCountdown <= 10 ? "var(--color-warning-soft)" : "var(--color-success-light)",
+                  textShadow: "var(--text-shadow-pixel)",
+                  marginTop: "2px",
+                }}
+              >
+                s
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ============================================================ */}
-      {/* CENTER MODAL (MOBILE SELECTOR) */}
-      {/* ============================================================ */}
-      {isSelectorOpen && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          background: "rgba(0,0,0,0.7)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 100,
-          pointerEvents: "auto",
-        }}>
-          <MobileSelector
-            selectedMobileId={selectorTarget === "player" ? playerMobileId : botMobileId}
-            onSelectMobile={handleMobileSelect}
-            title={selectorTarget === "player" ? "ELEGIR MÓVIL DEL JUGADOR" : "ELEGIR MÓVIL DEL BOT"}
-            onClose={() => setIsSelectorOpen(false)}
-          />
-        </div>
-      )}
 
       {/* ============================================================ */}
       {/* BOTTOM-LEFT: LISTA DE TURNOS */}
@@ -1138,6 +935,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
             <button
               className="pixel-btn"
+              disabled={!isPlayerTurnActive}
               onClick={() => handleSelectShotType(0)}
               style={{
                 background: shotType === 0
@@ -1149,7 +947,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 color: shotType === 0 ? "var(--color-white)" : "var(--color-slate-400)",
                 fontWeight: 700,
                 fontSize: "13px",
-                cursor: "pointer",
+                cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
+                opacity: isPlayerTurnActive ? 1 : 0.45,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1160,13 +959,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   : "var(--shadow-bevel-btn)",
                 textShadow: "var(--text-shadow-pixel)",
               }}
-              title="Shot 1 [Tecla 1]"
+              title={isPlayerTurnActive ? "Shot 1 [Tecla 1]" : "Esperando tu turno..."}
             >
               <span>S<span className="num-font">1</span></span>
             </button>
 
             <button
               className="pixel-btn"
+              disabled={!isPlayerTurnActive}
               onClick={() => handleSelectShotType(1)}
               style={{
                 background: shotType === 1
@@ -1178,7 +978,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 color: shotType === 1 ? "var(--color-white)" : "var(--color-slate-400)",
                 fontWeight: 700,
                 fontSize: "13px",
-                cursor: "pointer",
+                cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
+                opacity: isPlayerTurnActive ? 1 : 0.45,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1189,13 +990,14 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   : "var(--shadow-bevel-btn)",
                 textShadow: "var(--text-shadow-pixel)",
               }}
-              title="Shot 2 [Tecla 2]"
+              title={isPlayerTurnActive ? "Shot 2 [Tecla 2]" : "Esperando tu turno..."}
             >
               <span>S<span className="num-font">2</span></span>
             </button>
 
             <button
               className="pixel-btn"
+              disabled={!isPlayerTurnActive}
               onClick={() => handleSelectShotType(2)}
               style={{
                 background: shotType === 2
@@ -1207,7 +1009,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 color: shotType === 2 ? "var(--color-warning-soft)" : "var(--color-slate-400)",
                 fontWeight: 700,
                 fontSize: "13px",
-                cursor: "pointer",
+                cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
+                opacity: isPlayerTurnActive ? 1 : 0.45,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1218,7 +1021,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   : "var(--shadow-bevel-btn)",
                 textShadow: "var(--text-shadow-pixel)",
               }}
-              title="Super Shot [Tecla 3 / F]"
+              title={isPlayerTurnActive ? "Super Shot [Tecla 3 / F]" : "Esperando tu turno..."}
             >
               <span>SS</span>
             </button>
@@ -1233,19 +1036,59 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             gap: "6px",
             alignItems: "center",
           }}>
-            {[
-              { id: 0, label: "DUAL", type: "dual" as const, title: "Item 1: Disparo Dual (x2 proyectiles)" },
-              { id: 1, label: "DUAL", type: "dual" as const, title: "Item 2: Disparo Dual (x2 proyectiles)" },
-              { id: 2, label: "TP", type: "teleport" as const, title: "Item 3: Teleportación instantánea" },
-            ].map((slot) => {
-              const isLocked = currentWeather.type === "no_items";
-              const isSelected = activeItemSlot === slot.id && !isLocked;
+            {playerItems.map((itemType, slotIndex) => {
+              if (itemType === null) {
+                // GunBound Authentic Empty / Consumed Socket ("Hueco")
+                return (
+                  <div
+                    key={slotIndex}
+                    style={{
+                      width: "56px",
+                      minWidth: "56px",
+                      height: "34px",
+                      boxSizing: "border-box",
+                      background: "rgba(10, 15, 26, 0.75)",
+                      borderRadius: "4px",
+                      border: "2px solid #000000",
+                      boxShadow: "inset 2px 2px 3px rgba(0, 0, 0, 0.85), inset -1px -1px 0px rgba(255, 255, 255, 0.05)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                    title="Espacio de ítem usado (vacío por el resto del combate)"
+                  >
+                    <div
+                      style={{
+                        width: "12px",
+                        height: "2px",
+                        background: "rgba(255, 255, 255, 0.08)",
+                        borderRadius: "1px",
+                      }}
+                    />
+                  </div>
+                );
+              }
+
+              const label = itemType === "dual" ? "DUAL" : "TP";
+              const defaultTitle = itemType === "dual"
+                ? `Item ${slotIndex + 1}: Disparo Dual (x2 proyectiles)`
+                : `Item ${slotIndex + 1}: Teleportación instantánea`;
+              const isLocked = currentWeather.type === "no_items" || hasUsedItemThisTurn || !isPlayerTurnActive;
+              const isSelected = activeItemSlot === slotIndex && !isLocked;
+              const lockTitle = currentWeather.type === "no_items"
+                ? "Ítems bloqueados por el clima (No Items)"
+                : hasUsedItemThisTurn
+                ? "Solo puedes usar 1 ítem por turno"
+                : !isPlayerTurnActive
+                ? "Esperando tu turno..."
+                : defaultTitle;
+
               return (
                 <button
-                  key={slot.id}
+                  key={slotIndex}
                   disabled={isLocked}
                   className="pixel-btn"
-                  onClick={() => !isLocked && handleToggleItemSlot(slot.id, slot.type)}
+                  onClick={() => !isLocked && handleToggleItemSlot(slotIndex, itemType)}
                   style={{
                     background: isLocked
                       ? "rgba(30, 41, 59, 0.6)"
@@ -1274,9 +1117,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                     textShadow: "var(--text-shadow-pixel)",
                     filter: isSelected ? "none" : undefined,
                   }}
-                  title={isLocked ? "Ítems bloqueados por el clima (No Items)" : slot.title}
+                  title={lockTitle}
                 >
-                  {isLocked ? "🔒" : slot.label}
+                  {isLocked && currentWeather.type === "no_items" ? "🔒" : label}
                 </button>
               );
             })}
@@ -1583,6 +1426,17 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   onKeyDown={(e) => {
                     e.stopPropagation();
                     resetChatInactivityTimer();
+                    if (e.key === "Enter") {
+                      if (!chatInput.trim()) {
+                        e.preventDefault();
+                        setIsChatOpen(false);
+                        chatInputRef.current?.blur();
+                      }
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setIsChatOpen(false);
+                      chatInputRef.current?.blur();
+                    }
                   }}
                   onKeyUp={(e) => e.stopPropagation()}
                   placeholder={
@@ -1751,6 +1605,402 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               textTransform: "uppercase",
             }}>
               {battleIntroPhase === "ready" ? "PREPÁRATE PARA EL COMBATE" : "¡FUEGO A DISCRECIÓN!"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* RETRO PIXEL-ART SETTINGS & OPTIONS MODAL (ESC) */}
+      {/* ============================================================ */}
+      {isSettingsOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.75)",
+            backdropFilter: "blur(2px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            pointerEvents: "auto",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsSettingsOpen(false);
+              AudioManager.play("click", 0.6);
+            }
+          }}
+        >
+          <div
+            className="pixel-box"
+            style={{
+              width: "360px",
+              maxWidth: "92vw",
+              padding: "14px 16px 18px 16px",
+              background: "var(--color-bg-panel, #090e17)",
+              border: "2px solid var(--color-slate-700)",
+              borderRadius: "6px",
+              boxShadow: "0 10px 30px rgba(0, 0, 0, 0.9), 0 0 20px rgba(56, 189, 248, 0.15)",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+              boxSizing: "border-box",
+            }}
+          >
+            {/* Header: Title + Close Button */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                borderBottom: "1px solid var(--color-slate-800)",
+                paddingBottom: "8px",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  color: "var(--color-primary, #facc15)",
+                  fontFamily: "var(--font-game)",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  letterSpacing: "1px",
+                  textShadow: "var(--text-shadow-pixel)",
+                }}
+              >
+                <span>⚙️</span>
+                <span>{renderPixelText("OPCIONES")}</span>
+              </div>
+              <button
+                className="pixel-btn pixel-btn-danger"
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  AudioManager.play("click", 0.7);
+                }}
+                style={{
+                  width: "22px",
+                  height: "22px",
+                  borderRadius: "3px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  padding: 0,
+                  border: "none",
+                }}
+                title="Cerrar (Esc)"
+              >
+                ✖
+              </button>
+            </div>
+
+            {/* Categoría 1: Audio */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#38bdf8",
+                  fontFamily: "var(--font-game)",
+                  letterSpacing: "1px",
+                  borderBottom: "1px dashed rgba(56, 189, 248, 0.25)",
+                  paddingBottom: "3px",
+                }}
+              >
+                🎵 {renderPixelText("AUDIO")}
+              </div>
+
+              {/* Music Volume Row */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "11px",
+                    fontFamily: "var(--font-game)",
+                    color: "var(--color-slate-300)",
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                    <span>{musicVol === 0 ? "🔇" : "🎵"}</span>
+                    <span>{renderPixelText("MÚSICA")}</span>
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-num)",
+                      fontSize: "11px",
+                      color: "var(--color-primary, #facc15)",
+                    }}
+                  >
+                    {musicVol}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={musicVol}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setMusicVol(val);
+                    AudioManager.setMusicVolume(val / 100);
+                  }}
+                  style={{
+                    width: "100%",
+                    cursor: "pointer",
+                    accentColor: "var(--color-primary, #facc15)",
+                    height: "6px",
+                  }}
+                />
+              </div>
+
+              {/* SFX Volume Row */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "11px",
+                    fontFamily: "var(--font-game)",
+                    color: "var(--color-slate-300)",
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                    <span>{sfxVol === 0 ? "🔇" : "🔊"}</span>
+                    <span>{renderPixelText("EFECTOS (SFX)")}</span>
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-num)",
+                      fontSize: "11px",
+                      color: "var(--color-primary, #facc15)",
+                    }}
+                  >
+                    {sfxVol}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={sfxVol}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setSfxVol(val);
+                    AudioManager.setSfxVolume(val / 100);
+                  }}
+                  onMouseUp={() => {
+                    AudioManager.play("click", 0.7);
+                  }}
+                  style={{
+                    width: "100%",
+                    cursor: "pointer",
+                    accentColor: "var(--color-primary, #facc15)",
+                    height: "6px",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Categoría 2: Móvil / Vehículo */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#facc15",
+                  fontFamily: "var(--font-game)",
+                  letterSpacing: "1px",
+                  borderBottom: "1px dashed rgba(250, 204, 21, 0.25)",
+                  paddingBottom: "3px",
+                }}
+              >
+                🚜 {renderPixelText("MÓVIL DEL JUGADOR")}
+              </div>
+
+              <select
+                value={playerMobileId}
+                onChange={(e) => {
+                  const id = parseInt(e.target.value, 10);
+                  handleSelectPlayerMobile(id);
+                }}
+                className="pixel-box"
+                style={{
+                  width: "100%",
+                  height: "32px",
+                  background: "var(--bg-well-dark, #0b101b)",
+                  color: "var(--color-primary, #facc15)",
+                  fontFamily: "var(--font-game)",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  padding: "4px 8px",
+                  border: "var(--border-pixel-black)",
+                  borderRadius: "3px",
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+              >
+                {Object.values(MOBILES_DATA).map((mob) => (
+                  <option
+                    key={mob.id}
+                    value={mob.id}
+                    style={{
+                      background: "#0f172a",
+                      color: "#ffffff",
+                      fontFamily: "var(--font-game)",
+                    }}
+                  >
+                    #{mob.id.toString().padStart(2, "0")} - {mob.name} ({mob.minAngle}° ~ {mob.maxAngle}°)
+                  </option>
+                ))}
+              </select>
+
+              <div
+                style={{
+                  fontSize: "10px",
+                  color: "var(--color-slate-400)",
+                  fontFamily: "var(--font-game)",
+                  lineHeight: "1.4",
+                  padding: "4px 6px",
+                  background: "rgba(0,0,0,0.3)",
+                  borderRadius: "3px",
+                }}
+              >
+                {currentMob.description}
+              </div>
+
+              {/* Selector de Piloto / Avatar */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "4px 0 2px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontFamily: "var(--font-game)",
+                    color: "var(--color-slate-300)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  👤 {renderPixelText("PILOTO")}
+                </span>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    className={`pixel-btn ${playerGender === "male" ? "pixel-btn-primary" : "pixel-btn-secondary"}`}
+                    onClick={() => handleSelectPlayerGender("male")}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    👨 Chico
+                  </button>
+                  <button
+                    className={`pixel-btn ${playerGender === "female" ? "pixel-btn-primary" : "pixel-btn-secondary"}`}
+                    onClick={() => handleSelectPlayerGender("female")}
+                    style={{
+                      padding: "2px 8px",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    👩 Chica
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Categoría 3: Combate y Bots */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#4ade80",
+                  fontFamily: "var(--font-game)",
+                  letterSpacing: "1px",
+                  borderBottom: "1px dashed rgba(74, 222, 128, 0.25)",
+                  paddingBottom: "3px",
+                }}
+              >
+                🤖 {renderPixelText("COMBATE & BOTS")}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontFamily: "var(--font-game)",
+                    color: "var(--color-slate-300)",
+                  }}
+                >
+                  {renderPixelText("CANTIDAD DE BOTS:")}
+                </span>
+
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {[1, 2, 3].map((count) => (
+                    <button
+                      key={count}
+                      className={`pixel-btn ${botCount === count ? "pixel-btn-primary" : "pixel-btn-slate"}`}
+                      onClick={() => handleSetBotCount(count)}
+                      style={{
+                        padding: "3px 8px",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        borderRadius: "3px",
+                        border: botCount === count ? "1px solid #38bdf8" : undefined,
+                      }}
+                    >
+                      {count} {count === 1 ? "BOT" : "BOTS"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                className="pixel-btn pixel-btn-warning"
+                onClick={() => {
+                  if (arena) {
+                    arena.resetMap();
+                    AudioManager.play("click", 0.7);
+                    setIsSettingsOpen(false);
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  height: "30px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  borderRadius: "3px",
+                  marginTop: "4px",
+                }}
+              >
+                <span>🔄</span>
+                <span>{renderPixelText("REINICIAR PARTIDA")}</span>
+              </button>
             </div>
           </div>
         </div>

@@ -87,9 +87,9 @@ export const WEATHER_DEFINITIONS: Record<number, WeatherDefinition> = {
   3: {
     id: 3,
     type: "sun",
-    name: "Force / Sun",
-    nameEs: "Rayo de Sol / Fuerza",
-    description: "Aumenta el daño (+35%) y el radio de explosión a proyectiles que crucen el rayo.",
+    name: "Energy",
+    nameEs: "Energía",
+    description: "Rayo de energía solar pura que aumenta el daño (+35%) y el radio de explosión a proyectiles que lo crucen.",
     iconActive: "/sprites/weather/weather_3_active.png",
     iconInactive: "/sprites/weather/weather_3_inactive.png",
     hasColumn: true,
@@ -170,7 +170,7 @@ export function getWeatherColumnWidth(type: WeatherType): number {
   }
 }
 
-// Balanced weighted distribution ensuring all 8 classic weathers (Thor, Wind, No Items, Sun, Lightning, Black, Random, Mirror, Tornado) appear regularly
+// Balanced weighted distribution ensuring all classic weathers (Thor, Wind, No Items, Sun, Lightning, Black, Mirror, Tornado) appear regularly
 const WEATHER_WEIGHTS: number[] = [
   0, 0, // Thor (2x)
   1, 1, // Wind (2x)
@@ -178,7 +178,6 @@ const WEATHER_WEIGHTS: number[] = [
   3, 3, // Sun / Force (2x)
   4, 4, // Lightning (2x)
   5, 5, // Black / Eclipse (2x)
-  6, 6, // Random (2x)
   7, 7, // Mirror (2x)
   8, 8, // Tornado (2x)
 ];

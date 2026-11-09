@@ -12,10 +12,16 @@ export interface FrameData {
   oy: number;
 }
 
+export interface HoldSpot {
+  x: number;
+  y: number;
+}
+
 export interface MobileAnimationTextures {
   animations: Record<string, Texture[]>;
   anchors: Record<string, { x: number; y: number }>;
   primaryAnchor: { x: number; y: number };
+  holdSpots: Record<string, HoldSpot[]>;
 }
 
 export const CANONICAL_MOBILE_KEYS: Record<number, string> = {
@@ -136,6 +142,7 @@ export class MobileSpriteManager {
 
     const animations: Record<string, Texture[]> = {};
     const anchors: Record<string, { x: number; y: number }> = {};
+    const holdSpots: Record<string, HoldSpot[]> = {};
     let primaryAnchor = { x: 0.5, y: 0.9 };
 
     const stateKeys = Object.keys(def).filter((k) => k !== "file");
@@ -154,6 +161,7 @@ export class MobileSpriteManager {
       if (frames.length === 0) continue;
 
       const textures: Texture[] = [];
+      const spots: HoldSpot[] = [];
       let avgAnchorX = 0.5;
       let avgAnchorY = 0.9;
 
@@ -173,6 +181,10 @@ export class MobileSpriteManager {
         });
 
         textures.push(frameTexture);
+        spots.push({
+          x: f.ox - f.cx,
+          y: f.oy - f.cy,
+        });
 
         if (i === 0) {
           avgAnchorX = anchorX;
@@ -182,6 +194,7 @@ export class MobileSpriteManager {
 
       animations[animName] = textures;
       anchors[animName] = { x: avgAnchorX, y: avgAnchorY };
+      holdSpots[animName] = spots;
 
       if (animName === "normal") {
         primaryAnchor = { x: avgAnchorX, y: avgAnchorY };
@@ -198,6 +211,7 @@ export class MobileSpriteManager {
         if (animData && animData.d && animations[animData.d]) {
           animations[animName] = animations[animData.d];
           anchors[animName] = anchors[animData.d];
+          holdSpots[animName] = holdSpots[animData.d];
           resolvedAny = true;
         }
       }
@@ -207,6 +221,7 @@ export class MobileSpriteManager {
       animations,
       anchors,
       primaryAnchor,
+      holdSpots,
     };
   }
 

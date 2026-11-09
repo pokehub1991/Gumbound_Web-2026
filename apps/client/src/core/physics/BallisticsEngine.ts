@@ -12,6 +12,7 @@ export interface TrajectoryPoint {
   tangentAngle: number;
   isSpecialPhase?: boolean;
   weatherEffect?: "sun" | "lightning" | "mirror" | "tornado" | "black";
+  isInsideTornado?: boolean;
 }
 
 export interface ShotTrajectory {
@@ -356,13 +357,14 @@ export class BallisticsEngine {
           // Clear tiny 5px radius right at the muzzle aperture, then collide with any solid terrain
           // Guarantees bullets never pass through thin overhangs, ledges or sharp terrain tips
           if (distFromMuzzle >= 5 && params.isPixelSolid(Math.round(cx), Math.round(cy))) {
+            const isInsideTornado = tornadoPhase === 1;
             const activeWeatherEffect = isSunBuffed
               ? "sun"
               : isLightningCharged
               ? "lightning"
               : hasMirrored
               ? "mirror"
-              : tornadoPhase > 0
+              : isInsideTornado
               ? "tornado"
               : isBlackDamped
               ? "black"
@@ -377,6 +379,7 @@ export class BallisticsEngine {
               tangentAngle: tang,
               isSpecialPhase,
               weatherEffect: activeWeatherEffect,
+              isInsideTornado,
             });
             hitTerrain = true;
             break;
@@ -388,13 +391,14 @@ export class BallisticsEngine {
         }
       }
 
+      const isInsideTornado = tornadoPhase === 1;
       const activeWeatherEffect = isSunBuffed
         ? "sun"
         : isLightningCharged
         ? "lightning"
         : hasMirrored
         ? "mirror"
-        : tornadoPhase > 0
+        : isInsideTornado
         ? "tornado"
         : isBlackDamped
         ? "black"
@@ -407,6 +411,7 @@ export class BallisticsEngine {
         tangentAngle: tang,
         isSpecialPhase,
         weatherEffect: activeWeatherEffect,
+        isInsideTornado,
       });
 
       // 1. Mobile Enemy Collision check (skip initial launch to clear muzzle)

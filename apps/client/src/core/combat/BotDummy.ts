@@ -25,7 +25,8 @@ export class BotDummy extends Container {
   public difficulty: number = 0.78; // Calibrated human baseline (~68-75% accuracy, fails realistically)
 
   public isDead: boolean = false;
-  public isImmortal: boolean = true;
+  public isImmortal: boolean = false;
+  public items: ("dual" | "teleport" | null)[] = ["dual", "dual", "teleport"];
   private isBotBunged: boolean = false;
   private ghostEntity?: DeathGhostEntity;
   private damageNumbersContainer: Container;
@@ -51,10 +52,12 @@ export class BotDummy extends Container {
     this.damageNumbersContainer = new Container();
 
     const groundY = this.terrain.findSurfaceY(spawnX, spawnY);
+    const botGender: "male" | "female" = botIndex % 2 === 0 ? "female" : "male";
     this.mobile = new MobileEntity({
       id: `bot_${botIndex}`,
       nickname: nickname,
       team: "B",
+      gender: botGender,
       mobileType: mobileType,
       maxHp: 1000,
       hp: 1000,
@@ -500,5 +503,18 @@ export class BotDummy extends Container {
         dmgText.destroy();
       }
     }, 16);
+  }
+
+  public resetItems() {
+    this.items = ["dual", "dual", "teleport"];
+  }
+
+  public consumeItem(itemType: "dual" | "teleport"): boolean {
+    const idx = this.items.indexOf(itemType);
+    if (idx !== -1) {
+      this.items[idx] = null;
+      return true;
+    }
+    return false;
   }
 }

@@ -16,6 +16,7 @@ import { DynamicExplosionEngine } from "../effects/DynamicExplosionEngine.js";
 import { AutumnLeavesEngine } from "../effects/AutumnLeavesEngine.js";
 import { ThorEntity } from "../effects/ThorEntity.js";
 import { DeathGhostEntity } from "../effects/DeathGhostEntity.js";
+import { FloatingParticlePowerupEntity } from "../effects/FloatingParticlePowerupEntity.js";
 import { WeatherManager, WeatherDefinition, WeatherType, WeatherSlotItem, ActiveWeatherColumn, WeatherRoundInfo } from "../weather/WeatherManager.js";
 import { WeatherColumnEntity } from "../weather/WeatherColumnEntity.js";
 import { WeatherSkyMarker } from "../weather/WeatherSkyMarker.js";
@@ -50,7 +51,7 @@ export class CombatArena {
 
   public selectedShotType: number = 0; // 0 = Shot 1, 1 = Shot 2, 2 = SS
   public isSimulating: boolean = false;
-  private isTurnAdvancing: boolean = false;
+  public isTurnAdvancing: boolean = false;
 
   private activeProjectiles: ProjectileEntity[] = [];
   private orbitalEffectsContainer: Container;
@@ -90,20 +91,37 @@ export class CombatArena {
     }>;
   }) => void;
   public onActiveItemChange?: (item: "dual" | "teleport" | null) => void;
+  public onItemUsedThisTurnChange?: (used: boolean) => void;
+  public onPlayerItemsChange?: (items: ("dual" | "teleport" | null)[]) => void;
+  public onMatchReset?: () => void;
   public onChatMessage?: (msg: { sender: string; text: string; isSystem?: boolean }) => void;
   public onBattleIntro?: (phase: "ready" | "fight" | null) => void;
+  public onTurnTimerFreeze?: () => void;
+  public onTurnTimerReset?: (seconds?: number) => void;
   public battleIntroPhase: "ready" | "fight" | null = null;
   public hasStartedIntro: boolean = false;
+  public isBattleIntroActive: boolean = false;
+  private introTimeouts: ReturnType<typeof setTimeout>[] = [];
 
   // Active Battle Item (Dual, Teleport)
+  public playerItems: ("dual" | "teleport" | null)[] = ["dual", "dual", "teleport"];
   public activeItem: "dual" | "teleport" | null = null;
+  public activeItemSlotIndex: number | null = null;
+  public hasUsedItemThisTurn: boolean = false;
+  private botActionTimer: ReturnType<typeof setTimeout> | null = null;
+  public activePowerups: FloatingParticlePowerupEntity[] = [];
 
   // Turn tracking (Authentic GunBound match turns & delay accumulation)
   public turnNumber: number = 1;
   public maxTurns: number = 40;
   public activeTurn: "player" | "bot" = "player";
   public playerDelay: number = 0;
-  public botDelay: number = 960;
+  public botDelay: number = 10;
+  public isTurnTimerFrozen: boolean = false;
+  public turnStartTime: number = Date.now();
+  public turnMovementDistance: number = 0;
+  private lastPlayerMoveX: number = 0;
+  private hasStartedBattleMusic: boolean = false;
 
   // Fall physics & Death Ghost
   private playerFallVy: number = 0;
@@ -163,6 +181,7 @@ export class CombatArena {
       id: "player_local",
       nickname: "Player [Tú]",
       team: "A",
+      gender: "male",
       mobileType: 0, // Armor by default
       maxHp: 1000,
       hp: 1000,
@@ -261,16 +280,20 @@ export class CombatArena {
       this.selectedShotType = type;
     };
 
+    this.lastPlayerMoveX = this.player.x;
+    this.aimController.onMobileMove = (x: number) => {
+      const dx = Math.abs(x - this.lastPlayerMoveX);
+      this.turnMovementDistance += dx;
+      this.lastPlayerMoveX = x;
+    };
+
     // 7. Initial Wind (Active by default in combat)
     this.isWindEnabled = true;
     this.randomizeWind();
 
     // 8. Center Camera across the battlefield with authentic framing and start smooth cinematic intro zoom from frame 1
     this.engine.panTo(704.5, 420, true);
-    this.engine.playIntroZoom(0.52, 1.20);
-
-    // 9. Play Battle Music
-    AudioManager.playMusic("dbBattleMiramoTown.mp3");
+    this.engine.playIntroZoom(0.50, 1.20, 4200);
 
     // Start epic battle intro sequence with title banner ("¿ESTÁS LISTO?" -> "¡A COMBATIR!")
     this.startBattleIntroSequence();
@@ -280,9 +303,17 @@ export class CombatArena {
       this.update(ticker.deltaTime);
     });
 
-    // 11. Mouse Drag Shoot Listeners (Slice Shoot mode)
+    // 11. Mouse Drag Shoot Listeners (Slice Shoot mode) - Strictly locked to active player turn
     window.addEventListener("pointerdown", (e) => {
-      if (e.button === 0 && this.shootMode === "drag" && !this.isSimulating) {
+      if (
+        e.button === 0 &&
+        this.shootMode === "drag" &&
+        this.activeTurn === "player" &&
+        !this.isSimulating &&
+        !this.isBattleIntroActive &&
+        !this.isTurnAdvancing &&
+        this.aimController.enabled
+      ) {
         // Only trigger if click targets the game canvas directly (not HUD overlays, buttons or menus)
         const target = e.target as HTMLElement;
         if (!target || target.tagName !== "CANVAS") return;
@@ -296,7 +327,13 @@ export class CombatArena {
     });
 
     window.addEventListener("pointermove", (e) => {
-      if (this.isDraggingAim && this.shootMode === "drag" && !this.isSimulating) {
+      if (
+        this.isDraggingAim &&
+        this.shootMode === "drag" &&
+        this.activeTurn === "player" &&
+        !this.isSimulating &&
+        !this.isBattleIntroActive
+      ) {
         const moveDist = Math.hypot(e.clientX - this.dragLastPointerPos.x, e.clientY - this.dragLastPointerPos.y);
         if (moveDist > 1.2) {
           this.dragStaticDuration = 0;
@@ -318,8 +355,16 @@ export class CombatArena {
       if (this.isDraggingAim) {
         this.isDraggingAim = false;
         this.dragStaticDuration = 0;
-        if (this.shootMode === "drag" && !this.isSimulating) {
+        if (
+          this.shootMode === "drag" &&
+          this.activeTurn === "player" &&
+          !this.isSimulating &&
+          !this.isBattleIntroActive &&
+          !this.isTurnAdvancing
+        ) {
           this.aimController.releaseFire();
+        } else {
+          this.aimController.stopCharging();
         }
       }
     });
@@ -359,6 +404,15 @@ export class CombatArena {
       col.update(dt);
       if (col.isDestroyed) {
         this.fadingColumnEntities.splice(i, 1);
+      }
+    }
+
+    // Update active fluid powerup particle effects
+    for (let i = this.activePowerups.length - 1; i >= 0; i--) {
+      const p = this.activePowerups[i];
+      p.update(dt);
+      if (p.isFinished()) {
+        this.activePowerups.splice(i, 1);
       }
     }
 
@@ -540,6 +594,10 @@ export class CombatArena {
     }
   }
 
+  public setPlayerGender(gender: "male" | "female") {
+    this.player.pilot.setGender(gender);
+  }
+
   public setBotMobile(mobileId: number, botIndex: number = 0) {
     const targetBot = this.bots[botIndex] || this.bots[0];
     if (targetBot) {
@@ -585,12 +643,11 @@ export class CombatArena {
     const name = nickname || defaultNames[botIndex % defaultNames.length];
 
     const newBot = new BotDummy(this.terrain, spawnX, placement.y, mobType, name, botIndex);
-    newBot.isImmortal = this.bots[0]?.isImmortal ?? true;
-    if (!newBot.isImmortal) {
-      newBot.mobile.maxHp = 1000;
-      newBot.mobile.hp = 1000;
-      newBot.mobile.updateHpBar();
-    }
+    newBot.isImmortal = false;
+    newBot.delay = (botIndex + 1) * 10;
+    newBot.mobile.maxHp = 1000;
+    newBot.mobile.hp = 1000;
+    newBot.mobile.updateHpBar();
 
     this.bots.push(newBot);
     this.engine.mobilesContainer.addChild(newBot);
@@ -600,6 +657,30 @@ export class CombatArena {
     }
     this.broadcastTurnUpdate();
     return newBot;
+  }
+
+  public removeBot(): boolean {
+    if (this.bots.length <= 1) return false;
+    const removed = this.bots.pop();
+    if (removed) {
+      this.engine.mobilesContainer.removeChild(removed);
+      removed.destroy({ children: true });
+    }
+    if (this.onBotCountChange) {
+      this.onBotCountChange(this.bots.length);
+    }
+    this.broadcastTurnUpdate();
+    return true;
+  }
+
+  public setBotCount(count: number) {
+    const target = Math.max(1, Math.min(3, count));
+    while (this.bots.length < target) {
+      this.addBot();
+    }
+    while (this.bots.length > target) {
+      this.removeBot();
+    }
   }
 
   public resetToSingleBot() {
@@ -691,24 +772,57 @@ export class CombatArena {
     return isImmortal;
   }
 
-  public activateItem(item: "dual" | "teleport" | null) {
-    if (item !== null && this.weatherManager.isItemsLocked()) {
+  public activateItem(item: "dual" | "teleport" | null, slotIndex: number | null = null) {
+    if (item === null) {
+      this.activeItem = null;
+      this.activeItemSlotIndex = null;
+      if (this.onActiveItemChange) {
+        this.onActiveItemChange(null);
+      }
+      return;
+    }
+
+    // Strict turn locking: only the active player can activate items
+    if (this.activeTurn !== "player" || this.isSimulating || this.isBattleIntroActive || this.isTurnAdvancing) {
       AudioManager.play("turntick1s", 0.8);
       return;
     }
+
+    // Check if slot has already been consumed / hollow socket
+    if (slotIndex !== null && this.playerItems[slotIndex] === null) {
+      AudioManager.play("turntick1s", 0.8);
+      return;
+    }
+
+    if (this.weatherManager.isItemsLocked() || this.hasUsedItemThisTurn) {
+      AudioManager.play("turntick1s", 0.8);
+      return;
+    }
+
     this.activeItem = item;
+    this.activeItemSlotIndex = slotIndex;
     if (this.onActiveItemChange) {
       this.onActiveItemChange(item);
     }
-    if (item !== null) {
-      // Trigger native fluid synchronized mobile powerup effect directly on mobile
+
+    // Immediately trigger synchronized powerup particle effect and mobile powerup animation
+    if (!this.isSimulating) {
+      const powerup = new FloatingParticlePowerupEntity(this.player.x, this.player.y, item);
+      this.engine.effectsContainer.addChild(powerup);
+      this.activePowerups.push(powerup);
       this.player.triggerPowerupEffect(item);
     }
   }
 
   public fireShot(rawAngle: number, power: number, shotType: number) {
-    if (this.isSimulating) return;
+    if (this.activeTurn !== "player" || this.isSimulating || this.isBattleIntroActive || this.isTurnAdvancing) {
+      return;
+    }
     this.isSimulating = true;
+    this.isTurnTimerFrozen = true;
+    if (this.onTurnTimerFreeze) {
+      this.onTurnTimerFreeze();
+    }
     this.aimController.enabled = false;
 
     // Report last shot power for power bar guide marker
@@ -718,9 +832,21 @@ export class CombatArena {
 
     const itemUsed = this.activeItem;
     if (itemUsed) {
+      // Consumed item: deducted permanently from player's inventory for the match!
+      this.hasUsedItemThisTurn = true;
+      if (this.activeItemSlotIndex !== null) {
+        this.playerItems[this.activeItemSlotIndex] = null;
+      }
       this.activeItem = null;
+      this.activeItemSlotIndex = null;
       if (this.onActiveItemChange) {
         this.onActiveItemChange(null);
+      }
+      if (this.onPlayerItemsChange) {
+        this.onPlayerItemsChange([...this.playerItems]);
+      }
+      if (this.onItemUsedThisTurnChange) {
+        this.onItemUsedThisTurnChange(true);
       }
     }
 
@@ -733,11 +859,20 @@ export class CombatArena {
       : playerDef.delays.shot1;
 
     if (itemUsed === "dual") {
-      delayCost += 250; // Authentic GunBound Dual item delay
+      delayCost += 550; // Authentic GunBound Dual item delay
     } else if (itemUsed === "teleport") {
-      delayCost += 100; // Authentic GunBound Teleport item delay
+      delayCost += 400; // Authentic GunBound Teleport item delay
     }
-    this.playerDelay += delayCost;
+
+    // Authentic GunBound time penalty: +10 delay per second spent aiming
+    const turnElapsedSec = Math.max(0, (Date.now() - this.turnStartTime) / 1000);
+    const timeDelay = Math.min(200, Math.round(turnElapsedSec * 10));
+
+    // Authentic GunBound movement penalty: +2 delay per pixel walked
+    const moveDelay = Math.min(200, Math.round(this.turnMovementDistance * 2));
+    this.turnMovementDistance = 0;
+
+    this.playerDelay += delayCost + timeDelay + moveDelay;
     this.broadcastTurnUpdate();
 
     // Trigger SS battlefield darkness if Shot 2 / SS
@@ -923,7 +1058,10 @@ export class CombatArena {
       this.player.y = place.y;
       this.player.setTilt(place.slope.angle);
 
-      // Trigger native fluid teleport powerup effect directly on mobile at arrival
+      // Trigger authentic fluid teleport powerup particles directly on mobile at arrival
+      const powerup = new FloatingParticlePowerupEntity(impact.x, place.y, "teleport");
+      this.engine.effectsContainer.addChild(powerup);
+      this.activePowerups.push(powerup);
       this.player.triggerPowerupEffect("teleport");
       AudioManager.play("11blast", 0.9);
 
@@ -1032,7 +1170,7 @@ export class CombatArena {
     this.isPlayerBunged = false;
     this.playerFallVy = 0;
     this.isPlayerAirborne = false;
-    this.aimController.enabled = true;
+    this.aimController.enabled = !this.isBattleIntroActive;
     this.aimController.isAirborne = false;
     if (this.playerGhostEntity) {
       this.playerGhostEntity.cleanup();
@@ -1148,7 +1286,7 @@ export class CombatArena {
       }
     }
 
-    // Wait 3.0s strategic pause between turns (breathing time for combatants & explosions to settle)
+    // Wait 2.0s strategic pause between turns (breathing time for combatants & explosions to settle)
     setTimeout(() => {
       // 1. Advance authentic GunBound weather round in the HUD roulette
       const { weather: nextWeather, didChange } = this.weatherManager.advanceTurn();
@@ -1184,13 +1322,110 @@ export class CombatArena {
         this.isTurnAdvancing = false;
         this.executeBotTurn(minBot);
       }
-    }, 3000);
+    }, 2000);
+  }
+
+  public handleTurnTimeout() {
+    if (this.isSimulating || this.isTurnAdvancing) return;
+
+    this.isTurnTimerFrozen = true;
+    if (this.onTurnTimerFreeze) this.onTurnTimerFreeze();
+
+    if (this.botActionTimer) {
+      clearTimeout(this.botActionTimer);
+      this.botActionTimer = null;
+    }
+
+    if (this.activeTurn === "player") {
+      this.aimController.stopCharging();
+      this.aimController.stopMoving();
+      this.aimController.enabled = false;
+      this.player.playAnimation("normal");
+
+      // Authentic GunBound timeout penalty delay
+      this.playerDelay += 350;
+      this.activeItem = null;
+      this.activeItemSlotIndex = null;
+      this.hasUsedItemThisTurn = false;
+      if (this.onActiveItemChange) this.onActiveItemChange(null);
+      if (this.onItemUsedThisTurnChange) this.onItemUsedThisTurnChange(false);
+
+      if (this.onChatMessage) {
+        this.onChatMessage({
+          sender: "Sistema",
+          text: "⏳ ¡Tiempo de turno agotado! El turno pasa automáticamente al siguiente combatiente.",
+          isSystem: true,
+        });
+      }
+      AudioManager.play("ding.mp3", 0.85);
+    } else if (this.actingBot) {
+      this.actingBot.delay += 350;
+      this.actingBot.mobile.playAnimation("normal");
+      if (this.onChatMessage) {
+        this.onChatMessage({
+          sender: "Sistema",
+          text: `⏳ ¡Tiempo de turno agotado para ${this.actingBot.mobile.nickname}!`,
+          isSystem: true,
+        });
+      }
+    }
+
+    this.broadcastTurnUpdate();
+    this.onAllProjectilesFinished();
+  }
+
+  public passTurn() {
+    if (this.activeTurn !== "player" || this.isSimulating || this.isBattleIntroActive || this.isTurnAdvancing) {
+      return;
+    }
+
+    this.isTurnTimerFrozen = true;
+    if (this.onTurnTimerFreeze) this.onTurnTimerFreeze();
+
+    this.aimController.stopCharging();
+    this.aimController.stopMoving();
+    this.aimController.enabled = false;
+    this.player.playAnimation("normal");
+
+    // Authentic GunBound Pass Turn Penalty (+510 delay)
+    this.playerDelay += 510;
+    this.activeItem = null;
+    this.activeItemSlotIndex = null;
+    this.hasUsedItemThisTurn = false;
+    if (this.onActiveItemChange) this.onActiveItemChange(null);
+    if (this.onItemUsedThisTurnChange) this.onItemUsedThisTurnChange(false);
+
+    if (this.onChatMessage) {
+      this.onChatMessage({
+        sender: "Sistema",
+        text: "⏭️ ¡Has pasado tu turno! (+510 delay)",
+        isSystem: true,
+      });
+    }
+    AudioManager.play("turntick1s", 0.9);
+
+    this.broadcastTurnUpdate();
+    this.onAllProjectilesFinished();
   }
 
   private switchToPlayerTurn() {
     this.activeTurn = "player";
     this.actingBot = null;
+    this.isTurnTimerFrozen = false;
+    this.turnStartTime = Date.now();
+    this.turnMovementDistance = 0;
+    this.lastPlayerMoveX = this.player.x;
+    this.hasUsedItemThisTurn = false;
+    if (this.onItemUsedThisTurnChange) {
+      this.onItemUsedThisTurnChange(false);
+    }
     this.broadcastTurnUpdate();
+
+    // Start epic battle background music on the very first turn of battle with smooth fade-in
+    if (!this.hasStartedBattleMusic) {
+      this.hasStartedBattleMusic = true;
+      AudioManager.playMusic("dbBattleMiramoTown.mp3", true);
+    }
 
     // Authentic GunBound turn alert sound
     AudioManager.play("turn.ogg", 0.95);
@@ -1205,6 +1440,9 @@ export class CombatArena {
       this.aimController.setActiveMobile(this.player);
       this.isTurnAdvancing = false;
 
+      if (this.onTurnTimerReset) {
+        this.onTurnTimerReset(20);
+      }
       if (this.onTurnReady) {
         this.onTurnReady();
       }
@@ -1213,9 +1451,14 @@ export class CombatArena {
 
   public executeBotTurn(bot: BotDummy) {
     if (this.isSimulating) return;
-    this.isSimulating = true;
     this.activeTurn = "bot";
     this.actingBot = bot;
+    this.isTurnTimerFrozen = false;
+    this.isSimulating = false;
+    this.turnStartTime = Date.now();
+    if (this.onTurnTimerReset) {
+      this.onTurnTimerReset(20);
+    }
 
     // Authentic GunBound turn alert sound
     AudioManager.play("turn.ogg", 0.95);
@@ -1273,20 +1516,31 @@ export class CombatArena {
     }
 
     // 6. Humanized thinking delay (~1100ms) before releasing fire
-    setTimeout(() => {
-      if (bot.isDead) {
-        this.onAllProjectilesFinished();
+    this.botActionTimer = setTimeout(() => {
+      this.botActionTimer = null;
+      if (bot.isDead || this.activeTurn !== "bot" || this.actingBot !== bot) {
         return;
       }
 
-      // Update bot delay using authentic mobile delay definitions
+      // Freeze turn timer immediately when bot releases shot
+      this.isSimulating = true;
+      this.isTurnTimerFrozen = true;
+      if (this.onTurnTimerFreeze) {
+        this.onTurnTimerFreeze();
+      }
+
+      // Update bot delay using authentic mobile delay definitions + time spent
       const botDef = MOBILES_DATA[bot.mobile.mobileType] || MOBILES_DATA[0];
       const delayCost = solution.shotType === 2
         ? botDef.delays.ss
         : solution.shotType === 1
         ? botDef.delays.shot2
         : botDef.delays.shot1;
-      bot.delay += delayCost;
+
+      const botElapsedSec = Math.max(0, (Date.now() - this.turnStartTime) / 1000);
+      const botTimeDelay = Math.min(200, Math.round(botElapsedSec * 10));
+
+      bot.delay += delayCost + botTimeDelay;
       this.broadcastTurnUpdate();
 
       // Trigger SS darkness overlay if SS
@@ -1341,6 +1595,46 @@ export class CombatArena {
       const trajectories = BallisticsEngine.simulateShot(params);
       const blastDelayMs = chargeToFireDelayMs + (solution.shotType === 2 ? 780 : solution.shotType === 1 ? 620 : 220);
 
+      const useDual = !this.weatherManager.isItemsLocked() && bot.items.includes("dual") && Math.random() < 0.28;
+      if (useDual) {
+        bot.consumeItem("dual");
+        bot.delay += 550;
+        if (this.onChatMessage) {
+          this.onChatMessage({
+            sender: "Sistema",
+            text: `⚔️ ¡${bot.mobile.nickname} ha usado su ítem DUAL!`,
+            isSystem: true,
+          });
+        }
+        const powerup = new FloatingParticlePowerupEntity(bot.mobile.x, bot.mobile.y, "dual");
+        this.engine.effectsContainer.addChild(powerup);
+        this.activePowerups.push(powerup);
+        bot.mobile.triggerPowerupEffect("dual");
+
+        let completedVolleys = 0;
+        const onVolleyDone = () => {
+          completedVolleys++;
+          if (completedVolleys >= 2) {
+            this.onAllProjectilesFinished();
+          }
+        };
+
+        // Volley 1
+        setTimeout(() => {
+          this.launchTrajectoriesFromMobile(bot.mobile, trajectories, solution.shotType, onVolleyDone, false);
+        }, blastDelayMs);
+
+        // Volley 2 (Authentic GunBound volley timing)
+        const volley2Start = blastDelayMs + 600;
+        setTimeout(() => {
+          startFiring();
+          setTimeout(() => {
+            this.launchTrajectoriesFromMobile(bot.mobile, trajectories, solution.shotType, onVolleyDone, false);
+          }, 180);
+        }, volley2Start);
+        return;
+      }
+
       setTimeout(() => {
         this.launchTrajectoriesFromMobile(bot.mobile, trajectories, solution.shotType);
       }, blastDelayMs);
@@ -1372,7 +1666,7 @@ export class CombatArena {
 
   public resetCamera() {
     this.engine.panTo(704.5, 420);
-    this.engine.playIntroZoom(0.52, 1.20);
+    this.engine.playIntroZoom(0.50, 1.20, 4200);
   }
 
   public setWeather(idOrType: number | WeatherType, forcedX?: number) {
@@ -1390,10 +1684,20 @@ export class CombatArena {
   }
 
   public startBattleIntroSequence() {
+    this.introTimeouts.forEach((t) => clearTimeout(t));
+    this.introTimeouts = [];
+
     this.hasStartedIntro = true;
+    this.isBattleIntroActive = true;
     this.battleIntroPhase = "ready";
     this.aimController.enabled = false;
+    this.aimController.stopMoving();
+    this.aimController.stopCharging();
     this.isSimulating = true;
+    this.isTurnTimerFrozen = true;
+
+    // Ambient/waiting background music during the pre-match countdown
+    AudioManager.playMusic("dbWaiting2020.ogg", false);
 
     // Play classic GunBound battle start fanfare
     AudioManager.play("start.mp3", 0.95);
@@ -1402,47 +1706,82 @@ export class CombatArena {
       this.onBattleIntro("ready");
     }
 
-    setTimeout(() => {
-      this.battleIntroPhase = "fight";
-      if (this.onBattleIntro) {
-        this.onBattleIntro("fight");
-      }
-      AudioManager.play("11fire", 0.7);
-    }, 1400);
+    this.introTimeouts.push(
+      setTimeout(() => {
+        this.battleIntroPhase = "fight";
+        if (this.onBattleIntro) {
+          this.onBattleIntro("fight");
+        }
+        AudioManager.play("11fire", 0.7);
+      }, 2200)
+    );
 
-    setTimeout(() => {
-      this.battleIntroPhase = null;
-      if (this.onBattleIntro) {
-        this.onBattleIntro(null);
-      }
-    }, 2800);
+    this.introTimeouts.push(
+      setTimeout(() => {
+        this.battleIntroPhase = null;
+        if (this.onBattleIntro) {
+          this.onBattleIntro(null);
+        }
+      }, 4200)
+    );
 
-    setTimeout(() => {
-      this.isSimulating = false;
-      this.switchToPlayerTurn();
-    }, 3000);
+    this.introTimeouts.push(
+      setTimeout(() => {
+        this.isBattleIntroActive = false;
+        this.isSimulating = false;
+        this.switchToPlayerTurn();
+      }, 4500)
+    );
   }
 
   public async resetMap() {
+    this.introTimeouts.forEach((t) => clearTimeout(t));
+    this.introTimeouts = [];
+    this.isBattleIntroActive = true;
+    this.aimController.enabled = false;
+    this.aimController.stopMoving();
+    this.aimController.stopCharging();
+
     this.turnNumber = 1;
     this.playerDelay = 0;
-    this.botDelay = 960;
+    this.botDelay = 10;
+    this.isTurnTimerFrozen = true;
+    this.turnMovementDistance = 0;
+    this.lastPlayerMoveX = this.player.x;
+    this.hasStartedBattleMusic = false;
     this.activeTurn = "player";
     this.actingBot = null;
     this.isPlayerBunged = false;
     for (const b of this.bots) {
-      b.delay = 960 + b.botIndex * 40;
+      b.delay = (b.botIndex + 1) * 10;
+      b.resetItems();
     }
     if (this.playerGhostEntity) {
       this.playerGhostEntity.cleanup();
       this.playerGhostEntity = undefined;
     }
+    if (this.botActionTimer) {
+      clearTimeout(this.botActionTimer);
+      this.botActionTimer = null;
+    }
+    this.playerItems = ["dual", "dual", "teleport"];
     this.activeItem = null;
+    this.activeItemSlotIndex = null;
+    this.hasUsedItemThisTurn = false;
+    if (this.onPlayerItemsChange) {
+      this.onPlayerItemsChange([...this.playerItems]);
+    }
     if (this.onActiveItemChange) {
       this.onActiveItemChange(null);
     }
+    if (this.onItemUsedThisTurnChange) {
+      this.onItemUsedThisTurnChange(false);
+    }
     if (this.onLastPowerUpdate) {
       this.onLastPowerUpdate(null as unknown as number);
+    }
+    if (this.onMatchReset) {
+      this.onMatchReset();
     }
     this.broadcastTurnUpdate();
 
@@ -1474,6 +1813,8 @@ export class CombatArena {
   }
 
   public destroy() {
+    this.introTimeouts.forEach((t) => clearTimeout(t));
+    this.introTimeouts = [];
     this.aimController.destroy();
     this.dynamicExplosionEngine.clear();
     this.destructionParticles.clear();

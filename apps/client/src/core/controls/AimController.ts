@@ -61,10 +61,7 @@ export class AimController {
   public stopMoving() {
     if (!this.isCurrentlyMoving) return;
     this.isCurrentlyMoving = false;
-    const mobDef = this.activeMobile
-      ? (MOBILES_DATA[this.activeMobile.mobileType] || MOBILES_DATA[0])
-      : MOBILES_DATA[0];
-    AudioManager.stopMoveLoop(mobDef?.soundStop);
+    AudioManager.stopMoveLoop();
   }
 
   public update(dt: number) {
@@ -81,28 +78,26 @@ export class AimController {
     const isLeft = !!this.keysPressed["KeyA"];
     const isRight = !!this.keysPressed["KeyD"];
 
-    if (isLeft && !isRight) {
+    if ((isLeft && !isRight) || (isRight && !isLeft)) {
+      const dir = isLeft ? -1 : 1;
       this.walkAccumulator += dt * speedRate;
-      let moved = false;
+      let actuallyMoved = false;
+      let wasStuck = false;
+
       while (this.walkAccumulator >= 1) {
-        if (this.stepMobile(-1)) {
-          moved = true;
-        }
+        const stepRes = this.stepMobile(dir);
+        if (stepRes.moved) actuallyMoved = true;
+        if (stepRes.stuck) wasStuck = true;
         this.walkAccumulator -= 1;
       }
-      if (moved || !this.isAirborne) {
-        this.startMoving();
-      }
-    } else if (isRight && !isLeft) {
-      this.walkAccumulator += dt * speedRate;
-      let moved = false;
-      while (this.walkAccumulator >= 1) {
-        if (this.stepMobile(1)) {
-          moved = true;
-        }
-        this.walkAccumulator -= 1;
-      }
-      if (moved || !this.isAirborne) {
+
+      if (wasStuck && !actuallyMoved) {
+        // Mobile is blocked against an obstacle or steep incline:
+        // Cut movement loop immediately so it NEVER loops, and play struggle sound once
+        this.stopMoving();
+        const mobDef = MOBILES_DATA[this.activeMobile.mobileType] || MOBILES_DATA[0];
+        AudioManager.playObstacleBump(mobDef.soundStop || "1nmove");
+      } else if (actuallyMoved) {
         this.startMoving();
       }
     } else {
@@ -144,8 +139,8 @@ export class AimController {
     }
   }
 
-  private stepMobile(dir: number): boolean {
-    if (!this.activeMobile) return false;
+  private stepMobile(dir: number): { moved: boolean; stuck: boolean } {
+    if (!this.activeMobile) return { moved: false, stuck: false };
 
     this.activeMobile.setFacing(dir);
 
@@ -155,13 +150,13 @@ export class AimController {
       if (this.onMobileMove) {
         this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
       }
-      return true;
+      return { moved: true, stuck: false };
     }
 
     // Terrain walking step with ground incline tracking
     const walkRes = this.terrain.walk(this.activeMobile.x, this.activeMobile.y, dir);
     if (walkRes.stuck) {
-      return false;
+      return { moved: false, stuck: true };
     }
 
     this.activeMobile.x = walkRes.x;
@@ -173,7 +168,7 @@ export class AimController {
       if (this.onMobileMove) {
         this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
       }
-      return true;
+      return { moved: true, stuck: false };
     }
 
     const placement = this.terrain.getMobileSurfacePlacement(this.activeMobile.x, this.activeMobile.y);
@@ -189,7 +184,7 @@ export class AimController {
     if (this.onMobileMove) {
       this.onMobileMove(this.activeMobile.x, this.activeMobile.y);
     }
-    return true;
+    return { moved: true, stuck: false };
   }
 
   public adjustAngle(delta: number) {

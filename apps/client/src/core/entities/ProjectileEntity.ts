@@ -215,9 +215,20 @@ export class ProjectileEntity extends Container {
       return;
     }
 
+    // Check if currently swirling inside the tornado vortex for cinematic slow-motion
+    const ptIdx = Math.floor(this.progress);
+    const currentPoint = this.points[ptIdx] as (Point2D & { isInsideTornado?: boolean; isSpecialPhase?: boolean });
+    const isSlowMoTornado = !!currentPoint?.isInsideTornado;
+
+    // Slow-motion inside tornado vortex (~48% of natural speed) so bullet dramatically swirls through the vortex,
+    // and instant 100% full natural velocity once it passes through and exits!
+    const effectiveSpeed = isSlowMoTornado
+      ? this.speedFactor * 0.48
+      : this.speedFactor;
+
     // If not paused in mid-air, advance progression along trajectory
     if (this.transformPauseMs <= 0) {
-      this.progress += this.speedFactor * Math.max(0.5, Math.min(2.5, dt));
+      this.progress += effectiveSpeed * Math.max(0.5, Math.min(2.5, dt));
     }
 
     if (this.progress >= this.points.length - 1) {

@@ -11,7 +11,7 @@ const WEATHER_COLORS: Partial<Record<WeatherType, { fill: string; border: number
 };
 
 const WEATHER_TITLES: Partial<Record<WeatherType, string>> = {
-  sun: "SOL / FUERZA",
+  sun: "ENERGIA",
   lightning: "RAYO",
   tornado: "TORNADO",
   mirror: "ESPEJO",
@@ -100,19 +100,20 @@ export class WeatherSkyMarker extends Container {
 
     // Accurate HUD obstacle avoidance:
     // If exact centerHudBounds are supplied from React DOM, use them with subpixel precision;
-    // Otherwise fallback to measured center capsule range (approx 340px centered slightly left of middle).
+    // Otherwise fallback to measured center capsule range (approx 380px centered around middle).
     let isUnderCenterHud = false;
-    let hudDropY = 54;
+    let hudDropY = 74;
     if (this.centerHudBounds) {
-      isUnderCenterHud = (clampedX + markerHalfW > this.centerHudBounds.left) &&
-                         (clampedX - markerHalfW < this.centerHudBounds.right);
-      hudDropY = Math.max(52, this.centerHudBounds.bottom + 6);
+      isUnderCenterHud = (clampedX + markerHalfW > this.centerHudBounds.left - 24) &&
+                         (clampedX - markerHalfW < this.centerHudBounds.right + 24);
+      hudDropY = Math.max(74, this.centerHudBounds.bottom + 24);
     } else {
-      isUnderCenterHud = clampedX > (screenW / 2 - 180) && clampedX < (screenW / 2 + 40);
+      isUnderCenterHud = clampedX > (screenW / 2 - 240) && clampedX < (screenW / 2 + 180);
+      hudDropY = 74;
     }
 
-    // In open sky, badge sits sleekly right at monitor top edge (20px); only drops when directly under top center widgets
-    const targetBaseY = isUnderCenterHud ? hudDropY : 20;
+    // In open sky, badge sits at exactly 12px top margin (center at 21px, height 18px), matching top interface widgets; drops down (74px+) when under top HUD widgets
+    const targetBaseY = isUnderCenterHud ? hudDropY : 21;
     // Rapid, responsive transition so badge returns to top edge without lingering delay
     this.currentY += (targetBaseY - this.currentY) * 0.45;
     const bob = Math.sin(this.time * 3) * 1.5;

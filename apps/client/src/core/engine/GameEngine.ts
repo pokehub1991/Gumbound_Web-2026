@@ -99,6 +99,26 @@ export class GameEngine {
     // Right-Click Drag to Pan Camera across battlefield (Authentic GunBound glove hand)
     window.addEventListener("contextmenu", (e) => e.preventDefault());
 
+    // Completely lock manual mouse wheel scrolling and zooming
+    window.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+      },
+      { passive: false }
+    );
+
+    // Prevent manual keyboard browser/page zoom shortcuts (Ctrl +/- / 0)
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.ctrlKey && (e.key === "+" || e.key === "-" || e.key === "=" || e.key === "0")) {
+          e.preventDefault();
+        }
+      },
+      { passive: false }
+    );
+
     window.addEventListener("pointerdown", (e) => {
       if (e.button === 2) {
         this.isDraggingCamera = true;
@@ -167,7 +187,7 @@ export class GameEngine {
     this.targetCameraY = this.cameraY;
   }
 
-  public playIntroZoom(startZoom: number = 0.52, finalZoom: number = 1.20, durationMs: number = 1800) {
+  public playIntroZoom(startZoom: number = 0.50, finalZoom: number = 1.20, durationMs: number = 4200) {
     this.introZoomStart = startZoom;
     this.cameraZoom = startZoom;
     this.targetZoom = finalZoom;
