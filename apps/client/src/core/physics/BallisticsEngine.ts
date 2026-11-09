@@ -354,7 +354,46 @@ export class BallisticsEngine {
           const cy = prevY + (y - prevY) * factor;
           const distFromMuzzle = Math.hypot(cx - origin.x, cy - origin.y);
 
-          // Clear tiny 5px radius right at the muzzle aperture, then collide with any solid terrain
+          // 1. Mobile Enemy Collision check along continuous trajectory segment
+          if (tMs >= 80 && params.targets && params.targets.length > 0) {
+            let hitTarget = false;
+            for (const target of params.targets) {
+              if (Math.hypot(cx - target.x, cy - target.y) <= target.radius) {
+                const isInsideTornado = tornadoPhase === 1;
+                const activeWeatherEffect = isSunBuffed
+                  ? "sun"
+                  : isLightningCharged
+                  ? "lightning"
+                  : hasMirrored
+                  ? "mirror"
+                  : isInsideTornado
+                  ? "tornado"
+                  : isBlackDamped
+                  ? "black"
+                  : undefined;
+
+                hitType = "player";
+                finalPos = { x: Math.round(cx), y: Math.round(cy) };
+                points.push({
+                  x: cx,
+                  y: cy,
+                  timeMs: tMs - stepMs + stepMs * factor,
+                  tangentAngle: tang,
+                  isSpecialPhase,
+                  weatherEffect: activeWeatherEffect,
+                  isInsideTornado,
+                });
+                hitTarget = true;
+                break;
+              }
+            }
+            if (hitTarget) {
+              hitTerrain = true;
+              break;
+            }
+          }
+
+          // 2. Clear tiny 5px radius right at the muzzle aperture, then collide with any solid terrain
           // Guarantees bullets never pass through thin overhangs, ledges or sharp terrain tips
           if (distFromMuzzle >= 5 && params.isPixelSolid(Math.round(cx), Math.round(cy))) {
             const isInsideTornado = tornadoPhase === 1;

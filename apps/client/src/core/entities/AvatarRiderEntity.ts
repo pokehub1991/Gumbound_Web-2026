@@ -14,7 +14,7 @@ export class AvatarRiderEntity extends Container {
 
   private animStep: number = 0;
   private animTimer: number = 0;
-  private animInterval: number = 0.09; // ~11-12 FPS authentic GunBound avatar animation
+  private animInterval: number = 0.10; // Exactly 10 FPS (100ms per frame) authentic GunBound / DragonBound animation
 
   private turnCycle?: number;
   private isSpecialHead: boolean = false;
@@ -63,16 +63,20 @@ export class AvatarRiderEntity extends Container {
   public update(dt: number) {
     if (!this.textures) return;
 
+    // In PixiJS, dt from ticker.deltaTime is ~1.0 per frame at 60 FPS.
+    // Convert to wall-clock seconds for accurate, frame-rate independent animation across 60Hz/120Hz/144Hz.
+    const dtSec = dt / 60;
+
     if (this.damageFlashTimer > 0) {
-      this.damageFlashTimer -= dt;
-      this.alpha = Math.sin(this.damageFlashTimer * 40) > 0 ? 0.6 : 1.0;
+      this.damageFlashTimer -= dtSec;
+      this.alpha = Math.sin(this.damageFlashTimer * 35) > 0 ? 0.5 : 1.0;
       if (this.damageFlashTimer <= 0) {
         this.alpha = 1.0;
         this.isSpecialHead = false;
       }
     }
 
-    this.animTimer += dt;
+    this.animTimer += dtSec;
     if (this.animTimer >= this.animInterval) {
       this.animTimer -= this.animInterval;
       this.animStep++;

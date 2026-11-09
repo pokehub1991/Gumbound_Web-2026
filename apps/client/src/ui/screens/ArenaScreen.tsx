@@ -148,8 +148,15 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   );
   const [activeItemSlot, setActiveItemSlot] = useState<number | null>(null);
   const [hasUsedItemThisTurn, setHasUsedItemThisTurn] = useState<boolean>(false);
-
-  const isPlayerTurnActive = activeTurn === "player" && !arena?.isSimulating && !arena?.isBattleIntroActive && !arena?.isTurnAdvancing;
+  const [isPlayerTurnActive, setIsPlayerTurnActive] = useState<boolean>(() => {
+    return Boolean(
+      arena &&
+      arena.activeTurn === "player" &&
+      !arena.isSimulating &&
+      !arena.isBattleIntroActive &&
+      !arena.isTurnAdvancing
+    );
+  });
 
   const handleToggleItemSlot = (slotIndex: number, itemType: "dual" | "teleport") => {
     if (playerItems[slotIndex] === null) return; // Empty socket ("hueco") cannot be activated
@@ -314,6 +321,12 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     setBotDelay(arena.botDelay);
     setBotCount(arena.bots.length);
     arena.setShootMode(shootMode);
+    setIsPlayerTurnActive(
+      arena.activeTurn === "player" &&
+      !arena.isSimulating &&
+      !arena.isBattleIntroActive &&
+      !arena.isTurnAdvancing
+    );
 
     arena.onBotCountChange = (count) => {
       setBotCount(count);
@@ -330,12 +343,23 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       ]);
     };
 
+    arena.onTurnPlayableChange = (playable) => {
+      setIsPlayerTurnActive(playable);
+      if (playable) {
+        setHasUsedItemThisTurn(false);
+        setActiveItemSlot(null);
+      }
+    };
+
     arena.onTurnUpdate = (info) => {
       setTurnNumber(info.turnNumber);
       setMaxTurns(info.maxTurns);
       setActiveTurn(info.activeTurn);
       if (info.activeTurn !== "player") {
         setActiveItemSlot(null);
+        setIsPlayerTurnActive(false);
+      } else if (!arena.isSimulating && !arena.isBattleIntroActive && !arena.isTurnAdvancing) {
+        setIsPlayerTurnActive(true);
       }
       setPlayerDelay(info.playerDelay);
       setBotDelay(info.botDelay);
@@ -422,6 +446,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       setIsTimerFrozen(false);
       setHasUsedItemThisTurn(false);
       setActiveItemSlot(null);
+      setIsPlayerTurnActive(true);
     };
 
     arena.onTurnTimerFreeze = () => {
@@ -442,9 +467,15 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     // Battle Intro Sequence listener & initial sync
     if (arena.battleIntroPhase) {
       setBattleIntroPhase(arena.battleIntroPhase);
+      if (arena.battleIntroPhase !== null) {
+        setIsPlayerTurnActive(false);
+      }
     }
     arena.onBattleIntro = (phase) => {
       setBattleIntroPhase(phase);
+      if (phase !== null) {
+        setIsPlayerTurnActive(false);
+      }
     };
 
     // If intro hasn't started yet on fresh arena mount, trigger it now
@@ -675,103 +706,38 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           </div>
         </div>
 
-        {/* Center: Weather Widget Capsule + Wind & Compass Capsule */}
-        <div ref={centerHudRef} style={{ display: "flex", alignItems: "center", gap: "10px", pointerEvents: "auto" }}>
-          {/* Authentic GunBound Weather Slime Capsule Widget */}
-          <WeatherWidget currentWeather={currentWeather} tapeSlice={weatherTapeSlice} roundInfo={weatherRoundInfo} />
-
-          {/* Wind & Compass Capsule */}
-          <div className="pixel-box" style={{
-            background: isWindEnabled
-              ? "var(--bg-panel-dark)"
-              : "var(--bg-panel-slate)",
-            borderRadius: "4px",
-            padding: "3px 10px",
-            height: "36px",
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            boxShadow: isWindEnabled
-              ? "inset 1px 1px 0px rgba(56, 189, 248, 0.5), inset -1px -1px 0px #000, 0 3px 0px rgba(0,0,0,0.6)"
-              : "inset 1px 1px 0px rgba(255,255,255,0.15), inset -1px -1px 0px #000, 0 3px 0px rgba(0,0,0,0.6)",
-            pointerEvents: "auto",
-          }}>
-            {/* Rotating Compass Icon */}
-            <div style={{ position: "relative", width: "24px", height: "24px", opacity: isWindEnabled ? 1 : 0.45 }}>
-              <svg width="24" height="24" viewBox="0 0 36 36">
-                <circle cx="18" cy="18" r="16" fill="#0f172a" stroke="#000000" strokeWidth="2.5" />
-                <g transform={`rotate(${-windAngle}, 18, 18)`}>
-                  <polygon points="30,18 9,12 14,18 9,24" fill={isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)"} stroke="#000000" strokeWidth="1" />
-                  <circle cx="18" cy="18" r="3" fill="#ffffff" />
-                </g>
-              </svg>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "baseline", gap: "3px" }}>
-              <span className="num-font" style={{ color: isWindEnabled ? "var(--color-primary)" : "var(--color-slate-400)", fontSize: "15px", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
-                {isWindEnabled ? Math.round(windPower) : 0}
-              </span>
-              <span className={isWindEnabled ? "num-font" : undefined} style={{ fontSize: "10px", color: isWindEnabled ? "var(--color-primary-hover)" : "var(--color-slate-500)", fontWeight: 700, textShadow: "var(--text-shadow-pixel)" }}>
-                {isWindEnabled ? `${Math.round(windAngle)}°` : "OFF"}
-              </span>
-            </div>
-          </div>
+        {/* Center: Unified Weather + Wind Widget (Replica fiel de GunBound) */}
+        <div ref={centerHudRef} style={{ display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "auto" }}>
+          <WeatherWidget
+            currentWeather={currentWeather}
+            tapeSlice={weatherTapeSlice}
+            roundInfo={weatherRoundInfo}
+            windPower={windPower}
+            windAngle={windAngle}
+            isWindEnabled={isWindEnabled}
+          />
         </div>
 
-        {/* Right: Turn Countdown Timer */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", pointerEvents: "auto", minHeight: "36px" }}>
-          {/* Turn Countdown Timer Widget (20s) in Top-Right Corner - Only visible when it's the main player's turn */}
+        {/* Right: Giant Turn Countdown Timer (Replica fiel GunBound Image 1) */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "flex-end", minWidth: "120px", pointerEvents: "none" }}>
           {activeTurn === "player" && !battleIntroPhase && !arena?.isBattleIntroActive && (
             <div
-              className="pixel-box"
               style={{
-                borderRadius: "4px",
-                width: "72px",
-                height: "36px",
-                boxSizing: "border-box",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                gap: "2px",
                 pointerEvents: "auto",
-                background: turnCountdown <= 5
-                  ? "var(--bg-panel-critical)"
-                  : "var(--bg-panel-slate)",
-                border: turnCountdown <= 5 ? "var(--border-pixel-danger)" : "var(--border-pixel-black)",
-                boxShadow: turnCountdown <= 5
-                  ? "var(--shadow-glow-red)"
-                  : "var(--shadow-bevel-btn)",
+                padding: "0 8px",
               }}
               title="Tiempo restante de turno (20 segundos)"
             >
               <span
-                className="num-font"
+                className={`gunbound-giant-timer ${turnCountdown <= 5 ? "gunbound-giant-timer-critical" : ""}`}
                 style={{
-                  fontSize: "19px",
-                  fontWeight: 700,
-                  lineHeight: "1",
-                  color: turnCountdown <= 5 ? "var(--color-danger)" : turnCountdown <= 10 ? "var(--color-warning-light)" : "var(--color-success)",
-                  textShadow: "var(--text-shadow-pixel-bold)",
-                  textAlign: "right",
-                  display: "inline-block",
                   fontVariantNumeric: "tabular-nums",
                 }}
               >
                 {turnCountdown}
-              </span>
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  fontFamily: "var(--font-game)",
-                  lineHeight: "1",
-                  color: turnCountdown <= 5 ? "var(--color-danger-light)" : turnCountdown <= 10 ? "var(--color-warning-soft)" : "var(--color-success-light)",
-                  textShadow: "var(--text-shadow-pixel)",
-                  marginTop: "2px",
-                }}
-              >
-                s
               </span>
             </div>
           )}
@@ -795,9 +761,13 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
         {/* Turn List Box (Replica fiel de GunBound con estilo Pixel-Art moderno) */}
         <div className="pixel-box" style={{
           width: "240px",
+          height: "76px",
           borderRadius: "4px",
           padding: "4px 8px",
           boxSizing: "border-box",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
         }}>
           {/* Header: Lista de Turnos, 1/40, ⏱️ */}
           <div style={{
@@ -903,7 +873,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       </div>
 
       {/* ============================================================ */}
-      {/* CENTER-BOTTOM: STRICTLY FIXED CENTER POWER BAR HUD */}
+      {/* CENTER-BOTTOM: COCKPIT HUD (2x3 GRID + POWER BAR RIGHT) */}
       {/* ============================================================ */}
       <div
         className="pixel-box"
@@ -913,223 +883,230 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           left: "50%",
           transform: "translateX(-50%)",
           borderRadius: "6px",
-          padding: "8px 14px",
+          padding: "4px 8px",
+          height: "76px",
+          boxSizing: "border-box",
           pointerEvents: "auto",
           display: "flex",
-          flexDirection: "column",
+          flexDirection: "row",
+          alignItems: "stretch",
           gap: "8px",
-          width: "min(640px, calc(100vw - 340px))",
-          boxSizing: "border-box",
+          width: "min(660px, calc(100vw - 320px))",
           zIndex: 10,
         }}
       >
-        {/* Upper Row: Left S1/S2/SS, Center DUAL/DUAL/TP, Right Mode Toggle + Angle Badge */}
+        {/* Left Side: 2x3 Grid of Mobil Shots (S1, S2, SS) & Items (Replica Image 3) */}
         <div style={{
-          display: "flex",
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 48px)",
+          gridTemplateRows: "repeat(2, 28px)",
+          gap: "4px",
           alignItems: "center",
-          justifyContent: "space-between",
-          position: "relative",
-          minHeight: "36px",
+          flexShrink: 0,
         }}>
-          {/* Left Group: Shot Selector (S1, S2, SS Pixel Arcade Buttons) */}
-          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-            <button
-              className="pixel-btn"
-              disabled={!isPlayerTurnActive}
-              onClick={() => handleSelectShotType(0)}
-              style={{
-                background: shotType === 0
-                  ? "var(--bg-panel-blue)"
-                  : "var(--bg-panel-slate)",
-                border: shotType === 0 ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
-                borderRadius: "4px",
-                padding: "3px 12px",
-                color: shotType === 0 ? "var(--color-white)" : "var(--color-slate-400)",
-                fontWeight: 700,
-                fontSize: "13px",
-                cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
-                opacity: isPlayerTurnActive ? 1 : 0.45,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                minWidth: "44px",
-                height: "34px",
-                boxShadow: shotType === 0
-                  ? "var(--shadow-glow-cyan)"
-                  : "var(--shadow-bevel-btn)",
-                textShadow: "var(--text-shadow-pixel)",
-              }}
-              title={isPlayerTurnActive ? "Shot 1 [Tecla 1]" : "Esperando tu turno..."}
-            >
-              <span>S<span className="num-font">1</span></span>
-            </button>
+          {/* Row 1, Col 1: S1 */}
+          <button
+            className="pixel-btn"
+            disabled={!isPlayerTurnActive}
+            onClick={() => handleSelectShotType(0)}
+            style={{
+              background: shotType === 0
+                ? "var(--bg-panel-blue)"
+                : "var(--bg-panel-slate)",
+              border: shotType === 0 ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
+              borderRadius: "3px",
+              padding: 0,
+              color: shotType === 0 ? "var(--color-white)" : "var(--color-slate-400)",
+              fontWeight: 700,
+              fontSize: "12px",
+              cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
+              opacity: isPlayerTurnActive ? 1 : 0.45,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "48px",
+              height: "28px",
+              boxSizing: "border-box",
+              boxShadow: shotType === 0
+                ? "var(--shadow-glow-cyan)"
+                : "var(--shadow-bevel-btn)",
+              textShadow: "var(--text-shadow-pixel)",
+            }}
+            title={isPlayerTurnActive ? "Shot 1 [Tecla 1]" : "Esperando tu turno..."}
+          >
+            <span>S<span className="num-font">1</span></span>
+          </button>
 
-            <button
-              className="pixel-btn"
-              disabled={!isPlayerTurnActive}
-              onClick={() => handleSelectShotType(1)}
-              style={{
-                background: shotType === 1
-                  ? "linear-gradient(180deg, #facc15 0%, #d97706 100%)"
-                  : "var(--bg-panel-slate)",
-                border: shotType === 1 ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
-                borderRadius: "4px",
-                padding: "3px 12px",
-                color: shotType === 1 ? "var(--color-white)" : "var(--color-slate-400)",
-                fontWeight: 700,
-                fontSize: "13px",
-                cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
-                opacity: isPlayerTurnActive ? 1 : 0.45,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                minWidth: "44px",
-                height: "34px",
-                boxShadow: shotType === 1
-                  ? "var(--shadow-glow-gold)"
-                  : "var(--shadow-bevel-btn)",
-                textShadow: "var(--text-shadow-pixel)",
-              }}
-              title={isPlayerTurnActive ? "Shot 2 [Tecla 2]" : "Esperando tu turno..."}
-            >
-              <span>S<span className="num-font">2</span></span>
-            </button>
+          {/* Row 1, Col 2: S2 */}
+          <button
+            className="pixel-btn"
+            disabled={!isPlayerTurnActive}
+            onClick={() => handleSelectShotType(1)}
+            style={{
+              background: shotType === 1
+                ? "linear-gradient(180deg, #facc15 0%, #d97706 100%)"
+                : "var(--bg-panel-slate)",
+              border: shotType === 1 ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
+              borderRadius: "3px",
+              padding: 0,
+              color: shotType === 1 ? "var(--color-white)" : "var(--color-slate-400)",
+              fontWeight: 700,
+              fontSize: "12px",
+              cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
+              opacity: isPlayerTurnActive ? 1 : 0.45,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "48px",
+              height: "28px",
+              boxSizing: "border-box",
+              boxShadow: shotType === 1
+                ? "var(--shadow-glow-gold)"
+                : "var(--shadow-bevel-btn)",
+              textShadow: "var(--text-shadow-pixel)",
+            }}
+            title={isPlayerTurnActive ? "Shot 2 [Tecla 2]" : "Esperando tu turno..."}
+          >
+            <span>S<span className="num-font">2</span></span>
+          </button>
 
-            <button
-              className="pixel-btn"
-              disabled={!isPlayerTurnActive}
-              onClick={() => handleSelectShotType(2)}
-              style={{
-                background: shotType === 2
-                  ? "var(--bg-panel-red)"
-                  : "var(--bg-panel-slate)",
-                border: shotType === 2 ? "var(--border-pixel-warning)" : "var(--border-pixel-black)",
-                borderRadius: "4px",
-                padding: "3px 12px",
-                color: shotType === 2 ? "var(--color-warning-soft)" : "var(--color-slate-400)",
-                fontWeight: 700,
-                fontSize: "13px",
-                cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
-                opacity: isPlayerTurnActive ? 1 : 0.45,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                minWidth: "44px",
-                height: "34px",
-                boxShadow: shotType === 2
-                  ? "var(--shadow-glow-red)"
-                  : "var(--shadow-bevel-btn)",
-                textShadow: "var(--text-shadow-pixel)",
-              }}
-              title={isPlayerTurnActive ? "Super Shot [Tecla 3 / F]" : "Esperando tu turno..."}
-            >
-              <span>SS</span>
-            </button>
-          </div>
+          {/* Row 1, Col 3: SS */}
+          <button
+            className="pixel-btn"
+            disabled={!isPlayerTurnActive}
+            onClick={() => handleSelectShotType(2)}
+            style={{
+              background: shotType === 2
+                ? "var(--bg-panel-red)"
+                : "var(--bg-panel-slate)",
+              border: shotType === 2 ? "var(--border-pixel-warning)" : "var(--border-pixel-black)",
+              borderRadius: "3px",
+              padding: 0,
+              color: shotType === 2 ? "var(--color-warning-soft)" : "var(--color-slate-400)",
+              fontWeight: 700,
+              fontSize: "12px",
+              cursor: isPlayerTurnActive ? "pointer" : "not-allowed",
+              opacity: isPlayerTurnActive ? 1 : 0.45,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "48px",
+              height: "28px",
+              boxSizing: "border-box",
+              boxShadow: shotType === 2
+                ? "var(--shadow-glow-red)"
+                : "var(--shadow-bevel-btn)",
+              textShadow: "var(--text-shadow-pixel)",
+            }}
+            title={isPlayerTurnActive ? "Super Shot [Tecla 3 / F]" : "Esperando tu turno..."}
+          >
+            <span>SS</span>
+          </button>
 
-          {/* Center Group: 3 Classic Lobby Item Buttons (DUAL, DUAL, TP) */}
-          <div style={{
-            position: "absolute",
-            left: "50%",
-            transform: "translateX(-50%)",
-            display: "flex",
-            gap: "6px",
-            alignItems: "center",
-          }}>
-            {playerItems.map((itemType, slotIndex) => {
-              if (itemType === null) {
-                // GunBound Authentic Empty / Consumed Socket ("Hueco")
-                return (
-                  <div
-                    key={slotIndex}
-                    style={{
-                      width: "56px",
-                      minWidth: "56px",
-                      height: "34px",
-                      boxSizing: "border-box",
-                      background: "rgba(10, 15, 26, 0.75)",
-                      borderRadius: "4px",
-                      border: "2px solid #000000",
-                      boxShadow: "inset 2px 2px 3px rgba(0, 0, 0, 0.85), inset -1px -1px 0px rgba(255, 255, 255, 0.05)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                    title="Espacio de ítem usado (vacío por el resto del combate)"
-                  >
-                    <div
-                      style={{
-                        width: "12px",
-                        height: "2px",
-                        background: "rgba(255, 255, 255, 0.08)",
-                        borderRadius: "1px",
-                      }}
-                    />
-                  </div>
-                );
-              }
-
-              const label = itemType === "dual" ? "DUAL" : "TP";
-              const defaultTitle = itemType === "dual"
-                ? `Item ${slotIndex + 1}: Disparo Dual (x2 proyectiles)`
-                : `Item ${slotIndex + 1}: Teleportación instantánea`;
-              const isLocked = currentWeather.type === "no_items" || hasUsedItemThisTurn || !isPlayerTurnActive;
-              const isSelected = activeItemSlot === slotIndex && !isLocked;
-              const lockTitle = currentWeather.type === "no_items"
-                ? "Ítems bloqueados por el clima (No Items)"
-                : hasUsedItemThisTurn
-                ? "Solo puedes usar 1 ítem por turno"
-                : !isPlayerTurnActive
-                ? "Esperando tu turno..."
-                : defaultTitle;
-
+          {/* Row 2: 3 Items Slots (Col 1, Col 2, Col 3) */}
+          {playerItems.map((itemType, slotIndex) => {
+            if (itemType === null) {
               return (
-                <button
+                <div
                   key={slotIndex}
-                  disabled={isLocked}
-                  className="pixel-btn"
-                  onClick={() => !isLocked && handleToggleItemSlot(slotIndex, itemType)}
                   style={{
-                    background: isLocked
-                      ? "rgba(30, 41, 59, 0.6)"
-                      : isSelected
-                      ? "var(--bg-panel-green)"
-                      : "var(--bg-panel-slate)",
-                    border: isSelected ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
-                    borderRadius: "4px",
-                    padding: 0,
-                    width: "56px",
-                    minWidth: "56px",
-                    height: "34px",
+                    width: "48px",
+                    height: "28px",
                     boxSizing: "border-box",
-                    color: isLocked ? "#64748b" : isSelected ? "var(--color-white)" : "var(--color-slate-400)",
-                    fontFamily: "var(--font-game)",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    cursor: isLocked ? "not-allowed" : "pointer",
-                    opacity: isLocked ? 0.45 : 1,
+                    background: "rgba(10, 15, 26, 0.75)",
+                    borderRadius: "3px",
+                    border: "2px solid #000000",
+                    boxShadow: "inset 2px 2px 3px rgba(0, 0, 0, 0.85), inset -1px -1px 0px rgba(255, 255, 255, 0.05)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    boxShadow: isSelected
-                      ? "var(--shadow-glow-green)"
-                      : "var(--shadow-bevel-btn)",
-                    textShadow: "var(--text-shadow-pixel)",
-                    filter: isSelected ? "none" : undefined,
                   }}
-                  title={lockTitle}
+                  title="Espacio de ítem usado (vacío por el resto del combate)"
                 >
-                  {isLocked && currentWeather.type === "no_items" ? "🔒" : label}
-                </button>
+                  <div
+                    style={{
+                      width: "10px",
+                      height: "2px",
+                      background: "rgba(255, 255, 255, 0.08)",
+                      borderRadius: "1px",
+                    }}
+                  />
+                </div>
               );
-            })}
-          </div>
+            }
 
-          <div style={{ flex: 1 }} />
+            const label = itemType === "dual" ? "DUAL" : "TP";
+            const defaultTitle = itemType === "dual"
+              ? `Item ${slotIndex + 1}: Disparo Dual (x2 proyectiles)`
+              : `Item ${slotIndex + 1}: Teleportación instantánea`;
+            const isLocked = currentWeather.type === "no_items" || hasUsedItemThisTurn || !isPlayerTurnActive;
+            const isSelected = activeItemSlot === slotIndex && !isLocked;
+            const lockTitle = currentWeather.type === "no_items"
+              ? "Ítems bloqueados por el clima (No Items)"
+              : hasUsedItemThisTurn
+              ? "Solo puedes usar 1 ítem por turno"
+              : !isPlayerTurnActive
+              ? "Esperando tu turno..."
+              : defaultTitle;
 
-          {/* Right Group: Shoot Mode Toggle (⌨️ / 🖱️) + Digital Angle Badge */}
-          <div style={{ display: "flex", gap: "6px", alignItems: "center", marginLeft: "auto" }}>
-            {/* Mode toggle button moved directly to the left of angle box */}
+            return (
+              <button
+                key={slotIndex}
+                disabled={isLocked}
+                className="pixel-btn"
+                onClick={() => !isLocked && handleToggleItemSlot(slotIndex, itemType)}
+                style={{
+                  background: isLocked
+                    ? "rgba(30, 41, 59, 0.6)"
+                    : isSelected
+                    ? "var(--bg-panel-green)"
+                    : "var(--bg-panel-slate)",
+                  border: isSelected ? "2px solid var(--color-white)" : "var(--border-pixel-black)",
+                  borderRadius: "3px",
+                  padding: 0,
+                  width: "48px",
+                  height: "28px",
+                  boxSizing: "border-box",
+                  color: isLocked ? "#64748b" : isSelected ? "var(--color-white)" : "var(--color-slate-400)",
+                  fontFamily: "var(--font-game)",
+                  fontWeight: 700,
+                  fontSize: "11px",
+                  cursor: isLocked ? "not-allowed" : "pointer",
+                  opacity: isLocked ? 0.45 : 1,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: isSelected
+                    ? "var(--shadow-glow-green)"
+                    : "var(--shadow-bevel-btn)",
+                  textShadow: "var(--text-shadow-pixel)",
+                }}
+                title={lockTitle}
+              >
+                {isLocked && currentWeather.type === "no_items" ? "🔒" : label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right Side: Mode Toggle + Digital Angle Badge (Top) and Power Bar (Bottom) */}
+        <div style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          flex: 1,
+          gap: "4px",
+          minWidth: 0,
+        }}>
+          {/* Top Sub-Row: Shoot Mode Toggle (⌨️ / 🖱️) + Digital Angle Badge */}
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            gap: "5px",
+            height: "26px",
+          }}>
+            {/* Mode toggle button */}
             <button
               className="pixel-btn"
               onClick={() => {
@@ -1143,9 +1120,9 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   ? "var(--bg-panel-green)"
                   : "var(--bg-panel-slate)",
                 border: shootMode === "drag" ? "var(--border-pixel-success)" : "var(--border-pixel-black)",
-                borderRadius: "4px",
-                width: "36px",
-                height: "34px",
+                borderRadius: "3px",
+                width: "30px",
+                height: "26px",
                 color: "var(--color-white)",
                 cursor: "pointer",
                 boxShadow: shootMode === "drag"
@@ -1154,7 +1131,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "17px",
+                fontSize: "14px",
               }}
               title={shootMode === "drag" ? "Modo Mouse / Slice (Click para cambiar a Teclado Espacio)" : "Modo Teclado / Espacio (Click para cambiar a Mouse Slice)"}
             >
@@ -1174,10 +1151,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 justifyContent: "center",
                 background: "var(--bg-input-field)",
                 border: "var(--border-pixel-black)",
-                borderRadius: "4px",
-                padding: "3px 8px",
-                minWidth: "58px",
-                height: "34px",
+                borderRadius: "3px",
+                padding: "2px 6px",
+                minWidth: "52px",
+                height: "26px",
                 boxSizing: "border-box",
                 boxShadow: "var(--shadow-well-sunken)",
                 cursor: "pointer",
@@ -1189,7 +1166,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
             >
               <span className="num-font" style={{
                 color: angle > 90 ? "var(--color-danger)" : "var(--color-success)",
-                fontSize: "17px",
+                fontSize: "15px",
                 fontWeight: 700,
                 letterSpacing: "0.5px",
                 textShadow: "var(--text-shadow-pixel-bold)",
@@ -1205,80 +1182,80 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               )}
             </button>
           </div>
-        </div>
 
-        {/* Lower Row: Full-Width Authentic GunBound Power Meter Bar (WITHOUT TEXT AS REQUESTED) */}
-        <div style={{
-          width: "100%",
-          height: "32px",
-          background: "var(--bg-well-dark)",
-          borderRadius: "4px",
-          border: "var(--border-pixel-black)",
-          position: "relative",
-          overflow: "hidden",
-          boxShadow: "var(--shadow-power-well)",
-        }}>
-          {/* Authentic ruler tick marks at 25%, 50%, 75% with exact same color intensity (1px, 0.28 opacity) */}
-          <div style={{ position: "absolute", left: "25%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
-          <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
-          <div style={{ position: "absolute", left: "75%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
+          {/* Bottom Sub-Row: Full-Width Authentic GunBound Power Meter Bar */}
+          <div style={{
+            width: "100%",
+            height: "28px",
+            background: "var(--bg-well-dark)",
+            borderRadius: "3px",
+            border: "var(--border-pixel-black)",
+            position: "relative",
+            overflow: "hidden",
+            boxShadow: "var(--shadow-power-well)",
+          }}>
+            {/* Authentic ruler tick marks at 25%, 50%, 75% with exact same color intensity (1px, 0.28 opacity) */}
+            <div style={{ position: "absolute", left: "25%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
+            <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
+            <div style={{ position: "absolute", left: "75%", top: 0, bottom: 0, width: "1px", background: "rgba(255,255,255,0.28)", zIndex: 3 }} />
 
-          {/* Sub-ticks at 10% intervals with matching subtle intensity */}
-          {[10, 20, 30, 40, 60, 70, 80, 90].map((tick) => (
-            <div
-              key={tick}
-              style={{
-                position: "absolute",
-                left: `${tick}%`,
-                top: "8px",
-                bottom: "8px",
-                width: "1px",
-                background: "rgba(255,255,255,0.28)",
-                zIndex: 3,
-              }}
-            />
-          ))}
+            {/* Sub-ticks at 10% intervals with matching subtle intensity */}
+            {[10, 20, 30, 40, 60, 70, 80, 90].map((tick) => (
+              <div
+                key={tick}
+                style={{
+                  position: "absolute",
+                  left: `${tick}%`,
+                  top: "6px",
+                  bottom: "6px",
+                  width: "1px",
+                  background: "rgba(255,255,255,0.28)",
+                  zIndex: 3,
+                }}
+              />
+            ))}
 
-          {/* Last Shot Power Indicator Marker (Golden-yellow line matching arrow marker) */}
-          {lastPower !== null && (
-            <div
-              style={{
-                position: "absolute",
-                left: `${lastPower}%`,
-                top: 0,
-                bottom: 0,
-                width: "2px",
-                background: "#fbbf24",
-                boxShadow: "0 0 4px #f59e0b",
-                zIndex: 5,
-              }}
-            >
+            {/* Last Shot Power Indicator Marker (Golden-yellow line matching arrow marker) */}
+            {lastPower !== null && (
               <div
                 style={{
                   position: "absolute",
+                  left: `${lastPower}%`,
                   top: 0,
-                  left: "-5px",
-                  width: 0,
-                  height: 0,
-                  borderLeft: "6px solid transparent",
-                  borderRight: "6px solid transparent",
-                  borderTop: "8px solid #fbbf24",
+                  bottom: 0,
+                  width: "2px",
+                  background: "#fbbf24",
+                  boxShadow: "0 0 4px #f59e0b",
+                  zIndex: 5,
                 }}
-              />
-            </div>
-          )}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: "-5px",
+                    width: 0,
+                    height: 0,
+                    borderLeft: "6px solid transparent",
+                    borderRight: "6px solid transparent",
+                    borderTop: "8px solid #fbbf24",
+                  }}
+                />
+              </div>
+            )}
 
-          {/* Filled Power Progress with authentic fiery GunBound gradient */}
-          <div
-            ref={powerBarFillRef}
-            style={{
-              width: "0%",
-              height: "100%",
-              background: "linear-gradient(90deg, #facc15 0%, #f97316 40%, #ef4444 80%, #b91c1c 100%)",
-              boxShadow: "0 0 14px rgba(249, 115, 22, 0.75)",
-              transition: "none",
-            }}
-          />
+            {/* Filled Power Progress with authentic fiery GunBound gradient */}
+            <div
+              ref={powerBarFillRef}
+              style={{
+                width: "0%",
+                height: "100%",
+                background: "linear-gradient(90deg, #facc15 0%, #f97316 40%, #ef4444 80%, #b91c1c 100%)",
+                boxShadow: "0 0 14px rgba(249, 115, 22, 0.75)",
+                transition: "none",
+              }}
+            />
+          </div>
         </div>
       </div>
 

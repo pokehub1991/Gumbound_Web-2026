@@ -280,3 +280,115 @@ textarea {
     transform: translate(-50%, -50%) scale(1.0);
   }
 }
+
+/* ==========================================================================
+   AUTHENTIC GUNBOUND GIANT COUNTDOWN TIMER
+   Large 3D beveled retro arcade numerals with fire-red gradient (Image 1 replica)
+   ========================================================================== */
+.gunbound-giant-timer {
+  font-family: 'Pixeboy', 'Silkscreen', monospace;
+  font-size: 60px;
+  line-height: 0.95;
+  font-weight: 900;
+  letter-spacing: 2px;
+  display: inline-block;
+  user-select: none;
+  pointer-events: none;
+  background: linear-gradient(180deg, #ffb703 0%, #fb8500 35%, #e63946 70%, #9d0208 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: 
+    drop-shadow(2px 0 0 #000000) 
+    drop-shadow(-2px 0 0 #000000) 
+    drop-shadow(0 2px 0 #000000) 
+    drop-shadow(0 -2px 0 #000000)
+    drop-shadow(3px 3px 0 #2b0000)
+    drop-shadow(0 5px 0 #150000)
+    drop-shadow(0 8px 8px rgba(0, 0, 0, 0.75));
+  transition: transform 0.15s ease-out;
+}
+
+.gunbound-giant-timer-critical {
+  animation: timerCriticalPulse 0.5s infinite alternate ease-in-out;
+}
+
+@keyframes timerCriticalPulse {
+  0% {
+    transform: scale(1.0);
+    filter: 
+      drop-shadow(2px 0 0 #000000) 
+      drop-shadow(-2px 0 0 #000000) 
+      drop-shadow(0 2px 0 #000000) 
+      drop-shadow(0 -2px 0 #000000)
+      drop-shadow(0 5px 0 #3a0000)
+      drop-shadow(0 0 12px rgba(239, 68, 68, 0.9));
+  }
+  100% {
+    transform: scale(1.12);
+    filter: 
+      drop-shadow(2px 0 0 #000000) 
+      drop-shadow(-2px 0 0 #000000) 
+      drop-shadow(0 2px 0 #000000) 
+      drop-shadow(0 -2px 0 #000000)
+      drop-shadow(0 5px 0 #5c0000)
+      drop-shadow(0 0 20px rgba(255, 40, 40, 1.0));
+  }
+}
+
+/* ==========================================================================
+   AUTHENTIC GUNBOUND / DRAGONBOUND SCREEN SHAKE (CANVAS & BATTLEFIELD)
+   Smooth, punchy, elastic damped harmonic spring animations
+   ========================================================================== */
+#game-canvas-container.shake_anim,
+canvas.shake_anim {
+  animation: gb-shake-ground 320ms cubic-bezier(0.25, 1, 0.5, 1) both !important;
+  will-change: transform;
+}
+
+#game-canvas-container.shake_anim_hit,
+canvas.shake_anim_hit {
+  animation: gb-shake-mobile 520ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+  will-change: transform;
+}
+
+#game-canvas-container.shake_anim_ss,
+canvas.shake_anim_ss {
+  animation: gb-shake-heavy 720ms cubic-bezier(0.20, 1, 0.30, 1) both !important;
+  will-change: transform;
+}
+
+@keyframes gb-shake-ground {
+  0% { transform: translate3d(0, 0, 0); }
+  12% { transform: translate3d(1.5px, -8px, 0); }
+  25% { transform: translate3d(-1.5px, 7px, 0); }
+  40% { transform: translate3d(1px, -5px, 0); }
+  55% { transform: translate3d(-1px, 3px, 0); }
+  70% { transform: translate3d(0, -2px, 0); }
+  85% { transform: translate3d(0, 1px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes gb-shake-mobile {
+  0% { transform: translate3d(0, 0, 0) scale(1.0); }
+  8% { transform: translate3d(3px, -20px, 0) scale(1.016); }
+  20% { transform: translate3d(-3px, 16px, 0) scale(1.012); }
+  34% { transform: translate3d(2px, -11px, 0) scale(1.008); }
+  48% { transform: translate3d(-2px, 7px, 0) scale(1.004); }
+  62% { transform: translate3d(1px, -4px, 0) scale(1.002); }
+  76% { transform: translate3d(-1px, 2.5px, 0) scale(1.001); }
+  88% { transform: translate3d(0, -1px, 0) scale(1.0); }
+  100% { transform: translate3d(0, 0, 0) scale(1.0); }
+}
+
+@keyframes gb-shake-heavy {
+  0% { transform: translate3d(0, 0, 0) scale(1.0); }
+  7% { transform: translate3d(5px, -30px, 0) scale(1.026); }
+  18% { transform: translate3d(-5px, 24px, 0) scale(1.020); }
+  30% { transform: translate3d(4px, -18px, 0) scale(1.014); }
+  42% { transform: translate3d(-3px, 13px, 0) scale(1.009); }
+  55% { transform: translate3d(2px, -9px, 0) scale(1.005); }
+  68% { transform: translate3d(-2px, 5px, 0) scale(1.003); }
+  80% { transform: translate3d(1px, -3px, 0) scale(1.001); }
+  90% { transform: translate3d(0, 1.5px, 0) scale(1.0); }
+  100% { transform: translate3d(0, 0, 0) scale(1.0); }
+}

@@ -98,6 +98,7 @@ export class CombatArena {
   public onBattleIntro?: (phase: "ready" | "fight" | null) => void;
   public onTurnTimerFreeze?: () => void;
   public onTurnTimerReset?: (seconds?: number) => void;
+  public onTurnPlayableChange?: (playable: boolean) => void;
   public battleIntroPhase: "ready" | "fight" | null = null;
   public hasStartedIntro: boolean = false;
   public isBattleIntroActive: boolean = false;
@@ -823,6 +824,9 @@ export class CombatArena {
     if (this.onTurnTimerFreeze) {
       this.onTurnTimerFreeze();
     }
+    if (this.onTurnPlayableChange) {
+      this.onTurnPlayableChange(false);
+    }
     this.aimController.enabled = false;
 
     // Report last shot power for power bar guide marker
@@ -1089,33 +1093,57 @@ export class CombatArena {
     const mobileDef = MOBILES_DATA[shooter.mobileType] || MOBILES_DATA[0];
     AudioManager.play(mobileDef.soundExplode || "11blast", 0.9);
 
-    // 3. Screen rumble proportional to crater radius
-    const shakeIntensity = traj.bungeRadius > 45 ? 9 : 5;
-    this.engine.shakeScreen(shakeIntensity, 340);
-
-    // 4. Special satellite orbital beams (Aduka Thor, ASate, Knight, Lightning)
-    this.handleSpecialOrbitalBeams(traj);
-
-    // 5. Bot damage check across all active bots
+    // 3. Bot damage check across all active bots
     const blastRadius = traj.bungeRadius * 1.5;
+    let maxDamageApplied = 0;
+    let hitMobileDirectly = traj.hitType === "player";
+
     for (const b of this.bots) {
       if (b.isDead || b.mobile.hp <= 0) continue;
-      const distToBot = Math.hypot(b.mobile.x - x, b.mobile.y - y);
+      const distToBot = Math.hypot(b.mobile.x - x, (b.mobile.y - 14) - y);
 
-      if (distToBot <= blastRadius) {
-        const falloff = 1 - distToBot / blastRadius;
+      if (distToBot <= blastRadius + 14) {
+        const falloff = Math.max(0, 1 - distToBot / (blastRadius + 14));
         const appliedDamage = Math.round(traj.damage * (0.45 + 0.55 * falloff));
+        if (distToBot <= 48) {
+          hitMobileDirectly = true;
+        }
+        maxDamageApplied = Math.max(maxDamageApplied, appliedDamage);
         b.takeDamage(appliedDamage, x, y);
       }
     }
 
-    // 6. Player explosion/collision damage check (Splash / Self-damage)
-    const distToPlayer = Math.hypot(this.player.x - x, this.player.y - y);
-    if (distToPlayer <= blastRadius) {
-      const falloff = 1 - distToPlayer / blastRadius;
+    // 4. Player explosion/collision damage check (Splash / Self-damage)
+    const distToPlayer = Math.hypot(this.player.x - x, (this.player.y - 14) - y);
+    if (distToPlayer <= blastRadius + 14) {
+      const falloff = Math.max(0, 1 - distToPlayer / (blastRadius + 14));
       const appliedDamage = Math.round(traj.damage * (0.45 + 0.55 * falloff));
+      if (distToPlayer <= 48) {
+        hitMobileDirectly = true;
+      }
+      maxDamageApplied = Math.max(maxDamageApplied, appliedDamage);
       this.damagePlayer(appliedDamage, x, y);
     }
+
+    // 5. Authentic GunBound Impact Rumble (Direct Mobile Hit vs Terrain Excavation)
+    const isSS = traj.subType === "ss";
+    if (hitMobileDirectly) {
+      // Direct mobile impact: high trauma vertical shock
+      const intensity = isSS ? 26 : maxDamageApplied > 250 ? 20 : 16;
+      const duration = isSS ? 720 : 520;
+      this.engine.shakeScreen(intensity, duration, true, isSS);
+    } else if (maxDamageApplied > 0) {
+      // Splash damage to vehicles
+      const intensity = traj.bungeRadius > 45 ? 15 : 12;
+      this.engine.shakeScreen(intensity, 440, true, false);
+    } else {
+      // Terrain excavation rumble
+      const intensity = traj.bungeRadius > 45 ? 10 : 7;
+      this.engine.shakeScreen(intensity, 320, false, false);
+    }
+
+    // 6. Special satellite orbital beams (Aduka Thor, ASate, Knight, Lightning)
+    this.handleSpecialOrbitalBeams(traj);
   }
 
   public damagePlayer(damage: number, impactX: number, _impactY: number) {
@@ -1271,6 +1299,9 @@ export class CombatArena {
   private onAllProjectilesFinished() {
     if (this.isTurnAdvancing) return;
     this.isTurnAdvancing = true;
+    if (this.onTurnPlayableChange) {
+      this.onTurnPlayableChange(false);
+    }
 
     this.isSimulating = false;
     this.engine.setSSOverlay(false);
@@ -1340,6 +1371,7 @@ export class CombatArena {
       this.aimController.stopCharging();
       this.aimController.stopMoving();
       this.aimController.enabled = false;
+      if (this.onTurnPlayableChange) this.onTurnPlayableChange(false);
       this.player.playAnimation("normal");
 
       // Authentic GunBound timeout penalty delay
@@ -1353,7 +1385,7 @@ export class CombatArena {
       if (this.onChatMessage) {
         this.onChatMessage({
           sender: "Sistema",
-          text: "⏳ ¡Tiempo de turno agotado! El turno pasa automáticamente al siguiente combatiente.",
+          text: "⏳ Se agotó tu tiempo",
           isSystem: true,
         });
       }
@@ -1364,7 +1396,7 @@ export class CombatArena {
       if (this.onChatMessage) {
         this.onChatMessage({
           sender: "Sistema",
-          text: `⏳ ¡Tiempo de turno agotado para ${this.actingBot.mobile.nickname}!`,
+          text: `⏳ Tiempo agotado: ${this.actingBot.mobile.nickname}`,
           isSystem: true,
         });
       }
@@ -1385,6 +1417,7 @@ export class CombatArena {
     this.aimController.stopCharging();
     this.aimController.stopMoving();
     this.aimController.enabled = false;
+    if (this.onTurnPlayableChange) this.onTurnPlayableChange(false);
     this.player.playAnimation("normal");
 
     // Authentic GunBound Pass Turn Penalty (+510 delay)
@@ -1398,7 +1431,7 @@ export class CombatArena {
     if (this.onChatMessage) {
       this.onChatMessage({
         sender: "Sistema",
-        text: "⏭️ ¡Has pasado tu turno! (+510 delay)",
+        text: "⏭️ Pasaste turno (+510 delay)",
         isSystem: true,
       });
     }
@@ -1411,13 +1444,34 @@ export class CombatArena {
   private switchToPlayerTurn() {
     this.activeTurn = "player";
     this.actingBot = null;
+    this.isTurnAdvancing = false;
+    this.isSimulating = false;
     this.isTurnTimerFrozen = false;
     this.turnStartTime = Date.now();
     this.turnMovementDistance = 0;
     this.lastPlayerMoveX = this.player.x;
     this.hasUsedItemThisTurn = false;
+    this.activeItem = null;
+    this.activeItemSlotIndex = null;
+
+    // Immediately re-enable player aim controller & mobile
+    this.aimController.enabled = true;
+    this.aimController.setActiveMobile(this.player);
+
+    if (this.onActiveItemChange) {
+      this.onActiveItemChange(null);
+    }
     if (this.onItemUsedThisTurnChange) {
       this.onItemUsedThisTurnChange(false);
+    }
+    if (this.onTurnTimerReset) {
+      this.onTurnTimerReset(20);
+    }
+    if (this.onTurnReady) {
+      this.onTurnReady();
+    }
+    if (this.onTurnPlayableChange) {
+      this.onTurnPlayableChange(true);
     }
     this.broadcastTurnUpdate();
 
@@ -1433,20 +1487,6 @@ export class CombatArena {
     // 1. Pan camera to active player
     this.engine.userHasManualCamera = false;
     this.engine.panTo(this.player.x + 80, this.player.y - 40);
-
-    // 2. Re-enable player aim controller
-    setTimeout(() => {
-      this.aimController.enabled = true;
-      this.aimController.setActiveMobile(this.player);
-      this.isTurnAdvancing = false;
-
-      if (this.onTurnTimerReset) {
-        this.onTurnTimerReset(20);
-      }
-      if (this.onTurnReady) {
-        this.onTurnReady();
-      }
-    }, 400);
   }
 
   public executeBotTurn(bot: BotDummy) {
@@ -1456,6 +1496,9 @@ export class CombatArena {
     this.isTurnTimerFrozen = false;
     this.isSimulating = false;
     this.turnStartTime = Date.now();
+    if (this.onTurnPlayableChange) {
+      this.onTurnPlayableChange(false);
+    }
     if (this.onTurnTimerReset) {
       this.onTurnTimerReset(20);
     }
@@ -1463,7 +1506,6 @@ export class CombatArena {
     // Authentic GunBound turn alert sound
     AudioManager.play("turn.ogg", 0.95);
 
-    this.broadcastTurnUpdate();
     this.aimController.enabled = false;
     this.broadcastTurnUpdate();
 
@@ -1695,6 +1737,9 @@ export class CombatArena {
     this.aimController.stopCharging();
     this.isSimulating = true;
     this.isTurnTimerFrozen = true;
+    if (this.onTurnPlayableChange) {
+      this.onTurnPlayableChange(false);
+    }
 
     // Ambient/waiting background music during the pre-match countdown
     AudioManager.playMusic("dbWaiting2020.ogg", false);

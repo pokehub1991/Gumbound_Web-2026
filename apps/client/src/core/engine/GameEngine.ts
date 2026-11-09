@@ -13,9 +13,7 @@ export class GameEngine {
   public readonly worldHeight: number = 1210;
 
   // Screen shake
-  private shakeIntensity: number = 0;
-  private shakeDuration: number = 0;
-  private shakeTimer: number = 0;
+  private cssShakeTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // SS Battlefield Darkening
   private ssOverlay: Graphics;
@@ -205,10 +203,24 @@ export class GameEngine {
     this.targetZoom = Math.max(0.45, Math.min(1.60, zoom));
   }
 
-  public shakeScreen(intensity: number = 8, durationMs: number = 380) {
-    this.shakeIntensity = intensity;
-    this.shakeDuration = Math.max(1, durationMs);
-    this.shakeTimer = durationMs;
+  public shakeScreen(_intensity: number = 8, _durationMs: number = 380, isDirectHit: boolean = false, isSS: boolean = false) {
+    // Authentic DragonBound / GunBound Screen Shake via CSS Keyframes on DOM Canvas
+    if (typeof document !== "undefined") {
+      const el = document.getElementById("game-canvas-container") || (this.app?.canvas as HTMLElement | undefined);
+      if (el) {
+        el.classList.remove("shake_anim", "shake_anim_hit", "shake_anim_ss");
+        void el.offsetWidth; // Force synchronous reflow to ensure instant replay
+        const animClass = isSS ? "shake_anim_ss" : isDirectHit ? "shake_anim_hit" : "shake_anim";
+        el.classList.add(animClass);
+
+        if (this.cssShakeTimeout) clearTimeout(this.cssShakeTimeout);
+        const timeoutMs = isSS ? 750 : isDirectHit ? 540 : 340;
+        this.cssShakeTimeout = setTimeout(() => {
+          el.classList.remove("shake_anim", "shake_anim_hit", "shake_anim_ss");
+          this.cssShakeTimeout = null;
+        }, timeoutMs);
+      }
+    }
   }
 
   public setSSOverlay(active: boolean) {
@@ -251,21 +263,8 @@ export class GameEngine {
     const screenH = this.app.screen.height;
 
     // View positioning centered around camera position (GunBound / DragonBound free panning)
-    const rawViewX = screenW / 2 - this.cameraX * this.cameraZoom;
-    const rawViewY = screenH / 2 - this.cameraY * this.cameraZoom;
-
-    let viewX = rawViewX;
-    let viewY = rawViewY;
-
-    // Screen Shake Offset
-    if (this.shakeTimer > 0) {
-      this.shakeTimer -= dt * 16.66;
-      const decay = Math.max(0, this.shakeTimer / this.shakeDuration);
-      const ox = (Math.random() - 0.5) * 2 * this.shakeIntensity * decay;
-      const oy = (Math.random() - 0.5) * 2 * this.shakeIntensity * decay;
-      viewX += ox;
-      viewY += oy;
-    }
+    const viewX = screenW / 2 - this.cameraX * this.cameraZoom;
+    const viewY = screenH / 2 - this.cameraY * this.cameraZoom;
 
     this.worldContainer.position.set(viewX, viewY);
     this.worldContainer.scale.set(this.cameraZoom);
@@ -317,17 +316,8 @@ export class GameEngine {
         // Guaranteed: bgX <= 0 and bgX + bgW >= screenW
         // Guaranteed: bgY <= 0 and bgY + bgH >= screenH
         // Under ALL conditions (high bullets, manual panning, resizing), zero background borders are EVER exposed!
-        let bgX = Math.max(-slackX, Math.min(0, targetBgX));
-        let bgY = Math.max(-slackY, Math.min(0, targetBgY));
-
-        // Subtle shake transfer during explosions/screenshake
-        if (this.shakeTimer > 0) {
-          bgX += (Math.random() - 0.5) * this.shakeIntensity * 0.20;
-          bgY += (Math.random() - 0.5) * this.shakeIntensity * 0.20;
-          // Re-clamp so shake never reveals borders
-          bgX = Math.max(-slackX, Math.min(0, bgX));
-          bgY = Math.max(-slackY, Math.min(0, bgY));
-        }
+        const bgX = Math.max(-slackX, Math.min(0, targetBgX));
+        const bgY = Math.max(-slackY, Math.min(0, targetBgY));
 
         bg.position.set(bgX, bgY);
       }
