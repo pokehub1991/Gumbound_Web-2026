@@ -12,8 +12,16 @@ export class GameEngine {
   public readonly worldWidth: number = 1409;
   public readonly worldHeight: number = 1210;
 
-  // Screen shake
-  private cssShakeTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Dynamic Impact Screenshake Engine (100% Canvas & Viewport Safe, 60/120 FPS WebGL)
+  private shakeTimer: number = 0;       // ms elapsed in current shake
+  private shakeDuration: number = 0;    // total ms for current shake
+  private shakeAmpX: number = 0;        // current horizontal amplitude (px)
+  private shakeAmpY: number = 0;        // current vertical amplitude (px)
+  private shakeAngle: number = 0;       // current rotational amplitude (rad)
+  private shakeFreq: number = 26;       // oscillation frequency
+  public shakeOffsetX: number = 0;
+  public shakeOffsetY: number = 0;
+  public shakeRotation: number = 0;
 
   // SS Battlefield Darkening
   private ssOverlay: Graphics;
@@ -203,24 +211,94 @@ export class GameEngine {
     this.targetZoom = Math.max(0.45, Math.min(1.60, zoom));
   }
 
-  public shakeScreen(_intensity: number = 8, _durationMs: number = 380, isDirectHit: boolean = false, isSS: boolean = false) {
-    // Authentic DragonBound / GunBound Screen Shake via CSS Keyframes on DOM Canvas
-    if (typeof document !== "undefined") {
-      const el = document.getElementById("game-canvas-container") || (this.app?.canvas as HTMLElement | undefined);
-      if (el) {
-        el.classList.remove("shake_anim", "shake_anim_hit", "shake_anim_ss");
-        void el.offsetWidth; // Force synchronous reflow to ensure instant replay
-        const animClass = isSS ? "shake_anim_ss" : isDirectHit ? "shake_anim_hit" : "shake_anim";
-        el.classList.add(animClass);
+  /**
+   * Authentic GunBound & Pro Game Engine Impact Screenshake:
+   * Dynamic calculations based on Shot Type (Tiro 1, Tiro 2, SS), direct mobile hits vs terrain,
+   * Dual volley stacking, and impact damage.
+   * Completely eliminates CSS DOM canvas translation, guaranteeing 0 black/empty border gaps.
+   * Amplitudes are defined in true screen-space pixels for punchy, visceral feedback at any zoom.
+   */
+  public triggerImpactShake(options: {
+    shotType?: number; // 0 = T1, 1 = T2, 2 = SS
+    hitMobileDirectly?: boolean;
+    isDual?: boolean;
+    damage?: number;
+    customTrauma?: number;
+  }) {
+    const isSS = options.shotType === 2;
+    const isShot2 = options.shotType === 1;
+    const isDirect = !!options.hitMobileDirectly;
+    const isDual = !!options.isDual;
 
-        if (this.cssShakeTimeout) clearTimeout(this.cssShakeTimeout);
-        const timeoutMs = isSS ? 750 : isDirectHit ? 540 : 340;
-        this.cssShakeTimeout = setTimeout(() => {
-          el.classList.remove("shake_anim", "shake_anim_hit", "shake_anim_ss");
-          this.cssShakeTimeout = null;
-        }, timeoutMs);
-      }
+    let targetAmpX = 8.0;
+    let targetAmpY = 14.0;
+    let targetAngle = 0.008;
+    let targetDuration = 320;
+    let targetFreq = 16;
+
+    if (options.customTrauma !== undefined) {
+      const scale = options.customTrauma;
+      targetAmpX = 22 * scale;
+      targetAmpY = 32 * scale;
+      targetAngle = 0.025 * scale;
+      targetDuration = 260 + 440 * scale;
+      targetFreq = 15;
+    } else if (isSS) {
+      // SS: Massive tectonic earthquake rumble
+      targetAmpX = isDirect ? 28.0 : 22.0;
+      targetAmpY = isDirect ? 42.0 : 34.0;
+      targetAngle = isDirect ? 0.032 : 0.024; // ~1.8° to 1.4°
+      targetDuration = isDirect ? 800 : 680;
+      targetFreq = isDirect ? 12 : 13;
+    } else if (isShot2) {
+      // Tiro 2: Heavy concussive blast with firm vertical shudder
+      targetAmpX = isDirect ? 18.0 : 12.0;
+      targetAmpY = isDirect ? 28.0 : 20.0;
+      targetAngle = isDirect ? 0.018 : 0.012; // ~1.0°
+      targetDuration = isDirect ? 500 : 400;
+      targetFreq = 14;
+    } else {
+      // Tiro 1: Crisp, snappy, punchy kick (distinctly felt on every hit!)
+      targetAmpX = isDirect ? 12.0 : 8.0;
+      targetAmpY = isDirect ? 20.0 : 14.0;
+      targetAngle = isDirect ? 0.012 : 0.008; // ~0.7°
+      targetDuration = isDirect ? 380 : 320;
+      targetFreq = isDirect ? 15 : 16;
     }
+
+    // Dual bonus: +35% boost on amplitude & extended duration
+    if (isDual) {
+      targetAmpX *= 1.35;
+      targetAmpY *= 1.35;
+      targetDuration = Math.min(850, targetDuration * 1.30);
+    }
+
+    // Damage bonus for high-impact detonations (>300 damage)
+    if (options.damage && options.damage > 300) {
+      const dmgBonus = Math.min(1.40, 1.0 + (options.damage - 300) / 600);
+      targetAmpX *= dmgBonus;
+      targetAmpY *= dmgBonus;
+    }
+
+    // Multi-hit stacking (Dual volleys, multi-missiles):
+    // If already shaking, stack remaining amplitude + 40% of target so volleys kick seamlessly!
+    const remainingRatio = this.shakeDuration > 0 ? Math.max(0, 1 - this.shakeTimer / this.shakeDuration) : 0;
+    const currentRemainingY = this.shakeAmpY * remainingRatio;
+
+    this.shakeAmpX = Math.min(42, Math.max(this.shakeAmpX * remainingRatio, targetAmpX) + (currentRemainingY > 2 ? targetAmpX * 0.40 : 0));
+    this.shakeAmpY = Math.min(54, Math.max(currentRemainingY, targetAmpY) + (currentRemainingY > 2 ? targetAmpY * 0.40 : 0));
+    this.shakeAngle = Math.min(0.045, Math.max(this.shakeAngle * remainingRatio, targetAngle) + (currentRemainingY > 2 ? targetAngle * 0.35 : 0));
+    this.shakeDuration = Math.max(this.shakeDuration - this.shakeTimer, targetDuration);
+    this.shakeFreq = targetFreq;
+    this.shakeTimer = 0; // Trigger instant kick at t = 0
+  }
+
+  public shakeScreen(intensity: number = 8, _durationMs: number = 380, isDirectHit: boolean = false, isSS: boolean = false) {
+    this.triggerImpactShake({
+      shotType: isSS ? 2 : isDirectHit ? 1 : 0,
+      hitMobileDirectly: isDirectHit,
+      customTrauma: isSS ? 1.0 : Math.min(1.0, intensity / 18),
+    });
   }
 
   public setSSOverlay(active: boolean) {
@@ -259,15 +337,43 @@ export class GameEngine {
       }
     }
 
+    // 2. Dynamic Impact Screenshake Update (Damped Harmonic Oscillator with Instant Attack)
+    if (this.shakeTimer < this.shakeDuration && this.shakeDuration > 0) {
+      this.shakeTimer += dt * 16.666; // convert to ms
+      const progress = Math.min(1.0, this.shakeTimer / this.shakeDuration);
+
+      // Smooth damping envelope: strong initial impulse, decays cleanly without vanishing instantly
+      const envelope = (1.0 - progress) * Math.exp(-1.6 * progress);
+
+      // Harmonic oscillation in the 12-16 Hz sweet spot (3 to 5 frames per half-cycle at 60 FPS)
+      const timeSec = this.shakeTimer / 1000;
+      const omega = this.shakeFreq * Math.PI * 2;
+
+      // Authentic GunBound: primary impact kick is vertical (upward ground impulse), followed by alternating bounce
+      const waveY = Math.cos(omega * timeSec);
+      // Horizontal jitter has a slight phase lead
+      const waveX = Math.sin(omega * 1.15 * timeSec + 0.40);
+      // Rotational roll gives physical weight
+      const waveRot = Math.sin(omega * 0.85 * timeSec);
+
+      this.shakeOffsetX = waveX * this.shakeAmpX * envelope;
+      this.shakeOffsetY = -waveY * this.shakeAmpY * envelope;
+      this.shakeRotation = waveRot * this.shakeAngle * envelope;
+    } else {
+      this.shakeOffsetX = 0;
+      this.shakeOffsetY = 0;
+      this.shakeRotation = 0;
+      this.shakeDuration = 0;
+    }
+
     const screenW = this.app.screen.width;
     const screenH = this.app.screen.height;
 
-    // View positioning centered around camera position (GunBound / DragonBound free panning)
-    const viewX = screenW / 2 - this.cameraX * this.cameraZoom;
-    const viewY = screenH / 2 - this.cameraY * this.cameraZoom;
-
-    this.worldContainer.position.set(viewX, viewY);
+    // View positioning centered around camera position with true screen-space trauma offset
+    this.worldContainer.pivot.set(this.cameraX, this.cameraY);
+    this.worldContainer.position.set(screenW / 2 + this.shakeOffsetX, screenH / 2 + this.shakeOffsetY);
     this.worldContainer.scale.set(this.cameraZoom);
+    this.worldContainer.rotation = this.shakeRotation;
 
     // Dynamic Panoramic Parallax Engine (Widescreen 16:9 Adapted)
     // 100% Edge-Proof: Mathematically guarantees zero visible borders/margins on any monitor resolution
@@ -301,21 +407,16 @@ export class GameEngine {
         const worldCenterX = this.worldWidth / 2; // 704.5
         const worldCenterY = 420; // Metamine bridge surface (raised by 90px)
 
-        // Smooth Proportional Parallax
-        // 1. Horizontal: Far-distance parallax factor (0.20). Centered at worldCenterX
+        // Smooth Proportional Parallax factoring camera + subtle shake influence
         const dx = this.cameraX - worldCenterX;
-        const targetBgX = -slackX * 0.50 - dx * 0.20;
-
-        // 2. Vertical: High-sky & abyss tracking factor (0.16).
-        // Anchored with generous upper-sky and lower-abyss clearance, keeping landmarks
-        // framed cleanly across the horizon above the bridge.
         const dy = this.cameraY - worldCenterY;
-        const targetBgY = -slackY * 0.70 - dy * 0.16;
+        const targetBgX = -slackX * 0.50 - dx * 0.20 + this.shakeOffsetX * 0.20;
+        const targetBgY = -slackY * 0.70 - dy * 0.16 + this.shakeOffsetY * 0.20;
 
         // STRICT INVIOLABLE SCREEN BOUNDS CLAMP:
         // Guaranteed: bgX <= 0 and bgX + bgW >= screenW
         // Guaranteed: bgY <= 0 and bgY + bgH >= screenH
-        // Under ALL conditions (high bullets, manual panning, resizing), zero background borders are EVER exposed!
+        // Under ALL conditions (high bullets, manual panning, shake, resizing), zero background borders are EVER exposed!
         const bgX = Math.max(-slackX, Math.min(0, targetBgX));
         const bgY = Math.max(-slackY, Math.min(0, targetBgY));
 

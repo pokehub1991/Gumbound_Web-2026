@@ -18,6 +18,8 @@ export interface TrajectoryPoint {
 export interface ShotTrajectory {
   id: string;
   subType: string;
+  shotType?: number; // 0 = Tiro 1, 1 = Tiro 2, 2 = SS
+  isDual?: boolean;
   points: TrajectoryPoint[];
   finalPos: Point2D;
   hitType: "ground" | "player" | "oob";
@@ -100,6 +102,14 @@ export class BallisticsEngine {
   }
 
   public static simulateShot(params: FireParams): ShotTrajectory[] {
+    const list = this.internalSimulateShot(params);
+    for (const t of list) {
+      t.shotType = params.shotType;
+    }
+    return list;
+  }
+
+  private static internalSimulateShot(params: FireParams): ShotTrajectory[] {
     const mobile = MOBILES_DATA[params.mobileId] || MOBILES_DATA[0];
     const muzzle = this.computeMuzzle(params.x, params.y, params.look, params.bodyAngle, params.mobileId);
 

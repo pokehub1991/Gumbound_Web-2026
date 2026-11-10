@@ -819,6 +819,7 @@ export class CombatArena {
     if (this.activeTurn !== "player" || this.isSimulating || this.isBattleIntroActive || this.isTurnAdvancing) {
       return;
     }
+    this.selectedShotType = shotType;
     this.isSimulating = true;
     this.isTurnTimerFrozen = true;
     if (this.onTurnTimerFreeze) {
@@ -912,6 +913,12 @@ export class CombatArena {
     };
 
     const trajectories = BallisticsEngine.simulateShot(params);
+    trajectories.forEach((t) => {
+      t.shotType = shotType;
+      if (itemUsed === "dual") {
+        t.isDual = true;
+      }
+    });
 
     // 1. Transition pause: +10ms delay per shot type (Tiro 1: 10ms, Tiro 2: 120ms [+10ms], SS: 90ms)
     const fireAnim = shotType === 2 ? "sfire" : shotType === 1 ? "fire2" : "fire1";
@@ -1125,22 +1132,18 @@ export class CombatArena {
       this.damagePlayer(appliedDamage, x, y);
     }
 
-    // 5. Authentic GunBound Impact Rumble (Direct Mobile Hit vs Terrain Excavation)
-    const isSS = traj.subType === "ss";
-    if (hitMobileDirectly) {
-      // Direct mobile impact: high trauma vertical shock
-      const intensity = isSS ? 26 : maxDamageApplied > 250 ? 20 : 16;
-      const duration = isSS ? 720 : 520;
-      this.engine.shakeScreen(intensity, duration, true, isSS);
-    } else if (maxDamageApplied > 0) {
-      // Splash damage to vehicles
-      const intensity = traj.bungeRadius > 45 ? 15 : 12;
-      this.engine.shakeScreen(intensity, 440, true, false);
-    } else {
-      // Terrain excavation rumble
-      const intensity = traj.bungeRadius > 45 ? 10 : 7;
-      this.engine.shakeScreen(intensity, 320, false, false);
-    }
+    // 5. Authentic GunBound & Pro Game Engine Impact Screenshake
+    // Dynamic trauma physics: Shot 1 vs Shot 2 vs SS vs Dual, and Direct Mobile Impact vs Terrain Excavation
+    const isSS = traj.shotType === 2 || traj.subType === "ss";
+    const shotType = traj.shotType ?? (isSS ? 2 : 0);
+    const isDual = traj.isDual ?? false;
+
+    this.engine.triggerImpactShake({
+      shotType,
+      hitMobileDirectly,
+      isDual,
+      damage: maxDamageApplied,
+    });
 
     // 6. Special satellite orbital beams (Aduka Thor, ASate, Knight, Lightning)
     this.handleSpecialOrbitalBeams(traj);
@@ -1638,6 +1641,12 @@ export class CombatArena {
       const blastDelayMs = chargeToFireDelayMs + (solution.shotType === 2 ? 780 : solution.shotType === 1 ? 620 : 220);
 
       const useDual = !this.weatherManager.isItemsLocked() && bot.items.includes("dual") && Math.random() < 0.28;
+      trajectories.forEach((t) => {
+        t.shotType = solution.shotType;
+        if (useDual) {
+          t.isDual = true;
+        }
+      });
       if (useDual) {
         bot.consumeItem("dual");
         bot.delay += 550;
