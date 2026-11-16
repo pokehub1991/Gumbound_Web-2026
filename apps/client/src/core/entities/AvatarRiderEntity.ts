@@ -105,28 +105,49 @@ export class AvatarRiderEntity extends Container {
     // GunBound: position.x = -cx, position.y = -cy
     this.bodySprite.position.set(-bDef.cx, -bDef.cy);
 
-    // 2. Calculate Head Frame using GunBound LOOP_AVATAR:
-    // Normal state breathes and blinks in frames 11..20..11.
-    // Occasionally turnCycle triggers is_special to look around (frames 0..10..0).
-    const hCount = headFrames.length; // 22 frames
-    const half = Math.floor(hCount / 2); // 11
-    const hCycle = 2 * half - 2; // 20
+    // 2. Calculate Head Frame:
+    // Supports both modern 16-frame linear cycles (8 turn + 8 idle/blink) and classic GunBound 22-frame ping-pong.
+    const hCount = headFrames.length;
+    const half = Math.floor(hCount / 2);
+    const isLinear = hCount <= 16; // Modern sheets (e.g. cabeza2 + cabeza1) are full linear loops
 
-    if (this.damageFlashTimer <= 0) {
-      const cycleIdx = Math.floor(step / (hCount - 2 > 0 ? hCount - 2 : 1));
-      if (this.turnCycle === undefined || cycleIdx > this.turnCycle) {
-        // GunBound RANDOM_FACE_TURN_CHANCE = 6
-        this.turnCycle = cycleIdx + 2 + Math.floor(Math.random() * 5);
+    let hFrame = 0;
+    if (isLinear) {
+      const cycleSteps = half; // 8 steps per cycle
+      const cycleIdx = Math.floor(step / cycleSteps);
+      if (this.damageFlashTimer <= 0) {
+        if (this.turnCycle === undefined || cycleIdx > this.turnCycle) {
+          // Trigger special turn every 4 to 8 idle cycles (approx 3.2s to 6.4s)
+          this.turnCycle = cycleIdx + 4 + Math.floor(Math.random() * 5);
+        }
+        this.isSpecialHead = cycleIdx === this.turnCycle;
       }
-      this.isSpecialHead = cycleIdx === this.turnCycle;
-    }
-
-    let hFrame = step % (hCycle > 0 ? hCycle : 1);
-    if (hFrame >= half) {
-      hFrame = hCycle - hFrame;
-    }
-    if (!this.isSpecialHead) {
-      hFrame += half; // Idle breathing frames (11..20)
+      const localStep = step % half;
+      if (this.isSpecialHead) {
+        // Linear turn: 0..7 (starts in profile, looks at player, returns to profile)
+        hFrame = localStep;
+      } else {
+        // Linear idle/blink: 8..15
+        hFrame = half + localStep;
+      }
+    } else {
+      // Classic GunBound 22-frame ping-pong mode (e.g. mh00000)
+      const hCycle = 2 * half - 2;
+      const cycleSteps = hCycle > 0 ? hCycle : 1;
+      const cycleIdx = Math.floor(step / cycleSteps);
+      if (this.damageFlashTimer <= 0) {
+        if (this.turnCycle === undefined || cycleIdx > this.turnCycle) {
+          this.turnCycle = cycleIdx + 2 + Math.floor(Math.random() * 5);
+        }
+        this.isSpecialHead = cycleIdx === this.turnCycle;
+      }
+      hFrame = step % (hCycle > 0 ? hCycle : 1);
+      if (hFrame >= half) {
+        hFrame = hCycle - hFrame;
+      }
+      if (!this.isSpecialHead) {
+        hFrame += half;
+      }
     }
     hFrame = Math.max(0, Math.min(hCount - 1, hFrame));
 

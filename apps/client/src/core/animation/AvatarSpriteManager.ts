@@ -42,7 +42,8 @@ export class AvatarSpriteManager {
   }
 
   private static async internalLoad(gender: "male" | "female"): Promise<AvatarTextures> {
-    const headKey = gender === "male" ? "mh00000" : "fh00000";
+    // Modo test solicitado: Usar la nueva cabeza de Santa ('santa_head') para todos los avatares del juego
+    const headKey = "santa_head";
     const bodyKey = gender === "male" ? "mb00000" : "fb00000";
 
     const headPath = `/sprites/avatars/${headKey}.png`;
