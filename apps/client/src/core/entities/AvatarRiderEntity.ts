@@ -77,7 +77,8 @@ export class AvatarRiderEntity extends Container {
     this.neckJoint = new Container();
     this.headJoint = new Container();
 
-    this.neckJoint.position.set(AVATAR_ANCHORS.neckOffset.x, AVATAR_ANCHORS.neckOffset.y);
+    const neckOffset = AVATAR_ANCHORS.neckOffset[this.gender] ?? AVATAR_ANCHORS.neckOffset.male;
+    this.neckJoint.position.set(neckOffset.x, neckOffset.y);
     this.neckJoint.addChild(this.headJoint);
     this.torsoJoint.addChild(this.neckJoint);
     this.addChild(this.torsoJoint);
@@ -88,7 +89,7 @@ export class AvatarRiderEntity extends Container {
 
     this.hairBackSprite = new Sprite();
     this.hairBackSprite.anchor.set(AVATAR_ANCHORS.seat.x, AVATAR_ANCHORS.seat.y);
-    this.hairBackSprite.position.set(AVATAR_ANCHORS.neckOffset.x, 0);
+    this.hairBackSprite.position.set(neckOffset.x, 0);
 
     this.bodySprite = new Sprite();
     this.bodySprite.anchor.set(AVATAR_ANCHORS.seat.x, AVATAR_ANCHORS.seat.y);
@@ -183,6 +184,9 @@ export class AvatarRiderEntity extends Container {
     this.equipment = {
       ...DEFAULT_AVATAR_EQUIPMENT[this.gender],
     };
+    const neckOffset = AVATAR_ANCHORS.neckOffset[this.gender] ?? AVATAR_ANCHORS.neckOffset.male;
+    this.neckJoint.position.set(neckOffset.x, neckOffset.y);
+    this.hairBackSprite.position.set(neckOffset.x, 0);
     this.load();
   }
 

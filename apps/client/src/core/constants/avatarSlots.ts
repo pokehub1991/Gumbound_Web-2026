@@ -55,10 +55,17 @@ export const AVATAR_ANCHORS = {
     x: 32 / AVATAR_CANVAS_SIZE,
     y: 28 / AVATAR_CANVAS_SIZE,
   },
-  // Neck joint position relative to seat: (7, -6) - aligns neck with body collar after flip
+  // Neck joint position relative to seat by gender:
+  // Male: (7, -6), Female: (7, -7) - elevates female head by 1px to match GunBound original cy=25
   neckOffset: {
-    x: 7,
-    y: -6,
+    male: {
+      x: 7,
+      y: -6,
+    },
+    female: {
+      x: 7,
+      y: -7,
+    },
   },
   // Shoulder pet position relative to seat: (9, -9) - perches pet on rider's shoulder
   petOffset: {
