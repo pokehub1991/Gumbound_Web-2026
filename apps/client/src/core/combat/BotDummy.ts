@@ -52,7 +52,7 @@ export class BotDummy extends Container {
     this.damageNumbersContainer = new Container();
 
     const groundY = this.terrain.findSurfaceY(spawnX, spawnY);
-    const botGender: "male" | "female" = botIndex % 2 === 0 ? "female" : "male";
+    const botGender: "male" | "female" = "female";
     this.mobile = new MobileEntity({
       id: `bot_${botIndex}`,
       nickname: nickname,

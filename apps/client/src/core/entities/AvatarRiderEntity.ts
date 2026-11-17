@@ -4,6 +4,8 @@ import {
   AvatarEquipment,
   AVATAR_ANCHORS,
   DEFAULT_AVATAR_EQUIPMENT,
+  PET_REGISTRY,
+  PetConfig,
 } from "../constants/avatarSlots.js";
 import { AvatarAssetManager } from "../animation/AvatarAssetManager.js";
 
@@ -20,6 +22,7 @@ export interface AvatarRiderConfig {
 export class AvatarRiderEntity extends Container {
   public gender: "male" | "female";
   private equipment: AvatarEquipment;
+  private petConfig: PetConfig | null = null;
 
   // Rig joint hierarchy
   private torsoJoint: Container;
@@ -65,6 +68,10 @@ export class AvatarRiderEntity extends Container {
       ...(config?.equipment ?? {}),
     };
 
+    if (this.equipment.pet) {
+      this.petConfig = PET_REGISTRY[this.equipment.pet] ?? null;
+    }
+
     // 1. Joint hierarchy
     this.torsoJoint = new Container();
     this.neckJoint = new Container();
@@ -81,6 +88,7 @@ export class AvatarRiderEntity extends Container {
 
     this.hairBackSprite = new Sprite();
     this.hairBackSprite.anchor.set(AVATAR_ANCHORS.seat.x, AVATAR_ANCHORS.seat.y);
+    this.hairBackSprite.position.set(AVATAR_ANCHORS.neckOffset.x, 0);
 
     this.bodySprite = new Sprite();
     this.bodySprite.anchor.set(AVATAR_ANCHORS.seat.x, AVATAR_ANCHORS.seat.y);
@@ -94,8 +102,10 @@ export class AvatarRiderEntity extends Container {
     this.helmetSprite = new Sprite();
     this.helmetSprite.anchor.set(AVATAR_ANCHORS.neck.x, AVATAR_ANCHORS.neck.y);
 
+    const initialPetOffset = this.petConfig?.offset ?? AVATAR_ANCHORS.petOffset;
     this.petSprite = new Sprite();
     this.petSprite.anchor.set(AVATAR_ANCHORS.seat.x, AVATAR_ANCHORS.seat.y);
+    this.petSprite.position.set(initialPetOffset.x, initialPetOffset.y);
 
     // 3. Assemble layer order (Z-index):
     // Behind torso: Flag (0), HairBack (1), Body (2)
@@ -109,7 +119,7 @@ export class AvatarRiderEntity extends Container {
     this.headJoint.addChild(this.eyesSprite);
     this.headJoint.addChild(this.helmetSprite);
 
-    // Foreground over torso: Pet (on right shoulder)
+    // Foreground over torso: Pet (shoulder, ground, or flying companion)
     this.torsoJoint.addChild(this.petSprite);
 
     // 4. Initial load
@@ -118,11 +128,16 @@ export class AvatarRiderEntity extends Container {
 
   public async load() {
     try {
+      const isFemale = this.gender === "female";
+      const faceTurnId = isFemale ? "face_turn_female" : "face_turn";
+      const eyesOpenId = this.equipment.eyes ?? (isFemale ? "eyes_open_female" : "eyes_open");
+      const eyesClosedId = isFemale ? "eyes_closed_female" : "eyes_closed";
+
       const [textures, faceTurn, eyesOpen, eyesClosed] = await Promise.all([
         AvatarAssetManager.loadEquipment(this.equipment),
-        AvatarAssetManager.loadItemTexture("face_turn"),
-        AvatarAssetManager.loadItemTexture("eyes_open"),
-        AvatarAssetManager.loadItemTexture("eyes_closed"),
+        AvatarAssetManager.loadItemTexture(faceTurnId),
+        AvatarAssetManager.loadItemTexture(eyesOpenId),
+        AvatarAssetManager.loadItemTexture(eyesClosedId),
       ]);
 
       this.faceDefaultTexture = textures.face ?? null;
@@ -150,6 +165,13 @@ export class AvatarRiderEntity extends Container {
 
       this.petSprite.texture = textures.pet ?? Texture.EMPTY;
       this.petSprite.visible = !!textures.pet;
+
+      if (this.equipment.pet) {
+        this.petConfig = PET_REGISTRY[this.equipment.pet] ?? null;
+        if (this.petConfig) {
+          this.petSprite.position.set(this.petConfig.offset.x, this.petConfig.offset.y);
+        }
+      }
     } catch (err) {
       console.warn(`[AvatarRiderEntity] Failed to load avatar textures:`, err);
     }
@@ -185,6 +207,9 @@ export class AvatarRiderEntity extends Container {
     if (!itemId) {
       targetSprite.visible = false;
       targetSprite.texture = Texture.EMPTY;
+      if (slot === "pet") {
+        this.petConfig = null;
+      }
       return;
     }
 
@@ -194,6 +219,16 @@ export class AvatarRiderEntity extends Container {
       targetSprite.texture = tex;
       if (slot === "face") {
         this.faceDefaultTexture = tex;
+      } else if (slot === "eyes") {
+        this.eyesOpenTexture = tex;
+      } else if (slot === "pet") {
+        this.petConfig = PET_REGISTRY[itemId] ?? {
+          id: itemId,
+          name: itemId,
+          category: "shoulder",
+          offset: AVATAR_ANCHORS.petOffset,
+        };
+        targetSprite.position.set(this.petConfig.offset.x, this.petConfig.offset.y);
       }
     }
   }
@@ -228,16 +263,47 @@ export class AvatarRiderEntity extends Container {
       }
     }
 
-    // 2. Idle breathing animation (natural 60 FPS sine wave)
-    const breath = Math.sin(this.animTime * 3.2) * 0.9;
-    this.torsoJoint.y = breath;
+    // 2. Idle breathing animation (authentic GunBound horizontal sway)
+    // Synchronized with mobile's gentle idle cadence (~3.14 rad/s)
+    const breath = Math.sin(this.animTime * 3.14);
+    // Torso has subtle horizontal breathing (0.35px) with no vertical jump
+    this.torsoJoint.x = breath * 0.35;
+    this.torsoJoint.y = 0;
+
+    // Head breathing: more pronounced horizontal breathing sway (0.9px)
+    if (!this.isTurningHead) {
+      this.headJoint.x = breath * 0.9;
+      this.headJoint.rotation = breath * 0.015;
+    }
 
     // 3. Flag waving in wind (authentic GunBound flagpole sway + cloth undulation)
-    this.flagSprite.skew.y = Math.sin(this.animTime * 5.0) * 0.06;
-    this.flagSprite.rotation = Math.sin(this.animTime * 3.5) * 0.03;
+    if (this.flagSprite.visible) {
+      this.flagSprite.skew.y = Math.sin(this.animTime * 4.8) * 0.05;
+      this.flagSprite.rotation = Math.sin(this.animTime * 3.2) * 0.025;
+    }
 
-    // 4. Pet shoulder companion breathing
-    this.petSprite.y = Math.sin(this.animTime * 4.8 + 1.2) * 0.6;
+    // 4. Pet animation based on Category (Shoulder, Ground, Flying)
+    if (this.petSprite.visible && this.petConfig) {
+      const category = this.petConfig.category;
+      const baseOffset = this.petConfig.offset;
+      const speed = this.petConfig.swaySpeed ?? 4.0;
+      const ampX = this.petConfig.swayAmplitude?.x ?? 0.4;
+      const ampY = this.petConfig.swayAmplitude?.y ?? 0.4;
+
+      if (category === "shoulder") {
+        // Sits on shoulder: sways with rider torso breathing + subtle wing/body bob
+        this.petSprite.x = baseOffset.x + breath * 0.4;
+        this.petSprite.y = baseOffset.y + Math.sin(this.animTime * speed) * ampY;
+      } else if (category === "ground") {
+        // Ground walker: trots/stands in front of mobile with energetic bounce
+        this.petSprite.x = baseOffset.x + Math.sin(this.animTime * speed) * ampX;
+        this.petSprite.y = baseOffset.y + Math.abs(Math.sin(this.animTime * speed)) * ampY;
+      } else if (category === "flying") {
+        // Flying/Hovering: smooth figure-8 floating orbit above rider's head
+        this.petSprite.x = baseOffset.x + Math.sin(this.animTime * speed) * ampX;
+        this.petSprite.y = baseOffset.y + Math.cos(this.animTime * speed * 1.5) * ampY;
+      }
+    }
 
     // 5. Look-around head turn cycle (authentic GunBound: turns to face player with both eyes)
     if (this.damageFlashTimer <= 0) {
@@ -260,6 +326,7 @@ export class AvatarRiderEntity extends Container {
         if (this.turnProgress >= Math.PI) {
           this.isTurningHead = false;
           this.headJoint.rotation = 0;
+          this.headJoint.x = 0;
           this.turnTimer = 0;
 
           // Return to side profile with single eye visible
@@ -270,6 +337,7 @@ export class AvatarRiderEntity extends Container {
         } else {
           // Smooth sine curve: rotates out, looks at player, and returns smoothly to profile
           this.headJoint.rotation = Math.sin(this.turnProgress) * this.turnTargetAngle;
+          this.headJoint.x = (1 - Math.sin(this.turnProgress)) * (breath * 0.9);
         }
       }
     }
