@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+	"time"
 
+	"gumbound-web/server/internal/anticheat"
 	"gumbound-web/server/internal/gateway"
 	"gumbound-web/server/internal/protocol"
 )
@@ -13,7 +15,11 @@ type LobbyManager struct {
 	defaultChannel *Channel
 	connRooms      map[string]*Room // connID -> room
 	conns          map[string]*gateway.Connection
-	mu             sync.RWMutex
+	anticheat      *anticheat.Detector
+	// mutedUntil maps account ID to the instant until which chat is silenced.
+	// Only reachable through the mute opcode; no automatic unbans.
+	mutedUntil map[string]time.Time
+	mu         sync.RWMutex
 }
 
 func NewLobbyManager() *LobbyManager {
@@ -21,6 +27,8 @@ func NewLobbyManager() *LobbyManager {
 		defaultChannel: NewChannel("ch1", "Principal 1 (All Welcome)"),
 		connRooms:      make(map[string]*Room),
 		conns:          make(map[string]*gateway.Connection),
+		anticheat:      anticheat.New(anticheat.Config{}),
+		mutedUntil:     make(map[string]time.Time),
 	}
 }
 
@@ -174,12 +182,27 @@ func (m *LobbyManager) RegisterHandlers(gw *gateway.Gateway) {
 		m.broadcastRoomState(room)
 	})
 
-	// Chat Message
+	// Chat Message — server-side cap (200 chars) and server-side mute.
 	gw.RegisterHandler(protocol.OpcodeChatMessage, func(c *gateway.Connection, msg protocol.Message) {
 		var req struct {
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal(msg.Payload, &req); err != nil || req.Text == "" {
+			return
+		}
+
+		m.mu.RLock()
+		muted := m.mutedUntil[c.UserID]
+		m.mu.RUnlock()
+		if time.Now().Before(muted) {
+			log.Printf("[chat] %s is muted, dropped message\n", c.UserID)
+			return
+		}
+
+		clean, v := m.anticheat.InspectChat(c.UserID, req.Text, time.Now())
+		if v.Reject {
+			log.Printf("[anticheat] chat %s for %s: %s\n",
+				v.Violation.Kind, c.UserID, v.Violation.Detail)
 			return
 		}
 
@@ -192,7 +215,7 @@ func (m *LobbyManager) RegisterHandlers(gw *gateway.Gateway) {
 			scope = "room"
 		}
 
-		chatMsg := NewChatMessage(c.UserID, c.Username, req.Text, scope)
+		chatMsg := NewChatMessage(c.UserID, c.Username, clean, scope)
 		payload, _ := json.Marshal(chatMsg)
 		broadcastPacket := protocol.Message{
 			Opcode:  protocol.OpcodeChatBroadcast,
@@ -216,6 +239,34 @@ func (m *LobbyManager) RegisterHandlers(gw *gateway.Gateway) {
 			}
 		}
 	})
+
+	// AdminChatMute — server-side silence window. Only callers authenticated as
+	// "admin" (or a GM nickname) are honored; everything else is logged and dropped.
+	gw.RegisterHandler(protocol.OpcodeAdminChatMute, func(c *gateway.Connection, msg protocol.Message) {
+		var req struct {
+			Target  string `json:"target"`
+			Seconds int    `json:"seconds"`
+		}
+		if err := json.Unmarshal(msg.Payload, &req); err != nil || req.Target == "" {
+			return
+		}
+		if !isGameMaster(c.Username) {
+			log.Printf("[chat] mute request denied for %q (%s)\n", c.Username, c.UserID)
+			return
+		}
+		if req.Seconds <= 0 || req.Seconds > 86400 {
+			return
+		}
+
+		m.mu.Lock()
+		m.mutedUntil[req.Target] = time.Now().Add(time.Duration(req.Seconds) * time.Second)
+		m.mu.Unlock()
+		log.Printf("[chat] muted %s for %ds by %s\n", req.Target, req.Seconds, c.UserID)
+	})
+}
+
+func isGameMaster(username string) bool {
+	return username == "admin" || username == "GameMaster"
 }
 
 func (m *LobbyManager) broadcastChannelRooms() {
@@ -255,4 +306,3 @@ func (m *LobbyManager) broadcastRoomState(room *Room) {
 		}
 	}
 }
-

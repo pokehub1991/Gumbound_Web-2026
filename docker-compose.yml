@@ -6,9 +6,9 @@ services:
     container_name: gumbound_postgres
     restart: always
     environment:
-      POSTGRES_USER: gumbound
-      POSTGRES_PASSWORD: dev
-      POSTGRES_DB: gumbound_dev
+      POSTGRES_USER: ${POSTGRES_USER:-gumbound}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-gumbound_dev}
     ports:
       - "5432:5432"
     volumes:
@@ -32,9 +32,16 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: "postgres://gumbound:dev@postgres:5432/gumbound_dev?sslmode=disable"
+      GO_ENV: ${GO_ENV:-production}
+      DATABASE_URL: "postgres://${POSTGRES_USER:-gumbound}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gumbound_dev}?sslmode=disable"
       REDIS_URL: "redis://redis:6379"
-      JWT_SECRET: "gumbound_production_jwt_secret_2026_super_secure"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-}
+      TLS_CERT: ${TLS_CERT:-}
+      TLS_KEY: ${TLS_KEY:-}
+      SEED_ACCOUNTS: ${SEED_ACCOUNTS:-0}
+    env_file:
+      - .env
     depends_on:
       - postgres
       - redis

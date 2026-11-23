@@ -23,7 +23,12 @@ export const LoginScreen: React.FC = () => {
         ? { username, nickname, email, password }
         : { username, password };
 
-      const res = await fetch(`http://${window.location.hostname}:8080${endpoint}`, {
+      // Use same origin in production (behind reverse proxy w/ TLS); fallback
+      // to :8080 for local dev against `pnpm dev`.
+      const apiBase = import.meta.env.PROD
+        ? ""
+        : `http://${window.location.hostname}:8080`;
+      const res = await fetch(`${apiBase}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

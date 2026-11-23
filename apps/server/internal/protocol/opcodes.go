@@ -22,5 +22,7 @@ const (
 	OpcodeMatchEnd         uint16 = 0x3005
 	OpcodePlayerMove       uint16 = 0x3006
 	OpcodeUseItem          uint16 = 0x3007
+	// AdminChatMute mutes an account server-side for the given duration.
+	// Payload: {"target": "<account>", "seconds": <int>}
+	OpcodeAdminChatMute uint16 = 0x4001
 )
-

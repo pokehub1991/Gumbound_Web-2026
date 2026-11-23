@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"gumbound-web/server/internal/anticheat"
 	"gumbound-web/server/internal/gateway"
 	"gumbound-web/server/internal/lobby"
 	"gumbound-web/server/internal/protocol"
@@ -13,10 +14,11 @@ import (
 
 type MatchManager struct {
 	lobbyManager *lobby.LobbyManager
-	matches      map[string]*Match        // roomID -> Match
-	connMatches  map[string]*Match        // connID -> Match
+	matches      map[string]*Match                // roomID -> Match
+	connMatches  map[string]*Match                // connID -> Match
 	roomConns    map[string][]*gateway.Connection // roomID -> conns
 	conns        map[string]*gateway.Connection
+	anticheat    *anticheat.Detector
 	mu           sync.RWMutex
 }
 
@@ -27,6 +29,7 @@ func NewMatchManager(lm *lobby.LobbyManager) *MatchManager {
 		connMatches:  make(map[string]*Match),
 		roomConns:    make(map[string][]*gateway.Connection),
 		conns:        make(map[string]*gateway.Connection),
+		anticheat:    anticheat.New(anticheat.Config{}),
 	}
 }
 
@@ -123,11 +126,35 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 
 		mm.mu.RLock()
 		m := mm.connMatches[c.ID]
+		activeID := ""
+		if m != nil {
+			m.mu.RLock()
+			activeID = m.ActiveID
+			m.mu.RUnlock()
+		}
 		mm.mu.RUnlock()
 
 		if m == nil {
 			log.Printf("No active match for connection %s\n", c.ID)
 			return
+		}
+
+		// Anticheat: out-of-turn attempts are flagged and dropped.
+		if activeID != c.UserID {
+			v := mm.anticheat.InspectOutOfTurn(c.UserID, activeID, time.Now())
+			log.Printf("[anticheat] %s by %s: %s\n",
+				v.Violation.Kind, c.UserID, v.Violation.Detail)
+			return
+		}
+
+		// Anticheat: precision / snap / macro heuristics.
+		if v := mm.anticheat.InspectShot(c.UserID, req.Angle, req.Power, time.Now()); v.Reject {
+			log.Printf("[anticheat] FireShot rejected %s for %s: %s\n",
+				v.Violation.Kind, c.UserID, v.Violation.Detail)
+			return
+		} else if v.Flag {
+			log.Printf("[anticheat] FireShot flagged %s for %s: %s\n",
+				v.Violation.Kind, c.UserID, v.Violation.Detail)
 		}
 
 		f := req.Facing
@@ -279,11 +306,11 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 
 func (mm *MatchManager) broadcastTurnStart(m *Match) {
 	turnData, _ := json.Marshal(map[string]interface{}{
-		"active_id":   m.ActiveID,
-		"turn_number": m.TurnNumber,
-		"wind":        m.Wind,
-		"delay_queue": m.TurnMgr.GetDelayQueue(),
-		"weather":     m.Weather,
+		"active_id":    m.ActiveID,
+		"turn_number":  m.TurnNumber,
+		"wind":         m.Wind,
+		"delay_queue":  m.TurnMgr.GetDelayQueue(),
+		"weather":      m.Weather,
 		"sudden_death": m.SuddenDeath,
 	})
 

@@ -3,6 +3,8 @@ package gateway
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,14 +24,36 @@ type Gateway struct {
 	limiter  *limiter
 }
 
-// NewGateway creates a new Gateway instance
+// NewGateway creates a new Gateway instance. The WS Origin allowlist comes
+// from ALLOWED_ORIGIN (comma-separated). Empty list falls back to permissive
+// only outside production (GO_ENV != "production").
 func NewGateway() *Gateway {
+	var allowOrigins []string
+	for _, o := range strings.Split(os.Getenv("ALLOWED_ORIGIN"), ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			allowOrigins = append(allowOrigins, o)
+		}
+	}
+	permissive := len(allowOrigins) == 0 && os.Getenv("GO_ENV") != "production"
 	return &Gateway{
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for dev; production must set ALLOWED_ORIGIN
+				if permissive {
+					return true
+				}
+				origin := r.Header.Get("Origin")
+				if origin == "" {
+					return true // non-browser client
+				}
+				for _, a := range allowOrigins {
+					if a == origin {
+						return true
+					}
+				}
+				return false
 			},
 		},
 		handlers: make(map[uint16]HandlerFunc),
@@ -111,4 +135,3 @@ func (g *Gateway) ActiveConnectionCount() int {
 	defer g.mu.RUnlock()
 	return len(g.conns)
 }
-

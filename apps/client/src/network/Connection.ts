@@ -11,8 +11,15 @@ export class Connection {
   public handler: MessageHandler = new MessageHandler();
   private reconnectTimer?: number;
 
-  constructor(url: string = `ws://${window.location.hostname}:8080/ws`) {
-    this.url = url;
+  constructor(url?: string) {
+    this.url = url ?? Connection.defaultUrl();
+  }
+
+  // WSS same-origin when served over HTTPS; otherwise ws://host:8080 (dev).
+  private static defaultUrl(): string {
+    const { protocol, hostname } = window.location;
+    if (protocol === "https:") return `wss://${hostname}/ws`;
+    return `ws://${hostname}:8080/ws`;
   }
 
   public connect(): Promise<void> {
