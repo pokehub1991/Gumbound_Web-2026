@@ -125,6 +125,22 @@ func (m *LobbyManager) RegisterHandlers(gw *gateway.Gateway) {
 		m.broadcastChannelRooms()
 	})
 
+	// Room Leave
+	gw.RegisterHandler(protocol.OpcodeRoomLeave, func(c *gateway.Connection, msg protocol.Message) {
+		m.mu.RLock()
+		room := m.connRooms[c.ID]
+		m.mu.RUnlock()
+		if room == nil {
+			return
+		}
+		room.Leave(c.UserID)
+		m.mu.Lock()
+		delete(m.connRooms, c.ID)
+		m.mu.Unlock()
+		m.broadcastRoomState(room)
+		m.broadcastChannelRooms()
+	})
+
 	// Select Mobile
 	gw.RegisterHandler(protocol.OpcodeSelectMobile, func(c *gateway.Connection, msg protocol.Message) {
 		m.mu.RLock()

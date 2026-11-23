@@ -221,7 +221,8 @@ export class MobileEntity extends Container {
     this.facing = dir >= 0 ? 1 : -1;
     // GunBound spritesheets face LEFT natively.
     // Facing RIGHT (+1): scale.x = -1. Facing LEFT (-1): scale.x = 1.
-    const baseScale = 1.25;
+    // baseScale 1.0 = native pixel size, matching the original's 1:1 framing.
+    const baseScale = 1.0;
     this.spriteContainer.scale.set(-this.facing * baseScale, baseScale);
     this.fallbackBody.scale.set(this.facing * baseScale, baseScale);
     this.updateAimPointer();
@@ -782,7 +783,7 @@ export class MobileEntity extends Container {
    * Plays activation audio and triggers mobile's item animation.
    * Visual particle powerup effect is handled externally by FloatingParticlePowerupEntity.
    */
-  public triggerPowerupEffect(_itemType: "dual" | "teleport" = "dual") {
+  public triggerPowerupEffect(_itemType: "dual" | "dual_plus" | "teleport" = "dual") {
     AudioManager.play("dual_snd", 0.9);
 
     this.playAnimation("item", false, () => {
@@ -1049,3 +1050,4 @@ export class MobileEntity extends Container {
     }
   }
 }
+

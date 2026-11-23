@@ -46,7 +46,7 @@ export class FloatingParticlePowerupEntity extends Container {
   private age: number = 0;
   private totalDuration: number = 780; // ms
 
-  constructor(x: number, y: number, itemType: "dual" | "teleport" = "dual") {
+  constructor(x: number, y: number, itemType: "dual" | "dual_plus" | "teleport" = "dual") {
     super();
     this.position.set(x, y);
 
@@ -61,7 +61,7 @@ export class FloatingParticlePowerupEntity extends Container {
     this.initEffect(itemType);
   }
 
-  private initEffect(itemType: "dual" | "teleport") {
+  private initEffect(itemType: "dual" | "dual_plus" | "teleport") {
     const isDual = itemType === "dual";
 
     // Palette: Radiant Gold / Amber for Dual; Celestial Sky / Cyan for Teleport
@@ -244,3 +244,4 @@ export class FloatingParticlePowerupEntity extends Container {
     this.destroy({ children: true });
   }
 }
+

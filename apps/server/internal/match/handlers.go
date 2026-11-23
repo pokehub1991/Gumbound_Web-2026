@@ -51,6 +51,13 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 			return
 		}
 
+		// All players must be ready before a match can start.
+		if err := room.CanStartMatch(); err != nil {
+			log.Printf("Cannot start match: %v\n", err)
+			c.Send(protocol.Message{Opcode: protocol.OpcodeRoomState, Payload: []byte(`{"error":"not_ready"}`)})
+			return
+		}
+
 		// Convert lobby players to match players
 		matchPlayers := make([]*MatchPlayer, 0, len(room.Players))
 		for _, lp := range room.Players {
@@ -82,6 +89,7 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 			"players":   playerList,
 			"wind":      m.Wind,
 			"active_id": m.ActiveID,
+			"weather":   m.Weather,
 		})
 
 		startMsg := protocol.Message{
@@ -94,6 +102,11 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 
 		// Broadcast first turn
 		mm.broadcastTurnStart(m)
+	})
+
+	// Turn End (ack/heartbeat; authoritative turn advance already happened on FireShot)
+	gw.RegisterHandler(protocol.OpcodeTurnEnd, func(c *gateway.Connection, msg protocol.Message) {
+		// Intentionally no-op. Kept registered so the opcode is not reported as unregistered.
 	})
 
 	// Handle FireShot
@@ -160,6 +173,47 @@ func (mm *MatchManager) RegisterHandlers(gw *gateway.Gateway) {
 				mm.broadcastTurnStart(m)
 			})
 		}
+	})
+
+	// Handle UseItem (§4.6). Effects are applied authoritatively; broadcast
+	// updates inventory, gold, delay, and any state-affecting result.
+	gw.RegisterHandler(protocol.OpcodeUseItem, func(c *gateway.Connection, msg protocol.Message) {
+		var req struct {
+			ItemID string `json:"item_id"`
+		}
+		if err := json.Unmarshal(msg.Payload, &req); err != nil {
+			return
+		}
+
+		mm.mu.RLock()
+		m := mm.connMatches[c.ID]
+		mm.mu.RUnlock()
+
+		if m == nil {
+			return
+		}
+
+		if err := m.UseItem(c.UserID, ItemID(req.ItemID)); err != nil {
+			log.Printf("UseItem %q by %s rejected: %v\n", req.ItemID, c.UserID, err)
+			c.Send(protocol.Message{Opcode: protocol.OpcodeUseItem, Payload: []byte(`{"error":"rejected"}`)})
+			return
+		}
+
+		mm.mu.RLock()
+		p := m.Players[c.UserID]
+		wind := m.Wind
+		mm.mu.RUnlock()
+
+		payload, _ := json.Marshal(map[string]interface{}{
+			"player_id": c.UserID,
+			"item_id":   req.ItemID,
+			"inventory": p.Inventory,
+			"gold":      p.Gold,
+			"delay":     p.Delay,
+			"pos":       p.Pos,
+			"wind":      wind,
+		})
+		mm.broadcastToMatch(m, protocol.Message{Opcode: protocol.OpcodeUseItem, Payload: payload})
 	})
 
 	// In-match mobile quick hot-swap handler
@@ -229,12 +283,26 @@ func (mm *MatchManager) broadcastTurnStart(m *Match) {
 		"turn_number": m.TurnNumber,
 		"wind":        m.Wind,
 		"delay_queue": m.TurnMgr.GetDelayQueue(),
+		"weather":     m.Weather,
+		"sudden_death": m.SuddenDeath,
 	})
 
 	mm.broadcastToMatch(m, protocol.Message{
 		Opcode:  protocol.OpcodeTurnStart,
 		Payload: turnData,
 	})
+
+	// Sudden Death countdown / activation announcements (§4.8).
+	if msg := m.CheckSuddenDeathActivation(); msg != "" {
+		chatData, _ := json.Marshal(map[string]interface{}{
+			"sender": "SYSTEM",
+			"text":   msg,
+		})
+		mm.broadcastToMatch(m, protocol.Message{
+			Opcode:  protocol.OpcodeChatBroadcast,
+			Payload: chatData,
+		})
+	}
 }
 
 func (mm *MatchManager) broadcastToMatch(m *Match, msg protocol.Message) {

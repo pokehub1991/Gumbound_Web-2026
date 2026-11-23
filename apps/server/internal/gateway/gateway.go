@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -18,6 +19,7 @@ type Gateway struct {
 	handlers map[uint16]HandlerFunc
 	conns    map[string]*Connection
 	mu       sync.RWMutex
+	limiter  *limiter
 }
 
 // NewGateway creates a new Gateway instance
@@ -27,11 +29,12 @@ func NewGateway() *Gateway {
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
-				return true // Allow all origins for dev
+				return true // Allow all origins for dev; production must set ALLOWED_ORIGIN
 			},
 		},
 		handlers: make(map[uint16]HandlerFunc),
 		conns:    make(map[string]*Connection),
+		limiter:  newLimiter(time.Second),
 	}
 }
 
@@ -67,6 +70,12 @@ func (g *Gateway) unregisterConn(c *Connection) {
 	delete(g.conns, c.ID)
 }
 
+// opcodesAllowedUnauthenticated lists opcodes that can be processed before
+// a client has sent a valid AUTH frame. Everything else requires c.UserID.
+var opcodesAllowedUnauthenticated = map[uint16]bool{
+	protocol.OpcodeAuthRequest: true,
+}
+
 func (g *Gateway) dispatch(c *Connection, msg protocol.Message) {
 	g.mu.RLock()
 	handler, exists := g.handlers[msg.Opcode]
@@ -74,6 +83,22 @@ func (g *Gateway) dispatch(c *Connection, msg protocol.Message) {
 
 	if !exists {
 		log.Printf("Unregistered opcode: 0x%04x from connection %s\n", msg.Opcode, c.ID)
+		return
+	}
+
+	// Reject unauthenticated traffic on protected opcodes.
+	if c.UserID == "" && !opcodesAllowedUnauthenticated[msg.Opcode] {
+		log.Printf("unauthenticated opcode 0x%04x rejected for connection %s\n", msg.Opcode, c.ID)
+		return
+	}
+
+	// Per-opcode rate limit.
+	max, ok := opcodeRateLimits[msg.Opcode]
+	if !ok {
+		max = defaultRateLimit
+	}
+	if !g.limiter.allow(msg.Opcode, max) {
+		log.Printf("rate limit exceeded: opcode 0x%04x from connection %s\n", msg.Opcode, c.ID)
 		return
 	}
 

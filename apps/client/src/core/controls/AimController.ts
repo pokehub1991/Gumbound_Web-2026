@@ -8,6 +8,10 @@ export class AimController {
   public activeMobile?: MobileEntity;
 
   public enabled: boolean = true;
+  // movementLocked bloquea el desplazamiento del móvil (A/D) sin bloquear el
+  // apuntado (W/S). GunBound permite ajustar el ángulo de tiro aun cuando no
+  // es tu turno; solo prohíbe caminar.
+  public movementLocked: boolean = false;
   public shotType: number = 0; // 0 = Shot 1, 1 = Shot 2, 2 = SS
   public power: number = 0;
   public isCharging: boolean = false;
@@ -72,13 +76,19 @@ export class AimController {
 
     // 1. Mobile Movement along terrain contour with WASD standard (A = Left, D = Right)
     // Dynamic per-vehicle mobility speed matching GunBound / DragonBound statmov
+    // El movimiento queda bloqueado cuando movementLocked=true (turno enemigo),
+    // pero el ángulo (bloque 2) sigue activo.
+    const canMove = !this.movementLocked;
     const mobType = this.activeMobile.mobileType ?? 0;
     const speedRate = MOBILE_WALK_SPEEDS[mobType] ?? 0.85;
 
-    const isLeft = !!this.keysPressed["KeyA"];
-    const isRight = !!this.keysPressed["KeyD"];
+    const isLeft = canMove && !!this.keysPressed["KeyA"];
+    const isRight = canMove && !!this.keysPressed["KeyD"];
 
-    if ((isLeft && !isRight) || (isRight && !isLeft)) {
+    if (!canMove) {
+      this.walkAccumulator = 0;
+      this.stopMoving();
+    } else if ((isLeft && !isRight) || (isRight && !isLeft)) {
       const dir = isLeft ? -1 : 1;
       this.walkAccumulator += dt * speedRate;
       let actuallyMoved = false;

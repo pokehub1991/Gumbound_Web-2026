@@ -19,7 +19,8 @@ func TestGatewayWebSocketDispatch(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 
-	testOpcode := uint16(0x1000)
+	// AUTH is the only opcode allowed before a UserID is set.
+	testOpcode := protocol.OpcodeAuthRequest
 	gw.RegisterHandler(testOpcode, func(c *Connection, msg protocol.Message) {
 		receivedMsg = msg
 		// Echo back

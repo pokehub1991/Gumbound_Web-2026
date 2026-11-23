@@ -17,21 +17,37 @@ func CheckMobileCollision(pos Vec2, mobiles []MobileTarget) (string, bool) {
 	return "", false
 }
 
-// CalculateRadialDamage computes distance falloff damage for splash damage
-func CalculateRadialDamage(impactPos Vec2, mobiles []MobileTarget, baseDamage int, blastRadius float64) map[string]int {
+// SelfArmDistance is how far a projectile must travel from its muzzle before
+// it can deal splash damage to its own shooter. Replaces the legacy 60/80ms
+// time-based arming.
+const SelfArmDistance = 20.0
+
+// CalculateRadialDamage implements the canonical DragonBound splash model:
+//   - splash (<= R) -> dm = base - dist (linear falloff, floor 10)
+//   - shooter       -> immune while impact is inside the 20px arm radius
+//
+// shooterPos nil disables self-arming (bunge / walking mines / no shooter).
+func CalculateRadialDamage(impactPos Vec2, mobiles []MobileTarget, baseDamage int, blastRadius float64, shooterPos *Vec2) map[string]int {
 	damages := make(map[string]int)
 	for _, m := range mobiles {
 		dx := impactPos.X - m.Pos.X
 		dy := impactPos.Y - m.Pos.Y
 		dist := math.Sqrt(dx*dx + dy*dy)
-		if dist <= blastRadius {
-			factor := 1.0 - (dist / blastRadius)
-			dmg := int(float64(baseDamage) * factor)
-			if dmg < 10 {
-				dmg = 10
-			}
-			damages[m.ID] = dmg
+		if dist > blastRadius {
+			continue
 		}
+		if shooterPos != nil {
+			sx := impactPos.X - shooterPos.X
+			sy := impactPos.Y - shooterPos.Y
+			if math.Sqrt(sx*sx+sy*sy) < SelfArmDistance {
+				continue
+			}
+		}
+		dmg := int(float64(baseDamage) - dist)
+		if dmg < 10 {
+			dmg = 10
+		}
+		damages[m.ID] = dmg
 	}
 	return damages
 }

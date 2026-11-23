@@ -24,6 +24,9 @@ type TerrainDelta struct {
 	X      int `json:"x"`
 	Y      int `json:"y"`
 	Radius int `json:"radius"`
+	// RadiusY is the vertical (squashed) crater radius. Zero falls back to
+	// Radius so existing clients still render a circle.
+	RadiusY int `json:"radius_y,omitempty"`
 }
 
 type ProjectileResult struct {

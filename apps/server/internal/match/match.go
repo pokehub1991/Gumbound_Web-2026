@@ -35,6 +35,8 @@ type Match struct {
 	Wind        Wind                    `json:"wind"`
 	TurnNumber  int                     `json:"turn_number"`
 	WinnerTeam  string                  `json:"winner_team,omitempty"`
+	Weather     *WeatherState           `json:"weather"`
+	SuddenDeath SuddenDeathConfig       `json:"sudden_death"`
 	mu          sync.RWMutex
 	rng         *rand.Rand
 }
@@ -60,6 +62,9 @@ func NewMatch(id string, players []*MatchPlayer, mapID string) *Match {
 		playerMap[p.ID] = p
 	}
 
+	// Authoritative starting loadout and gold (§4.6).
+	seedLoadout(players)
+
 	turnMgr := NewTurnManager(players)
 	firstPlayer := turnMgr.NextPlayer()
 
@@ -75,6 +80,8 @@ func NewMatch(id string, players []*MatchPlayer, mapID string) *Match {
 		rng:        rng,
 	}
 
+	m.Weather = newWeatherState(rng, terrain.Width)
+	m.SuddenDeath = newSuddenDeath()
 	m.RandomizeWind()
 	return m
 }
@@ -89,10 +96,63 @@ func (m *Match) RandomizeWind() {
 	}
 }
 
+// applyDamage implements the canonical DragonBound shield-first damage path.
+// Same-team hits still deal damage but carry a gold/GP penalty.
+func (m *Match) applyDamage(victim, shooter *MatchPlayer, dmg int) {
+	if victim == nil || !victim.Alive || dmg <= 0 {
+		return
+	}
+
+	remaining := dmg
+	if victim.Shield > 0 {
+		if remaining < victim.Shield {
+			victim.Shield -= remaining
+			remaining = 0
+		} else {
+			remaining -= victim.Shield
+			victim.Shield = 0
+		}
+	}
+	victim.HP -= remaining
+
+	if shooter != nil && shooter.Team == victim.Team {
+		shooter.Gold -= 250
+		shooter.GP -= 1
+	}
+
+	if victim.HP <= 0 {
+		if len(m.Players) <= 1 {
+			// Solo practice: keep player alive infinitely.
+			victim.HP = victim.MaxHP
+			victim.Alive = true
+		} else {
+			victim.HP = 0
+			victim.Alive = false
+			if shooter != nil && shooter.Team != victim.Team {
+				shooter.Gold += 2300
+				shooter.GP += 2
+			}
+		}
+	}
+}
+
 func (m *Match) ActivePlayer() *MatchPlayer {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.Players[m.ActiveID]
+}
+
+// shooterPos returns the shooter's position for self-arm gating, or nil when
+// the shooter is unknown/absent (disables self-arm for that radial blast).
+func (m *Match) shooterPos(id string) *physics.Vec2 {
+	if id == "" {
+		return nil
+	}
+	if p, ok := m.Players[id]; ok {
+		pos := p.Pos
+		return &pos
+	}
+	return nil
 }
 
 func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType int, facing ...int) (*physics.ProjectileResult, error) {
@@ -111,8 +171,21 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		return nil, fmt.Errorf("%w: power out of range", ErrInvalidShot)
 	}
 
+	if shotType < 0 || shotType > 2 {
+		return nil, fmt.Errorf("%w: shot_type out of range", ErrInvalidShot)
+	}
+	if err := m.ValidateSuddenDeathShot(shotType); err != nil {
+		return nil, fmt.Errorf("%w: forbidden by sudden death variant %s", err, m.SuddenDeath.Kind)
+	}
+
 	activePlayer := m.Players[playerID]
 	stats := GetMobileStats(activePlayer.MobileID)
+
+	// Reject out-of-range aim. Client-side clamp is not trusted.
+	if angle < stats.MinAngle || angle > stats.MaxAngle {
+		return nil, fmt.Errorf("%w: angle %.2f outside mobile range [%.2f, %.2f]",
+			ErrInvalidShot, angle, stats.MinAngle, stats.MaxAngle)
+	}
 
 	// Collect mobile targets for collision
 	targets := make([]physics.MobileTarget, 0, len(m.Players))
@@ -131,31 +204,24 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		f = -1
 	}
 
-	baseDamage := stats.Shot1Damage
-	if shotType == 1 {
-		baseDamage = stats.Shot2Damage
-	} else if shotType == 2 {
-		baseDamage = stats.SSDamage
+	baseDamage := BaseDamage(stats, activePlayer.Avatar, shotType)
+	baseDamage = m.ApplySuddenDeathDamage(baseDamage)
+	// Power Up / Blood modifiers are one-shot; consume them here.
+	if activePlayer.NextShotDamageMultiplier > 0 {
+		baseDamage = int(float64(baseDamage) * activePlayer.NextShotDamageMultiplier)
+		activePlayer.NextShotDamageMultiplier = 0
 	}
+	if activePlayer.NextShotPowerMultiplier > 0 {
+		power = math.Min(100, power*activePlayer.NextShotPowerMultiplier)
+		activePlayer.NextShotPowerMultiplier = 0
+	}
+	// Bunge bonus is consumed when building projectile config below.
+	bungeBonus := activePlayer.NextShotBungeBonus
+	activePlayer.NextShotBungeBonus = 0
 
 	var result physics.ProjectileResult
 
-	numProjectiles := 1
-	if activePlayer.MobileID == MobileBigFoot {
-		if shotType == 0 {
-			numProjectiles = 4
-		} else if shotType == 1 {
-			numProjectiles = 3
-		} else if shotType == 2 {
-			numProjectiles = 20
-		}
-	} else if activePlayer.MobileID == MobileBoomer && shotType == 1 {
-		numProjectiles = 10
-	} else if activePlayer.MobileID == MobileTrico && shotType == 1 {
-		numProjectiles = 3
-	} else if activePlayer.MobileID == MobileRaon && shotType == 1 {
-		numProjectiles = 2
-	}
+	numProjectiles := projectileCountFor(activePlayer.MobileID, shotType)
 
 	if numProjectiles > 1 {
 		subShots := make([]physics.ProjectileResult, 0, numProjectiles)
@@ -177,16 +243,22 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 					powerMult = 1.0 + (float64(i)-1.0)*0.010
 					blastRadiusMult = 0.80
 				} else {
-					// Bigfoot SS: 20-missile barrage raining hellfire!
-					angleOffset = (float64(i) - 9.5) * 0.32
-					powerMult = 1.0 + (float64(i)-9.5)*0.005
-					blastRadiusMult = 0.55
+					// Bigfoot SS: 8-missile concentrated barrage (DragonBound).
+					angleOffset = (float64(i) - 3.5) * 0.44
+					powerMult = 1.0 + (float64(i)-3.5)*0.010
+					blastRadiusMult = 0.65
 				}
 			} else if activePlayer.MobileID == MobileBoomer {
-				// Boomer Shot 2: Barrage of 10 boomerangs curving with authentic aerodynamics
-				angleOffset = (float64(i) - 4.5) * 0.50
-				powerMult = 1.0 + (float64(i)-4.5)*0.008
-				blastRadiusMult = 0.65
+				// Boomer Shot 2: 4 curving boomerangs (DragonBound).
+				angleOffset = (float64(i) - 1.5) * 1.0
+				powerMult = 1.0 + (float64(i)-1.5)*0.015
+				blastRadiusMult = 0.75
+			} else if activePlayer.MobileID == MobileKalsiddon {
+				// Kalsiddon MIRV: 2/4/6 bomblets with a 2° stagger.
+				count := float64(numProjectiles)
+				angleOffset = (float64(i) - (count-1)/2) * 2.0
+				powerMult = 1.0 + float64(i%2)*0.008
+				blastRadiusMult = 0.60
 			} else if activePlayer.MobileID == MobileTrico {
 				// Trico Shot 2: 3 cabbages revolving in flight
 				angleOffset = (float64(i) - 1.0) * 1.25
@@ -197,6 +269,16 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 				angleOffset = (float64(i) - 0.5) * 0.75
 				powerMult = 1.0 + (float64(i)-0.5)*0.025
 				blastRadiusMult = 0.85
+			} else if activePlayer.MobileID == MobileGrub {
+				// Grub Shot 2: two rolling balls with slight vertical stagger.
+				angleOffset = (float64(i) - 0.5) * 1.20
+				powerMult = 1.0 + (float64(i)-0.5)*0.030
+				blastRadiusMult = 0.75
+			} else if activePlayer.MobileID == MobileAduka {
+				// Aduka Shot 2: three Thor-tracking projectiles.
+				angleOffset = (float64(i) - 1.0) * 1.10
+				powerMult = 1.0 + (float64(i)-1.0)*0.020
+				blastRadiusMult = 0.70
 			}
 
 			subCfg := physics.ProjectileConfig{
@@ -211,9 +293,10 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 				Ax:           stats.Ax,
 				Ay:           stats.Ay,
 				BaseDamage:   baseDamage / numProjectiles,
-				BlastRadius:  stats.BlastRadius * blastRadiusMult,
+				BlastRadius:  stats.BlastRadiusForShot(shotType) * blastRadiusMult,
 				Facing:       f,
 			}
+			m.applyWeatherToConfig(&subCfg)
 
 			// For Raon walking mines, disable instant crater during flight so terrain is carved at final walk position
 			if activePlayer.MobileID == MobileRaon && shotType >= 1 {
@@ -224,8 +307,14 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 
 			// Execute ground-walking AI logic for Raon mines
 			if activePlayer.MobileID == MobileRaon && shotType >= 1 {
-				subCfg.BlastRadius = stats.BlastRadius * blastRadiusMult
+				subCfg.BlastRadius = stats.BlastRadiusForShot(shotType) * blastRadiusMult
 				m.simulateRaonWalkingMine(&subRes, subCfg, targets, playerID, 260.0, 130.0)
+			}
+			if activePlayer.MobileID == MobileGrub && shotType == 1 {
+				m.applyGrubBounce(subCfg, &subRes, targets)
+			}
+			if activePlayer.MobileID == MobileAduka && shotType == 1 {
+				m.applyAdukaThor(&subRes, targets, stats.Shot2Damage/numProjectiles/2)
 			}
 
 			subRes.ShooterID = playerID
@@ -254,10 +343,11 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 			Bx:           stats.Bx,
 			Ax:           stats.Ax,
 			Ay:           stats.Ay,
-			BaseDamage:   baseDamage,
-			BlastRadius:  stats.BlastRadius,
-			Facing:       f,
-		}
+		BaseDamage:   baseDamage,
+		BlastRadius:  stats.BlastRadiusForShot(shotType) + float64(bungeBonus),
+		Facing:       f,
+	}
+	m.applyWeatherToConfig(&cfg)
 
 		if activePlayer.MobileID == MobileRaon && shotType == 2 {
 			cfg.BlastRadius = 0
@@ -266,39 +356,74 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		result = physics.SimulateProjectileAdv(cfg, m.Terrain, targets)
 
 		if activePlayer.MobileID == MobileRaon && shotType == 2 {
-			cfg.BlastRadius = stats.BlastRadius
+			cfg.BlastRadius = stats.BlastRadiusForShot(2)
 			m.simulateRaonWalkingMine(&result, cfg, targets, playerID, 320.0, 160.0)
+		}
+
+		// §4.9 Single-shot mobile behaviors.
+		switch activePlayer.MobileID {
+		case MobileNak:
+			if shotType == 1 {
+				m.applyNakBurrow(cfg, &result, targets, f)
+			}
+		case MobileGrub:
+			if shotType == 1 {
+				m.applyGrubBounce(cfg, &result, targets)
+			}
+		case MobileAduka:
+			// Aduka S2 uses three tracker shots (handled in the multi-shot path).
+			// Other shots also call Thor when the satellite weather is active.
+			if shotType != 1 {
+				m.applyAdukaThor(&result, targets, stats.SSDamage/2)
+			}
 		}
 	}
 	result.ShooterID = playerID
 	result.MobileType = activePlayer.MobileID
 	result.ShotType = shotType
 
-	// Apply damages
+	// §4.9 JD movex dash after landing.
+	m.applyJDMovex(activePlayer, &result)
+
+	// Armor S2 double detonation (DetonateShot2_Bullet2): the shell runs two
+	// detonation passes at the same impact point — an immediate primary blast
+	// plus a delayed secondary blast. Damage is already settled on the primary
+	// pass (applyDamage below), so the sub-shot carries a zeroed damage map and
+	// only signals the client to render the second visual + carve the terrain.
+	if stats.DoubleBlast && shotType == 1 {
+		second := result
+		second.TerrainDelta = &physics.TerrainDelta{
+			X:       int(result.ImpactPos.X),
+			Y:       int(result.ImpactPos.Y),
+			Radius:  int(stats.Shot2BlastRadius),
+			RadiusY: int(math.Round(stats.Shot2BlastRadius * 0.85)),
+		}
+		m.Terrain.ClearEllipse(second.TerrainDelta.X, second.TerrainDelta.Y, second.TerrainDelta.Radius, second.TerrainDelta.RadiusY)
+		for victimID := range second.Damages {
+			second.Damages[victimID] = stats.Shot2Damage / 2
+		}
+		result.SubShots = append(result.SubShots, second)
+	}
+
+	// Apply damages through shield-first authoritative path.
 	for victimID, dmg := range result.Damages {
-		if victim, exists := m.Players[victimID]; exists && victim.Alive {
-			victim.HP -= dmg
-			if victim.HP <= 0 {
-				if len(m.Players) <= 1 {
-					// In solo practice testing mode, keep player alive infinitely!
-					victim.HP = stats.MaxHP
-					victim.Alive = true
-				} else {
-					victim.HP = 0
-					victim.Alive = false
-				}
+		if victim, exists := m.Players[victimID]; exists {
+			m.applyDamage(victim, m.Players[playerID], dmg)
+		}
+	}
+	// Apply the second blast's damage too.
+	for _, sub := range result.SubShots {
+		for victimID, dmg := range sub.Damages {
+			if victim, exists := m.Players[victimID]; exists {
+				m.applyDamage(victim, m.Players[playerID], dmg)
 			}
 		}
 	}
 
-	// Calculate and add delay
-	shotDelay := stats.Shot1Delay
-	if shotType == 1 {
-		shotDelay = stats.Shot2Delay
-	} else if shotType == 2 {
-		shotDelay = stats.SSDelay
-	}
-	m.TurnMgr.AddDelay(playerID, stats.BaseDelay+shotDelay)
+	// Calculate and add delay using canonical economy (§4.5).
+	// A queued Dual/Dual+ reduces the delay factor for this paired shot.
+	delayFactor := nextShotDelayFactor(activePlayer)
+	m.TurnMgr.AddDelay(playerID, AddedDelay(stats, activePlayer.Avatar, shotType, delayFactor))
 
 	// Check win condition
 	if m.checkWinCondition() {
@@ -312,12 +437,15 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		m.ActiveID = next.ID
 		m.TurnNumber++
 		m.RandomizeWind()
+		m.resetTurnItemFlags(next)
+		m.Weather.advance(m.rng, m.Terrain.Width)
 	} else if len(m.Players) <= 1 {
 		for _, p := range m.Players {
 			p.Alive = true
 			m.ActiveID = p.ID
 			m.TurnNumber++
 			m.RandomizeWind()
+			m.resetTurnItemFlags(p)
 			break
 		}
 	} else {
@@ -389,14 +517,29 @@ func (m *Match) HandleMove(playerID string, x, y float64) error {
 		return errors.New("player not active or dead")
 	}
 
+	// Reject free teleport: the client can no longer dictate Y arbitrarily.
+	// The authoritative standing surface is the terrain; a mobile may only
+	// sit within a small tolerance of it.
+	groundY := m.Terrain.FindGroundY(int(x), 50)
+	if math.Abs(y-float64(groundY-15)) > 60 {
+		return fmt.Errorf("%w: y %.2f is more than 60px from terrain surface %.2f", ErrInvalidShot, y, float64(groundY-15))
+	}
+
+	// Cap horizontal travel per movement packet. Prevents speed/macro cheats.
+	const maxMoveDelta = 180.0
+	if math.Abs(x-p.Pos.X) > maxMoveDelta {
+		return fmt.Errorf("%w: move delta %.2f exceeds %.2f", ErrInvalidShot, math.Abs(x-p.Pos.X), maxMoveDelta)
+	}
+
 	if x < 40 {
 		x = 40
 	} else if x > 2360 {
 		x = 2360
 	}
 
+	// Snap Y to terrain surface. Client Y is advisory only.
 	p.Pos.X = x
-	p.Pos.Y = y
+	p.Pos.Y = float64(groundY - 15)
 	return nil
 }
 
@@ -438,7 +581,7 @@ func (m *Match) simulateRaonWalkingMine(
 			Radius: int(cfg.BlastRadius * 0.7),
 		}
 		m.Terrain.ClearCircle(res.TerrainDelta.X, res.TerrainDelta.Y, res.TerrainDelta.Radius)
-		res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage/2, cfg.BlastRadius)
+		res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage/2, cfg.BlastRadius, m.shooterPos(shooterID))
 		return
 	}
 
@@ -478,7 +621,7 @@ func (m *Match) simulateRaonWalkingMine(
 		Radius: int(cfg.BlastRadius),
 	}
 	m.Terrain.ClearCircle(res.TerrainDelta.X, res.TerrainDelta.Y, res.TerrainDelta.Radius)
-	res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage, cfg.BlastRadius*1.5)
+	res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage, cfg.BlastRadius*1.5, nil)
 }
 
 

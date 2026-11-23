@@ -1,4 +1,5 @@
 import { MOBILES_DATA, MobileDef } from "../constants/mobiles.js";
+import { computeAccelerations } from "@gumbound/shared";
 
 export interface Point2D {
   x: number;
@@ -73,16 +74,9 @@ export class BallisticsEngine {
   }
 
   public static computeAccelerations(mobile: MobileDef, windPower: number, windAngleDeg: number) {
-    if (windPower === 0) {
-      return { ax: 0, ay: mobile.by };
-    }
-    const rad = (windAngleDeg * Math.PI) / 180;
-    // Authentic GunBound ballistics:
-    // 0 deg = Wind blowing Right (+X), 180 deg = Wind blowing Left (-X)
-    // 90 deg = Wind blowing Up (-Y, lifting against gravity), 270 deg = Wind blowing Down (+Y, pulling down)
-    const ax = Math.round((Math.cos(rad) * windPower * mobile.by) / 100);
-    const ay = Math.round(mobile.by - (Math.sin(rad) * windPower * mobile.by) / 100);
-    return { ax, ay };
+    // Canonical DragonBound acceleration shared with server. Fixes the old
+    // `+cos` wind sign and adds the missing `bx` vertical term.
+    return computeAccelerations(mobile, windPower, windAngleDeg);
   }
 
   public static computeMuzzle(x: number, y: number, look: number, bodyAngle: number, mobileId: number) {
@@ -871,15 +865,25 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory {
-    // Authentic GunBound Armor Shot 2: 1 heavy armor missile (306 damage)
-    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 306, 45);
+    // Authentic GunBound Armor Shot 2: the decomp (DetonateShot2_Bullet2) runs
+    // the detonation primitive on two paths — an immediate impact blast plus a
+    // delayed secondary blast. Visually this reads as a "double explosion".
+    // Per-hit damage comes from the mobile table (baseDamage.shot2 = 153); the
+    // two hits total 306 which is why the legacy code hardcoded that number.
+    const perHitDamage = mobile.baseDamage.shot2;
+    const perHitBunge = mobile.palaBunge.shot2;
+    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, perHitDamage, perHitBunge);
     traj.id = `armor_shot2_${Date.now()}`;
     traj.weaponFile = "armor2.png";
     traj.explodeFile = "armor2.png";
     traj.soundFire = "12fire";
     traj.soundExplode = "11blast";
-    traj.damage = 306;
-    traj.bungeRadius = 45;
+    traj.damage = perHitDamage;
+    traj.bungeRadius = perHitBunge;
+    // Second blast at the same impact point a few frames later. The delay is
+    // long enough that the second fireball reads as its own detonation instead
+    // of smearing into the primary shockwave.
+    traj.extraMeta = { doubleBlast: true, secondBlastDelayMs: 360 };
     traj.launchDelayMs = 0;
     return traj;
   }

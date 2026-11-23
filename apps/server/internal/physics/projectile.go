@@ -20,7 +20,23 @@ type ProjectileConfig struct {
 	BaseDamage   int
 	BlastRadius  float64
 	Facing       int
+	// WeatherAt reports per-step acceleration modifiers at world coordinate x.
+	// Nil disables positional weather effects.
+	WeatherAt func(x float64) AccelModifier
 }
+
+// AccelModifier describes per-step acceleration changes from a positional
+// weather column (plan §4.7). Multipliers scale the base wind/gravity vector;
+// additive terms are applied directly.
+type AccelModifier struct {
+	AxMult float64
+	AyMult float64
+	AxAdd  float64
+	AyAdd  float64
+}
+
+// DefaultAccelModifier is the no-op modifier.
+func DefaultAccelModifier() AccelModifier { return AccelModifier{AxMult: 1, AyMult: 1} }
 
 // SimulateProjectile runs an authoritative, deterministic projectile simulation
 func SimulateProjectile(
@@ -49,6 +65,16 @@ func SimulateProjectile(
 		Facing:      f,
 	}
 	return SimulateProjectileAdv(cfg, terrain, mobiles)
+}
+
+func ComputeAccelerations(by, bx, windPower, windAngleDeg float64) (float64, float64) {
+	if windPower == 0 {
+		return 0, math.Round(by)
+	}
+	rad := windAngleDeg * (math.Pi / 180.0)
+	b0 := math.Round(math.Floor(math.Cos(rad)*windPower*by)) / 100.0
+	b1 := math.Round(math.Floor(math.Sin(rad)*windPower*by-bx)) / 100.0
+	return math.Round(0.0 - b0), math.Round(by - b1)
 }
 
 // SimulateProjectileAdv executes calibrated ballistics based on authentic GunBound / DragonBound mechanics
@@ -99,16 +125,7 @@ func SimulateProjectileAdv(
 	}
 
 	var ax, ay float64
-	if windPower == 0 {
-		ax = 0
-		ay = by
-	} else {
-		wRad := windAngle * (math.Pi / 180.0)
-		b0 := math.Round(math.Floor(math.Cos(wRad) * windPower * by)) / 100.0
-		b1 := math.Round(math.Floor(math.Sin(wRad) * windPower * by - bx)) / 100.0
-		ax = math.Round(0.0 - b0)
-		ay = math.Round(by - b1)
-	}
+	ax, ay = ComputeAccelerations(by, bx, windPower, windAngle)
 
 	// GunBound analytical speed: 0-100 power -> 0-400 power units -> v0 up to 936 px/sec
 	scaledPower := (cfg.Power / 100.0) * 400.0
@@ -122,6 +139,13 @@ func SimulateProjectileAdv(
 	trajectory := []Vec2{currentPos}
 	stepMs := 16 // ~60 steps per second
 	maxMs := 8000
+	dt := float64(stepMs) / 1000.0
+
+	// When positional weather is active, integrate acceleration step-by-step
+	// instead of the closed-form path so the projectile can enter/leave columns.
+	weathered := cfg.WeatherAt != nil
+	vel := Vec2{X: vx, Y: vy}
+	integratedPos := currentPos
 
 	var hitType HitType = HitOOB
 	var impactPos Vec2 = currentPos
@@ -130,9 +154,25 @@ func SimulateProjectileAdv(
 	for tMs := stepMs; tMs <= maxMs; tMs += stepMs {
 		p := float64(tMs) / 1000.0
 		prevPos := currentPos
-		currentPos = Vec2{
-			X: muzzleX + vx*p + (ax*p*p)/2.0,
-			Y: muzzleY + vy*p + (ay*p*p)/2.0,
+		if weathered {
+			mod := cfg.WeatherAt(integratedPos.X)
+			if mod.AxMult == 0 && mod.AyMult == 0 {
+				mod = DefaultAccelModifier()
+			}
+			effAx := ax*mod.AxMult + mod.AxAdd
+			effAy := ay*mod.AyMult + mod.AyAdd
+			vel.X += effAx * dt
+			vel.Y += effAy * dt
+			integratedPos = Vec2{
+				X: integratedPos.X + vel.X*dt,
+				Y: integratedPos.Y + vel.Y*dt,
+			}
+			currentPos = integratedPos
+		} else {
+			currentPos = Vec2{
+				X: muzzleX + vx*p + (ax*p*p)/2.0,
+				Y: muzzleY + vy*p + (ay*p*p)/2.0,
+			}
 		}
 
 		// Continuous collision detection between prevPos and currentPos
@@ -215,24 +255,32 @@ func SimulateProjectileAdv(
 	if hitType == HitMobile && hitMobileID != "" {
 		damages[hitMobileID] = cfg.BaseDamage
 		if cfg.BlastRadius > 0 {
-			craterRadius := int(cfg.BlastRadius)
-			terrain.ClearCircle(int(impactPos.X), int(impactPos.Y), craterRadius)
+			// Canonical GunBound crater: wider than tall (aspect 1.0 : 0.85).
+			craterRx := int(math.Round(cfg.BlastRadius))
+			craterRy := int(math.Round(cfg.BlastRadius * 0.85))
+			terrain.ClearEllipse(int(impactPos.X), int(impactPos.Y), craterRx, craterRy)
 			terrainDelta = &TerrainDelta{
-				X:      int(impactPos.X),
-				Y:      int(impactPos.Y),
-				Radius: craterRadius,
+				X:       int(impactPos.X),
+				Y:       int(impactPos.Y),
+				Radius:  craterRx,
+				RadiusY: craterRy,
 			}
 		}
 	} else if hitType == HitTerrain {
-		damages = CalculateRadialDamage(impactPos, mobiles, cfg.BaseDamage, cfg.BlastRadius*1.5)
+		// Self-arm gate: shooter cannot be splashed by own shell inside 20px of muzzle.
+		origin := cfg.Origin
+		damages = CalculateRadialDamage(impactPos, mobiles, cfg.BaseDamage, cfg.BlastRadius*1.5, &origin)
 
 		if cfg.BlastRadius > 0 {
-			craterRadius := int(cfg.BlastRadius)
-			terrain.ClearCircle(int(impactPos.X), int(impactPos.Y), craterRadius)
+			// Canonical GunBound crater: wider than tall (aspect 1.0 : 0.85).
+			craterRx := int(math.Round(cfg.BlastRadius))
+			craterRy := int(math.Round(cfg.BlastRadius * 0.85))
+			terrain.ClearEllipse(int(impactPos.X), int(impactPos.Y), craterRx, craterRy)
 			terrainDelta = &TerrainDelta{
-				X:      int(impactPos.X),
-				Y:      int(impactPos.Y),
-				Radius: craterRadius,
+				X:       int(impactPos.X),
+				Y:       int(impactPos.Y),
+				Radius:  craterRx,
+				RadiusY: craterRy,
 			}
 		}
 	}

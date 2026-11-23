@@ -90,11 +90,13 @@ export class CombatArena {
       isImmortal: boolean;
     }>;
   }) => void;
-  public onActiveItemChange?: (item: "dual" | "teleport" | null) => void;
+  public onActiveItemChange?: (item: "dual" | "dual_plus" | "teleport" | null) => void;
   public onItemUsedThisTurnChange?: (used: boolean) => void;
-  public onPlayerItemsChange?: (items: ("dual" | "teleport" | null)[]) => void;
+  public onPlayerItemsChange?: (items: ("dual" | "dual_plus" | "teleport" | null)[]) => void;
   public onMatchReset?: () => void;
   public onChatMessage?: (msg: { sender: string; text: string; isSystem?: boolean }) => void;
+  /** Emitted whenever authoritative-style damage is applied to a player or bot. */
+  public onCombatLog?: (entry: { target: string; amount: number; source: "player" | "bot" | "self" }) => void;
   public onBattleIntro?: (phase: "ready" | "fight" | null) => void;
   public onTurnTimerFreeze?: () => void;
   public onTurnTimerReset?: (seconds?: number) => void;
@@ -105,8 +107,8 @@ export class CombatArena {
   private introTimeouts: ReturnType<typeof setTimeout>[] = [];
 
   // Active Battle Item (Dual, Teleport)
-  public playerItems: ("dual" | "teleport" | null)[] = ["dual", "dual", "teleport"];
-  public activeItem: "dual" | "teleport" | null = null;
+  public playerItems: ("dual" | "dual_plus" | "teleport" | null)[] = ["dual", "dual_plus", "teleport"];
+  public activeItem: "dual" | "dual_plus" | "teleport" | null = null;
   public activeItemSlotIndex: number | null = null;
   public hasUsedItemThisTurn: boolean = false;
   private botActionTimer: ReturnType<typeof setTimeout> | null = null;
@@ -227,11 +229,13 @@ export class CombatArena {
         this.fadingColumnEntities = [];
 
         if (column && weather.hasColumn) {
+          const groundY = this.terrain.findSurfaceY(column.x, 0);
           this.activeColumnEntity = new WeatherColumnEntity({
             type: column.type,
             x: column.x,
             width: column.width,
             mapHeight: this.terrain.mapHeight,
+            groundY,
           });
           // Render inside dedicated weatherContainer (never disturbs worldContainer indices)
           this.weatherContainer.addChild(this.activeColumnEntity);
@@ -294,7 +298,7 @@ export class CombatArena {
 
     // 8. Center Camera across the battlefield with authentic framing and start smooth cinematic intro zoom from frame 1
     this.engine.panTo(704.5, 420, true);
-    this.engine.playIntroZoom(0.50, 1.20, 4200);
+    this.engine.playIntroZoom(0.50, 1.00, 4200);
 
     // Start epic battle intro sequence with title banner ("¿ESTÁS LISTO?" -> "¡A COMBATIR!")
     this.startBattleIntroSequence();
@@ -773,7 +777,7 @@ export class CombatArena {
     return isImmortal;
   }
 
-  public activateItem(item: "dual" | "teleport" | null, slotIndex: number | null = null) {
+  public activateItem(item: "dual" | "dual_plus" | "teleport" | null, slotIndex: number | null = null) {
     if (item === null) {
       this.activeItem = null;
       this.activeItemSlotIndex = null;
@@ -865,6 +869,8 @@ export class CombatArena {
 
     if (itemUsed === "dual") {
       delayCost += 550; // Authentic GunBound Dual item delay
+    } else if (itemUsed === "dual_plus") {
+      delayCost += 480; // Dual+ — reduced-delay variant (11 vs 12.5 factor)
     } else if (itemUsed === "teleport") {
       delayCost += 400; // Authentic GunBound Teleport item delay
     }
@@ -913,9 +919,10 @@ export class CombatArena {
     };
 
     const trajectories = BallisticsEngine.simulateShot(params);
+    const isDual = itemUsed === "dual" || itemUsed === "dual_plus";
     trajectories.forEach((t) => {
       t.shotType = shotType;
-      if (itemUsed === "dual") {
+      if (isDual) {
         t.isDual = true;
       }
     });
@@ -932,7 +939,7 @@ export class CombatArena {
 
     const isTeleport = itemUsed === "teleport";
 
-    if (itemUsed === "dual") {
+    if (isDual) {
       let completedVolleys = 0;
       const onVolleyDone = () => {
         completedVolleys++;
@@ -1117,6 +1124,14 @@ export class CombatArena {
         }
         maxDamageApplied = Math.max(maxDamageApplied, appliedDamage);
         b.takeDamage(appliedDamage, x, y);
+        if (this.onCombatLog) {
+          const shooterIsPlayer = shooter === this.player;
+          this.onCombatLog({
+            target: b.mobile.nickname,
+            amount: appliedDamage,
+            source: shooterIsPlayer ? "player" : b.mobile === shooter ? "self" : "bot",
+          });
+        }
       }
     }
 
@@ -1130,6 +1145,14 @@ export class CombatArena {
       }
       maxDamageApplied = Math.max(maxDamageApplied, appliedDamage);
       this.damagePlayer(appliedDamage, x, y);
+      if (this.onCombatLog) {
+        const shooterIsPlayer = shooter === this.player;
+        this.onCombatLog({
+          target: "Player [Tú]",
+          amount: appliedDamage,
+          source: shooterIsPlayer ? "self" : "bot",
+        });
+      }
     }
 
     // 5. Authentic GunBound & Pro Game Engine Impact Screenshake
@@ -1144,6 +1167,35 @@ export class CombatArena {
       isDual,
       damage: maxDamageApplied,
     });
+
+    // 5b. Armor S2 double detonation (DetonateShot2_Bullet2): the decomp runs
+    // the detonation primitive twice on the same impact point — the second pass
+    // re-digs the crater and spawns a fresh flame effect a few frames later, so
+    // on screen it reads as two distinct explosions. Mirror that: carve again,
+    // burst debris again, fire a second dynamic fireball, re-shake the camera.
+    const meta = traj.extraMeta as { doubleBlast?: boolean; secondBlastDelayMs?: number } | undefined;
+    if (meta?.doubleBlast && meta.secondBlastDelayMs) {
+      const delay = meta.secondBlastDelayMs;
+      setTimeout(() => {
+        this.terrain.carveCrater(x, y, traj.bungeRadius, traj.bungeRadius * 0.85);
+        this.destructionParticles.spawnExplosionDebris(x, y, traj.bungeRadius, traj.damage);
+
+        if (DynamicExplosionEngine.isDynamicEnabled) {
+          const dynamicEngine = DynamicExplosionEngine.getInstance();
+          dynamicEngine?.triggerExplosion(x, y, traj.bungeRadius, traj.damage, undefined, shotType);
+        }
+
+        this.engine.triggerImpactShake({
+          shotType,
+          hitMobileDirectly,
+          isDual,
+          damage: maxDamageApplied,
+        });
+
+        const def = MOBILES_DATA[shooter.mobileType] || MOBILES_DATA[0];
+        AudioManager.play(def.soundExplode || "11blast", 0.9);
+      }, delay);
+    }
 
     // 6. Special satellite orbital beams (Aduka Thor, ASate, Knight, Lightning)
     this.handleSpecialOrbitalBeams(traj);
@@ -1459,6 +1511,7 @@ export class CombatArena {
 
     // Immediately re-enable player aim controller & mobile
     this.aimController.enabled = true;
+    this.aimController.movementLocked = false;
     this.aimController.setActiveMobile(this.player);
 
     if (this.onActiveItemChange) {
@@ -1509,7 +1562,11 @@ export class CombatArena {
     // Authentic GunBound turn alert sound
     AudioManager.play("turn.ogg", 0.95);
 
-    this.aimController.enabled = false;
+    // GunBound permite ajustar el ángulo de tiro (W/S) incluso cuando no es tu
+    // turno; solo prohíbe caminar (A/D). El apuntado sigue habilitado, el
+    // movimiento queda bloqueado.
+    this.aimController.enabled = true;
+    this.aimController.movementLocked = true;
     this.broadcastTurnUpdate();
 
     // 1. Pan camera to acting bot
@@ -1717,7 +1774,7 @@ export class CombatArena {
 
   public resetCamera() {
     this.engine.panTo(704.5, 420);
-    this.engine.playIntroZoom(0.50, 1.20, 4200);
+    this.engine.playIntroZoom(0.50, 1.00, 4200);
   }
 
   public setWeather(idOrType: number | WeatherType, forcedX?: number) {
@@ -1818,7 +1875,7 @@ export class CombatArena {
       clearTimeout(this.botActionTimer);
       this.botActionTimer = null;
     }
-    this.playerItems = ["dual", "dual", "teleport"];
+    this.playerItems = ["dual", "dual_plus", "teleport"];
     this.activeItem = null;
     this.activeItemSlotIndex = null;
     this.hasUsedItemThisTurn = false;
@@ -1890,3 +1947,5 @@ export class CombatArena {
     this.bots = [];
   }
 }
+
+

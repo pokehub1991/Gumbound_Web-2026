@@ -153,14 +153,14 @@ export const WEATHER_DEFINITIONS: Record<number, WeatherDefinition> = {
     iconActive: "/sprites/weather/weather_8_active.png",
     iconInactive: "/sprites/weather/weather_8_inactive.png",
     hasColumn: true,
-    columnTexture: "/sprites/weather/tornado.png",
+    columnTexture: "/sprites/weather/blizzard-vortex.png",
     color: "#38bdf8",
   },
 };
 
 export function getWeatherColumnWidth(type: WeatherType): number {
   switch (type) {
-    case "tornado": return 56;
+    case "tornado": return 68;
     case "sun": return 44; // Ancho ligeramente reducido a pedido del usuario
     case "lightning": return 52; // Ancho ampliado y reforzado con más arcos y chispas
     case "mirror": return 32; // Ancho esbelto y auténtico para la barrera de espejo

@@ -3,6 +3,7 @@ import { MobileEntity } from "../entities/MobileEntity.js";
 import { TerrainRenderer } from "../terrain/TerrainRenderer.js";
 import { DeathGhostEntity } from "../effects/DeathGhostEntity.js";
 import { BallisticsEngine } from "../physics/BallisticsEngine.js";
+import { botHitThreshold } from "./botAccuracy.js";
 
 export interface BotShotSolution {
   angle: number;
@@ -22,11 +23,18 @@ export class BotDummy extends Container {
   public botIndex: number = 0;
   public delay: number = 960;
   public ssCooldown: number = 0;
-  public difficulty: number = 0.78; // Calibrated human baseline (~68-75% accuracy, fails realistically)
+  /**
+   * Base skill for the 50-75% accuracy band.
+   * The realized hit probability per shot is clamped to [0.50, 0.75] in
+   * `calculateShot`, so this baseline only nudges where inside the band the bot
+   * sits (bot 0 slightly stronger). Distance and wind penalties still apply
+   * before the clamp, so long shots trend toward the 50% floor.
+   */
+  public difficulty: number = 0.66;
 
   public isDead: boolean = false;
   public isImmortal: boolean = false;
-  public items: ("dual" | "teleport" | null)[] = ["dual", "dual", "teleport"];
+  public items: ("dual" | "dual_plus" | "teleport" | null)[] = ["dual", "dual", "teleport"];
   private isBotBunged: boolean = false;
   private ghostEntity?: DeathGhostEntity;
   private damageNumbersContainer: Container;
@@ -47,7 +55,7 @@ export class BotDummy extends Container {
     this.spawnY = spawnY;
     this.botIndex = botIndex;
     this.delay = 960 + botIndex * 40;
-    this.difficulty = 0.76 + (botIndex === 0 ? 0.04 : (Math.random() - 0.5) * 0.08);
+    this.difficulty = 0.64 + (botIndex === 0 ? 0.04 : (Math.random() - 0.5) * 0.06);
 
     this.damageNumbersContainer = new Container();
 
@@ -217,42 +225,77 @@ export class BotDummy extends Container {
       }
     }
 
-    // 4. Humanized Precision & Inaccuracy Model (Simulates real human players who don't have 100% precision)
+    // 4. Humanized Accuracy Model — guaranteed 50-75% hit band.
+    //
+    // We roll the OUTCOME first (Bernoulli on hitThreshold, clamped to
+    // [0.50, 0.75]) and then aim to match it. The previous three-band
+    // dispersion could not guarantee a realized hit rate: the "precision"
+    // band could still miss (splash radius is `bungeRadius * 1.5 + 14` px)
+    // and the "near miss" band frequently landed inside that same radius
+    // and counted as a hit, so the measured rate drifted outside the band.
     const targetDist = Math.abs(dx);
-    // Base skill threshold calibrated to human player performance:
-    // Close range: ~80-85% accuracy. Long range & high wind: ~55-65% accuracy. Overall average ~68-72%
-    const distFactor = Math.min(0.20, (targetDist / 1200) * 0.20);
-    const windFactor = Math.min(0.12, (windPower / 26) * 0.12);
-    const hitThreshold = Math.max(0.50, Math.min(0.85, this.difficulty - distFactor - windFactor));
+    // Clamp is the contract: P(hit) ∈ [0.50, 0.75] for every shot,
+    // regardless of distance or wind. difficulty only picks where in the
+    // band the bot sits before distance/wind penalties push it down.
+    const hitThreshold = botHitThreshold(this.difficulty, targetDist, windPower);
+    const willHit = Math.random() < hitThreshold;
 
-    const accuracyRoll = Math.random();
-    let powerError = 0;
-    let angleError = 0;
+    let finalPower = bestPower;
+    let finalAngle = bestAngle;
 
-    if (accuracyRoll < hitThreshold) {
-      // Precision Hit (~65-72% of shots):
-      // Minor human timing jitter when releasing spacebar/mouse (+/- 0.6% to 1.2% power)
-      powerError = (Math.random() - 0.5) * 1.8;
-      angleError = 0;
-    } else if (accuracyRoll < hitThreshold + 0.20) {
-      // Near Miss / Splash Damage (~18-22% of shots):
-      // Player slightly underpowers or overpowers (+/- 2.2% to 4.5% power error)
-      const errorSign = Math.random() < 0.5 ? -1 : 1;
-      powerError = errorSign * (2.2 + Math.random() * 2.3);
-      // Rare slight angle slip (+/- 1 degree)
-      if (Math.random() < 0.25) {
-        angleError = errorSign;
-      }
+    if (willHit) {
+      // Hit branch: keep the solved trajectory. Tiny ±0.45% power jitter is
+      // well below the splash radius so the shot still registers as a hit.
+      const jitter = (Math.random() - 0.5) * 0.9;
+      finalPower = Math.max(12, Math.min(100, Math.round(bestPower + jitter)));
     } else {
-      // Clear Whiff / Wind Miscalculation (~8-12% of shots):
-      // Player misreads wind arc or elevation, resulting in a distinct miss (+/- 4.5% to 8.0% power error)
-      const errorSign = Math.random() < 0.5 ? -1 : 1;
-      powerError = errorSign * (4.5 + Math.random() * 3.5);
-      angleError = (Math.random() < 0.5 ? -1 : 1) * (1 + Math.floor(Math.random() * 2));
+      // Miss branch: perturb the solved trajectory until the simulation no
+      // longer registers a direct or splash hit on the target. This makes
+      // the miss deterministic instead of "probably outside the radius".
+      const dirs: number[] = Math.random() < 0.5 ? [1, -1] : [-1, 1];
+      let foundMiss = false;
+      for (const sign of dirs) {
+        for (let step = 2; step <= 14; step++) {
+          const testPower = Math.max(12, Math.min(100, bestPower + sign * step));
+          const testTrajs = BallisticsEngine.simulateShot({
+            x: this.mobile.x,
+            y: this.mobile.y,
+            rawAngle: bestAngle,
+            power: testPower,
+            look,
+            bodyAngle,
+            mobileId: this.mobile.mobileType,
+            shotType,
+            windPower,
+            windAngle,
+            isPixelSolid: (x, y) => this.terrain.isGround(x, y),
+            mapWidth: this.terrain.mapWidth,
+            mapHeight: this.terrain.mapHeight,
+            targets: [{ id: "target", x: target.x, y: targetY, radius: targetRadius }],
+            activeWeatherColumn,
+          });
+          const testFirst = testTrajs[0];
+          if (!testFirst || !testFirst.finalPos) continue;
+          // Treat "inside splash radius" as still hitting the target so the
+          // realized miss is a genuine miss.
+          const splash = testFirst.bungeRadius * 1.5 + 14;
+          const distToTarget = Math.hypot(testFirst.finalPos.x - target.x, testFirst.finalPos.y - targetY);
+          if (testFirst.hitType !== "player" && distToTarget > splash) {
+            finalPower = testPower;
+            foundMiss = true;
+            break;
+          }
+        }
+        if (foundMiss) break;
+      }
+      if (!foundMiss) {
+        // Solution already inside minimum splash on every candidate power
+        // (point-blank). Fall back to a small angle nudge; if that also
+        // lands inside splash we accept the hit — a point-blank bot shot
+        // connecting is still inside the design intent.
+        finalAngle = Math.max(10, Math.min(85, bestAngle + (dirs[0] > 0 ? 2 : -2)));
+      }
     }
-
-    const finalPower = Math.max(12, Math.min(100, Math.round(bestPower + powerError)));
-    const finalAngle = Math.max(10, Math.min(85, bestAngle + angleError));
 
     return {
       angle: finalAngle,
@@ -260,7 +303,7 @@ export class BotDummy extends Container {
       shotType,
       facing,
       chatMessage,
-      expectedHit: accuracyRoll < hitThreshold,
+      expectedHit: willHit,
     };
   }
 
@@ -509,7 +552,7 @@ export class BotDummy extends Container {
     this.items = ["dual", "dual", "teleport"];
   }
 
-  public consumeItem(itemType: "dual" | "teleport"): boolean {
+  public consumeItem(itemType: "dual" | "dual_plus" | "teleport"): boolean {
     const idx = this.items.indexOf(itemType);
     if (idx !== -1) {
       this.items[idx] = null;
@@ -518,3 +561,4 @@ export class BotDummy extends Container {
     return false;
   }
 }
+

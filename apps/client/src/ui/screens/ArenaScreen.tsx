@@ -22,6 +22,13 @@ const renderPixelText = (text: string) => {
   );
 };
 
+// Items render as plain sockets: no cost/delay badges. Only Dual y Dual+ visibles.
+const ITEM_LABEL: Record<"dual" | "dual_plus" | "teleport", string> = {
+  dual: "DUAL",
+  dual_plus: "DUAL+",
+  teleport: "TP",
+};
+
 export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [playerMobileId, setPlayerMobileId] = useState<number>(0);
   const [playerGender, setPlayerGender] = useState<"male" | "female">("male");
@@ -84,7 +91,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
 
   // Compact Chat System
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; isSystem?: boolean }>>([]);
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; isSystem?: boolean; channel?: "all" | "team" }>>([]);
+  const [chatChannel, setChatChannel] = useState<"all" | "team">("all");
   const [chatInput, setChatInput] = useState<string>("");
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const chatMessagesContainerRef = useRef<HTMLDivElement>(null);
@@ -96,6 +104,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   const [chatMuteRemaining, setChatMuteRemaining] = useState<number>(0);
   const lastChatMessageRef = useRef<string>("");
   const repeatCountRef = useRef<number>(0);
+
+  // Combat log (damage/gold feed matching the pixel HUD art)
+  const [combatLog, setCombatLog] = useState<Array<{ id: number; target: string; amount: number; source: "player" | "bot" | "self"; time: number }>>([]);
+  const combatLogIdRef = useRef<number>(0);
 
   // Unread Messages Indicator (Pixel-art notification badge)
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
@@ -142,9 +154,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
   // 20-Second Turn Countdown (GunBound Authentic)
   const [turnCountdown, setTurnCountdown] = useState<number>(20);
 
-  // Battle Item Inventory & Slots (Dual, Dual, TP) - Permanently consumed on use leaving a hollow socket
-  const [playerItems, setPlayerItems] = useState<("dual" | "teleport" | null)[]>(
-    arena?.playerItems || ["dual", "dual", "teleport"]
+  // Battle Item Inventory & Slots (Dual, Dual+, TP) - Permanently consumed on use leaving a hollow socket
+  // TP se mantiene en el modelo del motor pero no se muestra en la HUD (alcance actual).
+  const [playerItems, setPlayerItems] = useState<("dual" | "dual_plus" | "teleport" | null)[]>(
+    arena?.playerItems?.filter((it): it is "dual" | "dual_plus" | "teleport" => it !== "teleport") || ["dual", "dual_plus"]
   );
   const [activeItemSlot, setActiveItemSlot] = useState<number | null>(null);
   const [hasUsedItemThisTurn, setHasUsedItemThisTurn] = useState<boolean>(false);
@@ -158,7 +171,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     );
   });
 
-  const handleToggleItemSlot = (slotIndex: number, itemType: "dual" | "teleport") => {
+  const handleToggleItemSlot = (slotIndex: number, itemType: "dual" | "dual_plus" | "teleport") => {
     if (playerItems[slotIndex] === null) return; // Empty socket ("hueco") cannot be activated
     if (hasUsedItemThisTurn || !isPlayerTurnActive || currentWeather.type === "no_items") return;
     if (activeItemSlot === slotIndex) {
@@ -440,6 +453,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       }
     };
 
+    arena.onCombatLog = (entry) => {
+      const id = ++combatLogIdRef.current;
+      setCombatLog((prev) => [...prev.slice(-5), { id, ...entry, time: Date.now() }]);
+    };
+
     arena.onTurnReady = () => {
       if (powerBarFillRef.current) powerBarFillRef.current.style.width = "0%";
       setTurnCountdown(20);
@@ -652,6 +670,67 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
       boxSizing: "border-box",
       imageRendering: "pixelated",
     }}>
+      {/* Combat Log Widget (damage / gold feed, absolute to avoid space-between shift) */}
+      {combatLog.length > 0 && (
+        <div
+          className="pixel-box"
+          style={{
+            position: "absolute",
+            top: "52px",
+            left: "12px",
+            width: "240px",
+            zIndex: 20,
+            pointerEvents: "none",
+            padding: "6px 8px",
+            background: "var(--bg-panel-dark)",
+            borderRadius: 3,
+            border: "2px solid #000",
+            boxShadow: "var(--shadow-bevel-panel)",
+            imageRendering: "pixelated",
+          }}
+        >
+          <div style={{
+            fontFamily: "var(--font-game)",
+            fontSize: "10px",
+            fontWeight: 900,
+            color: "var(--color-warning-light)",
+            letterSpacing: "1px",
+            borderBottom: "1px solid rgba(0,0,0,0.6)",
+            paddingBottom: 3,
+            marginBottom: 4,
+            textShadow: "var(--text-shadow-pixel)",
+          }}>
+            📋 REGISTRO DE COMBATE
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {combatLog.map((e) => (
+              <div
+                key={e.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontFamily: "var(--font-num)",
+                  fontSize: "9px",
+                  color: e.source === "player" ? "var(--color-success-light)" : e.source === "self" ? "var(--color-warning-light)" : "var(--color-danger-light)",
+                  textShadow: "var(--text-shadow-pixel)",
+                  padding: "1px 2px",
+                  background: "rgba(0,0,0,0.35)",
+                  borderRadius: 2,
+                  border: "1px solid rgba(0,0,0,0.6)",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-game)", fontSize: "9px", fontWeight: 700 }}>
+                  {e.target}
+                </span>
+                <span style={{ fontFamily: "var(--font-num)", fontSize: "10px" }}>
+                  -{e.amount}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {/* ============================================================ */}
       {/* TOP HEADER HUD (PIXEL-ART RETRO GUNBOUND STYLE) */}
       {/* ============================================================ */}
@@ -1004,7 +1083,7 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
           </button>
 
           {/* Row 2: 3 Items Slots (Col 1, Col 2, Col 3) */}
-          {playerItems.map((itemType, slotIndex) => {
+          {(playerItems.filter((it) => it !== "teleport")).map((itemType, slotIndex) => {
             if (itemType === null) {
               return (
                 <div
@@ -1035,9 +1114,11 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               );
             }
 
-            const label = itemType === "dual" ? "DUAL" : "TP";
+            const label = ITEM_LABEL[itemType];
             const defaultTitle = itemType === "dual"
               ? `Item ${slotIndex + 1}: Disparo Dual (x2 proyectiles)`
+              : itemType === "dual_plus"
+              ? `Item ${slotIndex + 1}: Disparo Dual+ (x2 proyectiles, menor delay)`
               : `Item ${slotIndex + 1}: Teleportación instantánea`;
             const isLocked = currentWeather.type === "no_items" || hasUsedItemThisTurn || !isPlayerTurnActive;
             const isSelected = activeItemSlot === slotIndex && !isLocked;
@@ -1076,6 +1157,8 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  position: "relative",
+                  overflow: "visible",
                   boxShadow: isSelected
                     ? "var(--shadow-glow-green)"
                     : "var(--shadow-bevel-btn)",
@@ -1319,6 +1402,28 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
               </button>
             </div>
 
+            {/* Channel Tabs (All / Team) */}
+            <div style={{ display: "flex", gap: "4px" }}>
+              {(["all", "team"] as const).map((ch) => (
+                <button
+                  key={ch}
+                  onClick={() => setChatChannel(ch)}
+                  className={`pixel-btn ${chatChannel === ch ? "pixel-btn-primary" : "pixel-btn-slate"}`}
+                  style={{
+                    borderRadius: 3,
+                    padding: "1px 8px",
+                    fontSize: "10px",
+                    fontWeight: 700,
+                    lineHeight: "14px",
+                    textShadow: "var(--text-shadow-pixel)",
+                  }}
+                  title={ch === "all" ? "Canal general" : "Canal de equipo"}
+                >
+                  {ch === "all" ? "TODO" : "EQUIPO"}
+                </button>
+              ))}
+            </div>
+
             {/* Messages Scroll Area with Retro Pixel-Art Scrollbar */}
             <div
               ref={chatMessagesContainerRef}
@@ -1333,7 +1438,10 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
                 paddingRight: "4px",
               }}
             >
-              {chatMessages.map((msg, idx) => {
+              {(chatChannel === "all"
+                ? chatMessages.filter((m) => !m.isSystem || m.channel === "all" || !m.channel)
+                : chatMessages.filter((m) => m.channel === "team" || m.isSystem)
+              ).map((msg, idx) => {
                 const cleanSender = msg.sender.replace(/^\[?\(?BOT\)?\]?\s*/i, "").trim();
                 return (
                   <div key={idx} style={{ fontSize: "12px", lineHeight: "1.4", letterSpacing: "0.2px", fontFamily: "var(--font-game)" }}>
@@ -1985,3 +2093,5 @@ export const ArenaScreen: React.FC<ArenaScreenProps> = ({ arena }) => {
     </div>
   );
 };
+
+

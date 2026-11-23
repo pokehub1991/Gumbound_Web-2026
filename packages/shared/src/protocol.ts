@@ -17,7 +17,8 @@ export enum Opcode {
   PROJECTILE_RESULT = 0x3003,
   TURN_END = 0x3004,
   MATCH_END = 0x3005,
-  PLAYER_MOVE = 0x3006
+  PLAYER_MOVE = 0x3006,
+  USE_ITEM = 0x3007
 }
 
 export enum MobileType {

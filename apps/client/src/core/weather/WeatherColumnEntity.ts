@@ -6,6 +6,7 @@ interface ColumnConfig {
   x: number;
   width?: number;
   mapHeight?: number;
+  groundY?: number;
 }
 
 interface WeatherParticle {
@@ -71,6 +72,13 @@ export class WeatherColumnEntity extends Container {
   private mirrorFrameIndex: number = 0;
   private mirrorFrameTimer: number = 0;
 
+  // Authentic Blizzard Vortex Sprite (from pixelfx) - Single Grand Tornado
+  private tornadoVortexSprite?: Sprite;
+  private tornadoFullTextures: Texture[] = [];
+  private tornadoFrameIndex: number = 0;
+  private tornadoFrameTimer: number = 0;
+  public readonly groundY: number;
+
   private time: number = 0;
 
   // Particle systems
@@ -95,6 +103,7 @@ export class WeatherColumnEntity extends Container {
     this.weatherType = config.type;
     this.columnX = config.x;
     this.columnWidth = config.width || getWeatherColumnWidth(config.type);
+    this.groundY = config.groundY ?? (config.mapHeight ? config.mapHeight * 0.65 : 600);
 
     this.startY = -2200;
     this.endY = 2200;
@@ -109,7 +118,7 @@ export class WeatherColumnEntity extends Container {
     this.fxGfx = new Graphics();
     this.addChild(this.fxGfx);
 
-    if (this.weatherType === "sun" || this.weatherType === "lightning" || this.weatherType === "mirror") {
+    if (this.weatherType === "sun" || this.weatherType === "lightning" || this.weatherType === "mirror" || this.weatherType === "tornado") {
       this.columnGfx.blendMode = "add";
       this.fxGfx.blendMode = "add";
     }
@@ -118,6 +127,8 @@ export class WeatherColumnEntity extends Container {
       this.initSunforce();
     } else if (this.weatherType === "mirror") {
       this.initMirror();
+    } else if (this.weatherType === "tornado") {
+      this.initTornado();
     }
 
     this.initParticles();
@@ -217,6 +228,40 @@ export class WeatherColumnEntity extends Container {
     }
   }
 
+  private async initTornado() {
+    try {
+      const tex = await Assets.load<Texture>("/sprites/weather/blizzard-vortex.png");
+      if (this.isDestroyed) return;
+
+      if (tex.source) {
+        tex.source.scaleMode = "nearest";
+      }
+
+      // Blizzard vortex has 60 frames (8 columns, 128x116 per frame)
+      this.tornadoFullTextures = [];
+
+      for (let i = 0; i < 60; i++) {
+        const col = i % 8;
+        const row = Math.floor(i / 8);
+        const fullRect = new Rectangle(col * 128, row * 116, 128, 116);
+        this.tornadoFullTextures.push(new Texture({ source: tex.source, frame: fullRect }));
+      }
+
+      // Single Grand Blizzard Vortex Sprite (authentic pixelfx vortex placed at ground terrain)
+      // Spans ~580px in height, towering from ground to the sky as a single majestic tornado
+      this.tornadoVortexSprite = new Sprite(this.tornadoFullTextures[0]);
+      // Pivot at foot of the vortex: (64, 102) in 128x116
+      this.tornadoVortexSprite.anchor.set(64 / 128, 102 / 116);
+      this.tornadoVortexSprite.position.set(0, this.groundY);
+      this.tornadoVortexSprite.scale.set(3.8, 5.0); // Majestic ~486x580 single tornado
+      this.tornadoVortexSprite.blendMode = "add";
+      this.tornadoVortexSprite.alpha = 0.96;
+      this.addChild(this.tornadoVortexSprite);
+    } catch (e) {
+      console.warn("[WeatherColumnEntity] Error loading blizzard-vortex sprite:", e);
+    }
+  }
+
   private initParticles() {
     this.particles = [];
     const count = this.weatherType === "tornado" ? 115 : this.weatherType === "lightning" ? 90 : this.weatherType === "sun" ? 75 : this.weatherType === "mirror" ? 80 : this.maxParticles;
@@ -227,7 +272,11 @@ export class WeatherColumnEntity extends Container {
 
   private createParticle(randomY: boolean = false): WeatherParticle {
     const yRange = this.endY - this.startY;
-    const y = randomY ? this.startY + Math.random() * yRange : this.weatherType === "sun" ? this.endY - Math.random() * 200 : this.endY - Math.random() * 200;
+    const isTornado = this.weatherType === "tornado";
+    const tornadoH = 520;
+    const y = isTornado
+      ? (randomY ? this.groundY - Math.random() * tornadoH : this.groundY - Math.random() * 50)
+      : (randomY ? this.startY + Math.random() * yRange : this.endY - Math.random() * 200);
 
     switch (this.weatherType) {
       case "tornado": {
@@ -239,10 +288,10 @@ export class WeatherColumnEntity extends Container {
           const orbitRadius = 2 + Math.random() * 8; // Start near the inner eye/core
           return {
             x: 0,
-            y: randomY ? this.startY + Math.random() * yRange : this.startY + Math.random() * yRange,
+            y,
             vx: 0,
-            vy: -(2.2 + Math.random() * 3.6), // Gentle rising updraft
-            size: 1.0 + Math.random() * 1.5, // Small, delicate, subtle particle
+            vy: -(2.5 + Math.random() * 3.8), // Gentle rising updraft
+            size: 1.2 + Math.random() * 1.8,
             alpha: 0.1,
             maxAlpha: 0.55 + Math.random() * 0.35,
             orbitAngle: Math.random() * Math.PI * 2,
@@ -266,7 +315,7 @@ export class WeatherColumnEntity extends Container {
           const orbitRadius = 6 + Math.random() * (this.columnWidth * 0.45);
           return {
             x: 0,
-            y: randomY ? this.startY + Math.random() * yRange : this.endY - Math.random() * 200,
+            y,
             vx: 0,
             vy: -(4.8 + Math.random() * 6.2), // High-speed upward vortex suction
             size: 3.2 + Math.random() * 4.2, // Substantial rock / chunk size
@@ -509,6 +558,27 @@ export class WeatherColumnEntity extends Container {
       this.mirrorTiling.alpha = 0.82 + Math.sin(this.time * 3.2) * 0.12;
     }
 
+    // Authentic Blizzard Vortex 60-frame cyclic animation (30 FPS) - Single Grand Tornado
+    if (this.weatherType === "tornado") {
+      const dtSec = dt / 60;
+      if (this.tornadoFullTextures.length > 0) {
+        this.tornadoFrameTimer += dtSec;
+        if (this.tornadoFrameTimer >= 1 / 30) {
+          const advanceFrames = Math.floor(this.tornadoFrameTimer / (1 / 30));
+          this.tornadoFrameTimer %= (1 / 30);
+          this.tornadoFrameIndex = (this.tornadoFrameIndex + advanceFrames) % this.tornadoFullTextures.length;
+
+          if (this.tornadoVortexSprite) {
+            this.tornadoVortexSprite.texture = this.tornadoFullTextures[this.tornadoFrameIndex];
+          }
+        }
+      }
+
+      if (this.tornadoVortexSprite) {
+        this.tornadoVortexSprite.rotation = Math.sin(this.time * 2.2) * 0.03;
+      }
+    }
+
     // Render 100% native graphics
     this.renderColumn();
     this.updateParticles();
@@ -523,70 +593,43 @@ export class WeatherColumnEntity extends Container {
 
     switch (this.weatherType) {
       case "tornado": {
-        // Volumetric 3D cyclone funnel with authentic ice-blue & white tones, dynamic wide eye & helical ribbons
-        const steps = 110;
-        const stepH = h / steps;
+        // Soft atmospheric cold light backing the single grand Blizzard vortex
+        const pulse = 0.88 + Math.sin(this.time * 3.5) * 0.12;
+        const tornadoH = 550;
+        const topY = this.groundY - tornadoH;
+        const footY = this.groundY + 25;
 
-        // 1. Broad outer atmospheric mist cone with subtle organic pulse
-        const mistPulse = 0.9 + Math.sin(this.time * 4) * 0.1;
-        this.columnGfx.rect(-w * 0.52, sY, w * 1.04, h).fill({ color: 0x38bdf8, alpha: 0.12 * mistPulse });
-        this.columnGfx.rect(-w * 0.32, sY, w * 0.64, h).fill({ color: 0x0284c7, alpha: 0.16 * mistPulse });
+        // 1. Soft atmospheric cold mist backdrop tapering from foot to flared top
+        const footW = w * 1.4;
+        const topW = w * 4.6;
 
-        // 2. Dense interlocking helical cloud ribbons creating substantial volumetric 3D body
-        for (let r = 0; r < 8; r++) {
-          const ribbonPalette = [0xffffff, 0xbae6fd, 0x7dd3fc, 0x38bdf8, 0x0284c7, 0xf0f9ff, 0x38bdf8, 0xbae6fd];
-          const ribbonCol = ribbonPalette[r % ribbonPalette.length];
-          const ribbonAlpha = 0.40 + Math.sin(this.time * 5 + r * 0.8) * 0.18;
-          const phaseOffset = r * (Math.PI / 4);
+        this.columnGfx.poly([
+          -topW * 0.5, topY,
+           topW * 0.5, topY,
+           footW * 0.5, footY,
+          -footW * 0.5, footY,
+        ]).fill({ color: 0x151a3d, alpha: 0.12 * pulse });
 
-          let prevX = Math.sin(this.time * 6.5 + sY * 0.007 + phaseOffset) * (w * 0.44);
-          let prevY = sY;
+        this.columnGfx.poly([
+          -topW * 0.30, topY,
+           topW * 0.30, topY,
+           footW * 0.30, footY,
+          -footW * 0.30, footY,
+        ]).fill({ color: 0x2c58aa, alpha: 0.16 * pulse });
 
-          for (let s = 1; s <= steps; s++) {
-            const nextY = sY + s * stepH;
-            const nextX = Math.sin(this.time * 6.5 + nextY * 0.007 + phaseOffset) * (w * 0.44);
-            this.columnGfx.moveTo(prevX, prevY).lineTo(nextX, nextY)
-              .stroke({ width: r === 0 ? 6.5 : r === 1 ? 5.2 : 3.8, color: ribbonCol, alpha: ribbonAlpha });
-            prevX = nextX;
-            prevY = nextY;
-          }
-        }
+        // 2. Cold core glow in the throat
+        this.columnGfx.poly([
+          -topW * 0.15, topY + 50,
+           topW * 0.15, topY + 50,
+           footW * 0.15, footY,
+          -footW * 0.15, footY,
+        ]).fill({ color: 0x62c8f4, alpha: 0.20 * pulse });
 
-        // 3. Dynamic Volumetric Eye of the Tornado (widened dynamic vertical spine)
-        for (let s = 1; s <= steps; s++) {
-          const y1 = sY + (s - 1) * stepH;
-          const y2 = sY + s * stepH;
-          const eyeSway1 = Math.sin(this.time * 5.5 + y1 * 0.006) * (w * 0.15);
-          const eyeSway2 = Math.sin(this.time * 5.5 + y2 * 0.006) * (w * 0.15);
-
-          const eyePulse = Math.sin(this.time * 7 + y1 * 0.012);
-          const dynamicEyeW = 7.5 + eyePulse * 3.2 + Math.cos(this.time * 11 + y1 * 0.02) * 1.8;
-
-          // Outer eye cyan sheath
-          this.columnGfx.moveTo(eyeSway1, y1).lineTo(eyeSway2, y2)
-            .stroke({ width: dynamicEyeW + 6.0, color: 0x38bdf8, alpha: 0.35 + eyePulse * 0.12 });
-
-          // Condensed ice-blue vortex eye core
-          this.columnGfx.moveTo(eyeSway1, y1).lineTo(eyeSway2, y2)
-            .stroke({ width: dynamicEyeW, color: 0xbae6fd, alpha: 0.72 });
-
-          // Incandescent pure white center filament
-          this.columnGfx.moveTo(eyeSway1, y1).lineTo(eyeSway2, y2)
-            .stroke({ width: Math.max(3.0, dynamicEyeW * 0.42), color: 0xffffff, alpha: 0.95 });
-        }
-
-        // 4. Sweeping horizontal wind vortex rings
-        const ringSpacing = 65;
-        const ringScroll = (this.time * 150) % ringSpacing;
-        for (let ringY = sY - ringSpacing; ringY <= eY + ringSpacing; ringY += ringSpacing) {
-          const y = ringY + ringScroll;
-          if (y < sY || y > eY) continue;
-          const sway = Math.sin(this.time * 5.5 + y * 0.006) * (w * 0.15);
-          this.columnGfx.ellipse(sway, y, w * 0.46, 5.2)
-            .stroke({ width: 2.2, color: 0xbae6fd, alpha: 0.65 });
-          this.columnGfx.ellipse(sway, y, w * 0.26, 3.2)
-            .stroke({ width: 1.6, color: 0xffffff, alpha: 0.80 });
-        }
+        // 3. Central glowing eye filament
+        const eyeSway = Math.sin(this.time * 3.5) * (w * 0.10);
+        this.columnGfx.moveTo(eyeSway * 1.5, topY)
+          .lineTo(0, footY)
+          .stroke({ width: 3.5, color: 0xffffff, alpha: 0.38 * pulse });
         break;
       }
 
@@ -745,12 +788,21 @@ export class WeatherColumnEntity extends Container {
       if (p.orbitAngle !== undefined && p.orbitRadius !== undefined && p.orbitSpeed !== undefined) {
         p.orbitAngle += p.orbitSpeed;
 
+        if (this.weatherType === "tornado") {
+          // Height progress from ground (0) to top of single grand tornado (1)
+          const hProg = Math.max(0, Math.min(1, (this.groundY - p.y) / 520));
+          // Funnel expands from narrow foot (factor 0.7) to wide mouth (factor 2.8)
+          const radiusScale = 0.7 + 2.1 * Math.pow(hProg, 1.25);
+          p.x = Math.cos(p.orbitAngle) * (p.orbitRadius * radiusScale);
+        } else {
+          p.x = Math.cos(p.orbitAngle) * p.orbitRadius;
+        }
+
         // Outward expansion for tornado centrifugal wind motes
         if (p.isOutwardWind && p.expansionSpeed) {
           p.orbitRadius += p.expansionSpeed;
         }
 
-        p.x = Math.cos(p.orbitAngle) * p.orbitRadius;
         p.y += p.vy;
 
         // Inward suction for black void
@@ -768,7 +820,9 @@ export class WeatherColumnEntity extends Container {
       }
 
       // Recycle when off vertical bounds
-      if (p.y < this.startY - 50 || p.y > this.endY + 50) {
+      const minY = this.weatherType === "tornado" ? this.groundY - 560 : this.startY - 50;
+      const maxY = this.weatherType === "tornado" ? this.groundY + 30 : this.endY + 50;
+      if (p.y < minY || p.y > maxY) {
         this.particles[i] = this.createParticle(false);
         continue;
       }
@@ -944,6 +998,14 @@ export class WeatherColumnEntity extends Container {
       tex.destroy(true);
     }
     this.mirrorTextures = [];
+    if (this.tornadoVortexSprite) {
+      this.tornadoVortexSprite.destroy();
+      this.tornadoVortexSprite = undefined;
+    }
+    for (const tex of this.tornadoFullTextures) {
+      tex.destroy(true);
+    }
+    this.tornadoFullTextures = [];
     for (const spr of this.sunTipSprites) {
       spr.destroy();
     }

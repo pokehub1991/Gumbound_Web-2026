@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "echo \"No tests for shared yet\""
+    "test": "node --experimental-strip-types tests/physics.test.mts"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

@@ -1,6 +1,7 @@
 package physics
 
 import (
+	"math"
 	"sync"
 )
 
@@ -61,27 +62,46 @@ func (t *TerrainMask) IsGround(x, y int) bool {
 	return (t.Mask[byteIdx] & (1 << bitIdx)) != 0
 }
 
-// ClearCircle carves an explosion crater into the terrain
+// ClearCircle carves an explosion crater into the terrain.
+// Delegates to ClearEllipse with a 1:1 aspect (kept for callers that want a
+// perfect circle). Canonical GunBound craters use ClearEllipse directly.
 func (t *TerrainMask) ClearCircle(cx, cy, radius int) {
+	t.ClearEllipse(cx, cy, radius, radius)
+}
+
+// ClearEllipse carves an elliptical crater using the same Bresenham-style
+// midpoint sweep as the reference GunBound `CarveTerrainCrater`:
+//   rx = horizontal radius (wide)
+//   ry = vertical radius (squashed by an aspect ratio)
+//
+// GunBound craters are wider than they are tall; the ratio ry/rx is what
+// produces that characteristic non-circular scoop. Bit-mask writes are
+// bounds-checked per pixel so off-screen impacts are a no-op.
+func (t *TerrainMask) ClearEllipse(cx, cy, rx, ry int) {
+	if rx <= 0 || ry <= 0 {
+		return
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	rSquared := radius * radius
-	minX := max(0, cx-radius)
-	maxX := min(t.Width-1, cx+radius)
-	minY := max(0, cy-radius)
-	maxY := min(t.Height-1, cy+radius)
+	minY := max(0, cy-ry)
+	maxY := min(t.Height-1, cy+ry)
+
+	rxSq := float64(rx * rx)
+	rySq := float64(ry * ry)
 
 	for y := minY; y <= maxY; y++ {
-		dy := y - cy
+		dy := float64(y - cy)
+		// Horizontal half-span at this row of the ellipse.
+		dxSpan := int(math.Floor(math.Sqrt(rxSq * max(0, 1.0-dy*dy/rySq))))
+		minX := max(0, cx-dxSpan)
+		maxX := min(t.Width-1, cx+dxSpan)
+		rowBase := y * t.Width
 		for x := minX; x <= maxX; x++ {
-			dx := x - cx
-			if dx*dx+dy*dy <= rSquared {
-				idx := y*t.Width + x
-				byteIdx := idx / 8
-				bitIdx := uint(idx % 8)
-				t.Mask[byteIdx] &= ^(1 << bitIdx)
-			}
+			idx := rowBase + x
+			byteIdx := idx / 8
+			bitIdx := uint(idx % 8)
+			t.Mask[byteIdx] &= ^(1 << bitIdx)
 		}
 	}
 }
