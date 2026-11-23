@@ -49,8 +49,8 @@ func withSecurityHeaders(next http.HandlerFunc) http.HandlerFunc {
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
-				"img-src 'self' data: blob:; font-src 'self'; connect-src 'self' wss:; "+
+			"default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob: ws: wss: http://localhost:8080 http://127.0.0.1:8080 ws://localhost:8080 ws://127.0.0.1:8080; "+
 				"object-src 'none'; frame-ancestors 'none'; base-uri 'none'")
 		next(w, r)
 	}

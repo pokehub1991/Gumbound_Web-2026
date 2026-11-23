@@ -80,6 +80,8 @@ export interface ProjectileResultState {
     x: number;
     y: number;
     radius: number;
+    // Vertical (squashed) crater radius. Canonical GunBound aspect is 1 : 0.85.
+    radius_y?: number;
   };
   sub_shots?: ProjectileResultState[];
 }

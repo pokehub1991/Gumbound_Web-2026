@@ -7,6 +7,17 @@
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+if [ -f "$ROOT_DIR/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT_DIR/.env"
+  set +a
+fi
+export JWT_SECRET="${JWT_SECRET:-dev_jwt_secret_gumbound_web_2026_super_secure_key}"
+export SEED_ACCOUNTS="${SEED_ACCOUNTS:-1}"
+export ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-http://localhost:3000}"
+export GO_ENV="${GO_ENV:-development}"
+
 check_port() {
   lsof -ti :"$1" >/dev/null 2>&1
 }

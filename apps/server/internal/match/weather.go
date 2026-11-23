@@ -206,6 +206,10 @@ func (m *Match) applyWeatherToConfig(cfg *physics.ProjectileConfig) {
 		am, ay, axAdd, ayAdd := weather.WeatherAccelModifiers(x)
 		return physics.AccelModifier{AxMult: am, AyMult: ay, AxAdd: axAdd, AyAdd: ayAdd}
 	}
+	// The client tags the same columns and applies the matching damage / bunge
+	// multipliers (sun ×1.25, mirror ×1.10, tornado ×1.20). Mirror it here so
+	// the authoritative crater equals the client's local crater.
+	cfg.WeatherTagAt = func(x float64) string { return string(weather.weatherTypeAt(x)) }
 }
 
 // IsThorActive reports whether Thor orbital strikes are active.

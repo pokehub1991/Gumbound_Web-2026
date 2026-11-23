@@ -21,6 +21,7 @@ apps/server/gumbound_server
 # IDE
 .idea/
 .vscode/
+.kilo/
 *.swp
 *.swo
 

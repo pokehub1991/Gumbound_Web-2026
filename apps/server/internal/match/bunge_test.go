@@ -10,7 +10,8 @@ func physicsV(x, y float64) physics.Vec2 { return physics.Vec2{X: x, Y: y} }
 
 // TestPerShotBungeRadii locks the canonical GunBound palaBunge table (§bunge).
 // shot2 radii differ from shot1/ss for most mobiles — a single-value BlastRadius
-// cannot reproduce per-shot crater depth.
+// cannot reproduce per-shot crater depth. All 22 mobiles × 3 shots are locked to
+// match the client parity tables in apps/client/tests/bungeTerrain.test.mts.
 func TestPerShotBungeRadii(t *testing.T) {
 	cases := []struct {
 		id          int
@@ -19,12 +20,25 @@ func TestPerShotBungeRadii(t *testing.T) {
 		{MobileArmor, 43, 45, 50},
 		{MobileIce, 45, 42, 53},
 		{MobileAduka, 36, 27, 40},
+		{MobileLightning, 35, 38, 45},
 		{MobileBigFoot, 30, 29, 28},
+		{MobileJD, 39, 33, 38},
+		{MobileASate, 40, 45, 50},
+		{MobileRandom, 38, 38, 45},
+		{MobileKnight, 42, 44, 48},
+		{MobileFox, 38, 40, 45},
+		{MobileDragon, 45, 50, 60},
+		{MobileNak, 38, 40, 48},
+		{MobileTrico, 30, 25, 45},
+		{MobileMage, 39, 36, 48},
 		{MobileTurtle, 64, 45, 65},
 		{MobileBoomer, 30, 25, 42},
+		{MobileGrub, 36, 32, 45},
 		{MobileRaon, 25, 10, 45},
+		{MobileFrog, 35, 38, 55},
 		{MobileKalsiddon, 32, 30, 45},
 		{MobileMaya, 45, 45, 60},
+		{MobilePhoenix, 40, 42, 52},
 	}
 	for _, c := range cases {
 		s := GetMobileStats(c.id)

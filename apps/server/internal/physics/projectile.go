@@ -23,6 +23,11 @@ type ProjectileConfig struct {
 	// WeatherAt reports per-step acceleration modifiers at world coordinate x.
 	// Nil disables positional weather effects.
 	WeatherAt func(x float64) AccelModifier
+	// WeatherTagAt reports the weather type covering world coordinate x (e.g.
+	// "sun", "tornado", "mirror"). Nil disables the damage / bunge multipliers
+	// the client applies from the same columns — without it, networked play
+	// under weather diverges from the client's local sim.
+	WeatherTagAt func(x float64) string
 }
 
 // AccelModifier describes per-step acceleration changes from a positional
@@ -151,6 +156,12 @@ func SimulateProjectileAdv(
 	var impactPos Vec2 = currentPos
 	var hitMobileID string
 
+	// Authentic weather damage / bunge tags, tracked across the flight (a shell
+	// that ever passed through a sun / mirror / tornado column keeps the buff).
+	inSun, inMirror, inTornado := false, false, false
+	inLightning, inBlack := false, false
+	trackWeather := cfg.WeatherTagAt != nil
+
 	for tMs := stepMs; tMs <= maxMs; tMs += stepMs {
 		p := float64(tMs) / 1000.0
 		prevPos := currentPos
@@ -168,6 +179,25 @@ func SimulateProjectileAdv(
 				Y: integratedPos.Y + vel.Y*dt,
 			}
 			currentPos = integratedPos
+			if trackWeather {
+				switch cfg.WeatherTagAt(integratedPos.X) {
+				case "sun":
+					inSun = true
+				case "mirror":
+					inMirror = true
+				case "tornado":
+					inTornado = true
+				case "lightning":
+					inLightning = true
+				case "black":
+					inBlack = true
+				case "random":
+					// Client "random" column grants both sun and lightning
+					// (BallisticsEngine.ts:262-264).
+					inSun = true
+					inLightning = true
+				}
+			}
 		} else {
 			currentPos = Vec2{
 				X: muzzleX + vx*p + (ax*p*p)/2.0,
@@ -219,16 +249,18 @@ func SimulateProjectileAdv(
 					}
 				}
 
-				hitX := prevPos.X + dx*highT
-				hitY := prevPos.Y + dy*highT
-
-				ix, iy := int(hitX), int(hitY)
-				for iy > 0 && terrain.IsGround(ix, iy-1) {
-					iy--
-				}
-				hitY = float64(iy)
-
 				hitType = HitTerrain
+				// Center the crater on the trajectory CONTACT point (last air pixel
+				// the shell passed through), not on the column top. A column walk
+				// upward lifts the impact off a cliff face and carves the horizontal
+				// half of the ellipse in open air — the horizontal-carve bug.
+				hitX := prevPos.X + dx*lowT
+				hitY := prevPos.Y + dy*lowT
+				if hx := int(hitX); hx >= 0 && hx < terrain.Width {
+					if hy := int(hitY) - 1; hy >= 0 && !terrain.IsGround(hx, hy) {
+						hitY = float64(hy)
+					}
+				}
 				impactPos = Vec2{X: hitX, Y: hitY}
 				collided = true
 				break
@@ -251,6 +283,30 @@ func SimulateProjectileAdv(
 
 	damages := make(map[string]int)
 	var terrainDelta *TerrainDelta
+
+	// Mirror the client's weather multipliers exactly (BallisticsEngine.ts:514-532).
+	// Damage: sun ×1.35, mirror ×1.15, tornado ×1.15, lightning +75, black ×0.75.
+	// Bunge: sun ×1.25, mirror ×1.10, tornado ×1.20. Applying only the bunge half
+	// would make the authoritative server damage diverge from the client's local
+	// damage under the same weather column.
+	if inSun {
+		cfg.BaseDamage = int(math.Round(float64(cfg.BaseDamage) * 1.35))
+		cfg.BlastRadius = math.Round(cfg.BlastRadius * 1.25)
+	}
+	if inMirror {
+		cfg.BaseDamage = int(math.Round(float64(cfg.BaseDamage) * 1.15))
+		cfg.BlastRadius = math.Round(cfg.BlastRadius * 1.10)
+	}
+	if inTornado {
+		cfg.BaseDamage = int(math.Round(float64(cfg.BaseDamage) * 1.15))
+		cfg.BlastRadius = math.Round(cfg.BlastRadius * 1.20)
+	}
+	if inLightning {
+		cfg.BaseDamage += 75
+	}
+	if inBlack {
+		cfg.BaseDamage = int(math.Round(float64(cfg.BaseDamage) * 0.75))
+	}
 
 	if hitType == HitMobile && hitMobileID != "" {
 		damages[hitMobileID] = cfg.BaseDamage

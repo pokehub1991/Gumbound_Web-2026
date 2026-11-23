@@ -1067,6 +1067,17 @@ export class CombatArena {
     });
   }
 
+  /**
+   * Authoritative crater from the server's ProjectileResult. In networked play
+   * the server runs its own terrain sim; carving the locally simulated radius
+   * would let client and server terrain diverge. Applying only the networked
+   * delta (never the vs-bots path) keeps both sides on the server's ellipse.
+   */
+  public applyServerTerrainDelta(delta: { x: number; y: number; radius: number; radius_y?: number }) {
+    const ry = delta.radius_y && delta.radius_y > 0 ? delta.radius_y : delta.radius * 0.85;
+    this.terrain.carveCrater(delta.x, delta.y, delta.radius, ry);
+  }
+
   private handleTeleportImpact(traj: ShotTrajectory) {
     if (!traj.finalPos) return;
     const impact = traj.finalPos;
@@ -1097,6 +1108,12 @@ export class CombatArena {
 
     const { x, y } = traj.finalPos;
 
+    // GunBound: crater center sits on the trajectory CONTACT point — the last air
+    // pixel the shell passed through before touching solid terrain. That point is
+    // orientation agnostic, so the ellipse bites sideways into a wall face exactly
+    // as deep as it digs down into a floor. No column projection here: a column
+    // scan (findSurfaceY) is purely vertical and lifts the center up a cliff face,
+    // carving the horizontal half of the crater in open air.
     // 1. Excavate 3D crater on Metamine terrain
     this.terrain.carveCrater(x, y, traj.bungeRadius, traj.bungeRadius * 0.85);
 
@@ -1108,7 +1125,12 @@ export class CombatArena {
     AudioManager.play(mobileDef.soundExplode || "11blast", 0.9);
 
     // 3. Bot damage check across all active bots
+    // Canonical splash (world.js decomp, mirrored by the server's
+    // CalculateRadialDamage): fixed 60px-style radius = bunge*1.5, linear
+    // falloff dm = base - dist, floor 10. No +14 fudge and no
+    // 0.45/0.55 curve — both drifted from the original.
     const blastRadius = traj.bungeRadius * 1.5;
+    const SPLASH_FLOOR = 10;
     let maxDamageApplied = 0;
     let hitMobileDirectly = traj.hitType === "player";
 
@@ -1116,9 +1138,11 @@ export class CombatArena {
       if (b.isDead || b.mobile.hp <= 0) continue;
       const distToBot = Math.hypot(b.mobile.x - x, (b.mobile.y - 14) - y);
 
-      if (distToBot <= blastRadius + 14) {
-        const falloff = Math.max(0, 1 - distToBot / (blastRadius + 14));
-        const appliedDamage = Math.round(traj.damage * (0.45 + 0.55 * falloff));
+      if (distToBot <= blastRadius) {
+        const appliedDamage = Math.max(
+          SPLASH_FLOOR,
+          Math.round(traj.damage - distToBot)
+        );
         if (distToBot <= 48) {
           hitMobileDirectly = true;
         }
@@ -1135,11 +1159,20 @@ export class CombatArena {
       }
     }
 
-    // 4. Player explosion/collision damage check (Splash / Self-damage)
+    // 4. Player explosion/collision damage check (Splash / Self-damage).
+    // Self-arm gate mirrors the server's SelfArmDistance (collision.go:23):
+    // the shooter is immune to their own splash inside 20 px of the muzzle.
+    const SELF_ARM_DISTANCE = 20;
     const distToPlayer = Math.hypot(this.player.x - x, (this.player.y - 14) - y);
-    if (distToPlayer <= blastRadius + 14) {
-      const falloff = Math.max(0, 1 - distToPlayer / (blastRadius + 14));
-      const appliedDamage = Math.round(traj.damage * (0.45 + 0.55 * falloff));
+    const shooterIsPlayerSelf = shooter === this.player;
+    const playerArmed =
+      !shooterIsPlayerSelf ||
+      Math.hypot(x - shooter.x, y - shooter.y) >= SELF_ARM_DISTANCE;
+    if (distToPlayer <= blastRadius && playerArmed) {
+      const appliedDamage = Math.max(
+        SPLASH_FLOOR,
+        Math.round(traj.damage - distToPlayer)
+      );
       if (distToPlayer <= 48) {
         hitMobileDirectly = true;
       }
@@ -1169,20 +1202,29 @@ export class CombatArena {
     });
 
     // 5b. Armor S2 double detonation (DetonateShot2_Bullet2): the decomp runs
-    // the detonation primitive twice on the same impact point — the second pass
+    // the detonation primitive twice on the same impact column — the second pass
     // re-digs the crater and spawns a fresh flame effect a few frames later, so
-    // on screen it reads as two distinct explosions. Mirror that: carve again,
-    // burst debris again, fire a second dynamic fireball, re-shake the camera.
+    // on screen it reads as two distinct explosions and the hole ends up twice
+    // as deep. Mirror that: re-project to the current surface (the first blast
+    // already emptied the column down to y+ry, so carving at the original y
+    // would only clear pixels that are already air — no extra depth), then
+    // carve, burst debris, fire a second dynamic fireball, re-shake the camera.
     const meta = traj.extraMeta as { doubleBlast?: boolean; secondBlastDelayMs?: number } | undefined;
     if (meta?.doubleBlast && meta.secondBlastDelayMs) {
       const delay = meta.secondBlastDelayMs;
       setTimeout(() => {
-        this.terrain.carveCrater(x, y, traj.bungeRadius, traj.bungeRadius * 0.85);
-        this.destructionParticles.spawnExplosionDebris(x, y, traj.bungeRadius, traj.damage);
+        // Armor double blast is a vertical shaft: re-project DOWN the column from
+        // the blast-1 floor to where solid ground resumes. A generic findSurfaceY
+        // would scan up to the original surface and re-carve already-air pixels.
+        const secondY = traj.hitType === "ground"
+          ? this.terrain.findFloorBelow(x, y)
+          : y;
+        this.terrain.carveCrater(x, secondY, traj.bungeRadius, traj.bungeRadius * 0.85);
+        this.destructionParticles.spawnExplosionDebris(x, secondY, traj.bungeRadius, traj.damage);
 
         if (DynamicExplosionEngine.isDynamicEnabled) {
           const dynamicEngine = DynamicExplosionEngine.getInstance();
-          dynamicEngine?.triggerExplosion(x, y, traj.bungeRadius, traj.damage, undefined, shotType);
+          dynamicEngine?.triggerExplosion(x, secondY, traj.bungeRadius, traj.damage, undefined, shotType);
         }
 
         this.engine.triggerImpactShake({

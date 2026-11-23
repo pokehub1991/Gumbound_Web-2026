@@ -4,6 +4,17 @@ set -e
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
+if [ -f "$DIR/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$DIR/.env"
+  set +a
+fi
+export JWT_SECRET="${JWT_SECRET:-dev_jwt_secret_gumbound_web_2026_super_secure_key}"
+export SEED_ACCOUNTS="${SEED_ACCOUNTS:-1}"
+export ALLOWED_ORIGIN="${ALLOWED_ORIGIN:-http://localhost:3000}"
+export GO_ENV="${GO_ENV:-development}"
+
 echo "=== Arrancando Gumbound Web 2026 ==="
 
 # Detener instancias previas

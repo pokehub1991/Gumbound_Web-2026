@@ -128,11 +128,11 @@ export class MobileSpriteManager {
   }
 
   private static async internalLoad(mobileType: number): Promise<MobileAnimationTextures> {
-    const key = CANONICAL_MOBILE_KEYS[mobileType] || "armor";
-    const def = (spriteDefs as Record<string, unknown>)[key] as Record<string, unknown>;
+    const rawKey = CANONICAL_MOBILE_KEYS[mobileType] || "armor";
+    const def = (((spriteDefs as Record<string, unknown>)[rawKey] || (spriteDefs as Record<string, unknown>)["armor"])) as Record<string, unknown>;
 
     if (!def) {
-      throw new Error(`Mobile definition not found for key: ${key}`);
+      throw new Error(`Mobile definition not found for key: ${rawKey}`);
     }
 
     const filename = (def.file as string) || "Armor2D";

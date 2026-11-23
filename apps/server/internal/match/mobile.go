@@ -190,6 +190,9 @@ var Mobiles = map[int]MobileStats{
 		By: 244, Bx: 0, Ax: 62.5, Ay: 1.395, MinAngle: 10, MaxAngle: 90,
 	},
 
+	// ID gaps 16, 18, 20: the original MOBILE enum has no mobiles at these slots
+	// (16 = unused/removed, 18 = unused, 20 = unused). Both client (mobiles.ts)
+	// and server skip them; do not invent stats for these ids.
 	MobileGrub: {
 		ID: 17, Name: "Grub", MaxHP: 960,
 		BaseDelay: 500, Shot1Delay: 760, Shot2Delay: 910, SSDelay: 1310,

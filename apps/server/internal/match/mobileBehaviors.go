@@ -100,6 +100,9 @@ func (m *Match) applyNakBurrow(cfg physics.ProjectileConfig, result *physics.Pro
 		},
 	}
 	m.Terrain.ClearEllipse(int(x), int(y), int(cfg.BlastRadius), int(math.Round(cfg.BlastRadius*0.85)))
+	// Nak burrow emergence blast: ×1.4 over the mobile's S1 palaBunge — the
+	// subterranean detonation is a distinct decomp primitive, wider than the
+	// surface impact. Intentional deviation; do not collapse to cfg.BlastRadius.
 	res.Damages = physics.CalculateRadialDamage(res.ImpactPos, targets, cfg.BaseDamage, cfg.BlastRadius*1.4, nil)
 	*result = res
 }
@@ -137,6 +140,9 @@ func (m *Match) applyAdukaThor(result *physics.ProjectileResult, targets []physi
 	if !m.Weather.IsThorActive() || result.HitType == physics.HitOOB {
 		return
 	}
+	// 55px is the canonical Thor orbital-strike radius — a separate decomp
+	// primitive from the mobile's own palaBunge, so it intentionally does NOT
+	// read stats.BlastRadiusForShot. Do not "fix" to the mobile table.
 	radius := 55.0
 	crater := &physics.TerrainDelta{
 		X: int(result.ImpactPos.X), Y: int(result.ImpactPos.Y), Radius: int(radius),

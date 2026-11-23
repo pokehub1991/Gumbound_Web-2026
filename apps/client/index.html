@@ -6,7 +6,7 @@
     <title>Gumbound Web 2026</title>
     <!-- CSP defense-in-depth for the static nginx build. The Go server also
          sets the header at runtime when it serves /api and the client dist. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ws: wss: http://localhost:8080; object-src 'none'; frame-ancestors 'none'; base-uri 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' data: blob: ws: wss: http://localhost:8080 http://127.0.0.1:8080 ws://localhost:8080 ws://127.0.0.1:8080; object-src 'none'; frame-ancestors 'none'; base-uri 'none'" />
     <meta name="referrer" content="no-referrer" />
     <!-- Local Retro Pixel Fonts: Pixelify Sans for Text, Silkscreen for Numbers -->
     <style>

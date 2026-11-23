@@ -6,7 +6,7 @@ import { LobbyScreen } from "./screens/LobbyScreen.js";
 import { RoomScreen } from "./screens/RoomScreen.js";
 import { MatchHUD } from "./screens/MatchHUD.js";
 import { CombatArena } from "../core/combat/CombatArena.js";
-import { Opcode, ChannelState, RoomState } from "@gumbound/shared";
+import { Opcode, ChannelState, RoomState, ProjectileResultState } from "@gumbound/shared";
 
 export const App: React.FC = () => {
   const { screen, connection, setRooms, setCurrentRoom, addChatMessage, setScreen } = useStore();
@@ -61,6 +61,28 @@ export const App: React.FC = () => {
       setWinnerTeam(undefined);
       setScreen("match");
     });
+
+    // Server-authoritative crater (P0-2): the server sims its own terrain and
+    // emits the exact ellipse it cleared. Carve it so networked terrain matches
+    // the server instead of drifting from the local BallisticsEngine estimate.
+    connection.handler.on(Opcode.PROJECTILE_RESULT, (msg) => {
+      const data = msg.json<ProjectileResultState>();
+      const arena = (window as unknown as { __arena?: CombatArena }).__arena;
+      if (!arena) return;
+      const carve = (d?: ProjectileResultState["terrain_delta"]) => {
+        if (!d) return;
+        arena.applyServerTerrainDelta({
+          x: Number(d.x),
+          y: Number(d.y),
+          radius: Number(d.radius),
+          radius_y: d.radius_y !== undefined ? Number(d.radius_y) : undefined,
+        });
+      };
+      carve(data.terrain_delta);
+      for (const sub of data.sub_shots || []) {
+        carve(sub.terrain_delta);
+      }
+    });
   }, [connection, setRooms, setCurrentRoom, addChatMessage, setScreen]);
 
   const handleSelectShotType = (type: number) => {
@@ -92,71 +114,69 @@ export const App: React.FC = () => {
 
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
-      {/* Top Navigator when not on the Arena screen to avoid obscuring combat HUD */}
-      {screen !== "arena" && (
-        <div style={{
-          position: "absolute",
-          top: "8px",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 50,
-          display: "flex",
-          gap: "6px",
-          background: "rgba(15, 23, 42, 0.8)",
-          padding: "4px 8px",
-          borderRadius: "20px",
-          border: "1px solid rgba(255,255,255,0.12)",
-          backdropFilter: "blur(8px)",
-        }}>
-          <button
-            onClick={() => setScreen("arena")}
-            style={{
-              background: "transparent",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "14px",
-              padding: "4px 12px",
-              fontSize: "11px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-          >
-            ⚔️ Modo Combate (Metamine)
-          </button>
+      {/* Top Navigator */}
+      <div style={{
+        position: "absolute",
+        top: "8px",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 100,
+        display: "flex",
+        gap: "6px",
+        background: "rgba(15, 23, 42, 0.85)",
+        padding: "4px 8px",
+        borderRadius: "20px",
+        border: "1px solid rgba(255,255,255,0.18)",
+        backdropFilter: "blur(8px)",
+      }}>
+        <button
+          onClick={() => setScreen("arena")}
+          style={{
+            background: screen === "arena" ? "#0284c7" : "transparent",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "14px",
+            padding: "4px 12px",
+            fontSize: "11px",
+            fontWeight: 800,
+            cursor: "pointer",
+          }}
+        >
+          ⚔️ Modo Combate (Metamine)
+        </button>
 
-          <button
-            onClick={() => setScreen("login")}
-            style={{
-              background: screen === "login" ? "#0284c7" : "transparent",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "14px",
-              padding: "4px 12px",
-              fontSize: "11px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            🔑 Login / Multi-jugador
-          </button>
+        <button
+          onClick={() => setScreen("login")}
+          style={{
+            background: screen === "login" ? "#0284c7" : "transparent",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "14px",
+            padding: "4px 12px",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          🔑 Login / Multi-jugador
+        </button>
 
-          <button
-            onClick={() => setScreen("lobby")}
-            style={{
-              background: screen === "lobby" ? "#0284c7" : "transparent",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "14px",
-              padding: "4px 12px",
-              fontSize: "11px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            🏛️ Lobby / Salas
-          </button>
-        </div>
-      )}
+        <button
+          onClick={() => setScreen("lobby")}
+          style={{
+            background: screen === "lobby" ? "#0284c7" : "transparent",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "14px",
+            padding: "4px 12px",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          🏛️ Lobby / Salas
+        </button>
+      </div>
 
       {/* Screen views */}
       {screen === "arena" && <ArenaScreen arena={arenaInstance} />}

@@ -65,6 +65,25 @@ export class TerrainMask {
     return this.height + 200;
   }
 
+  /**
+   * Re-projects DOWN the same column from an air pixel to the next solid ground
+   * pixel, returning the last air pixel above it. Used by Armor's double blast:
+   * the first detonation empties a vertical shaft, so the second pass must land
+   * on the shaft floor below, not re-scan up to the original surface.
+   * Returns startY unchanged when the column has no solid ground below.
+   */
+  public findFloorBelow(x: number, startY: number): number {
+    const ix = Math.floor(x);
+    if (ix < 0 || ix >= this.width) return startY;
+    const sy = Math.floor(startY);
+    for (let y = Math.max(0, sy); y < this.height; y++) {
+      if (this.isPixelSolid(ix, y)) {
+        return y - 1;
+      }
+    }
+    return startY;
+  }
+
   public getUnder(x: number, y: number, maxDepth: number = 25): number | undefined {
     const ix = Math.floor(x);
     if (ix < 0 || ix >= this.width) return undefined;

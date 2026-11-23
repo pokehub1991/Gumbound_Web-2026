@@ -509,6 +509,21 @@ export const MOBILES_DATA: Record<number, MobileDef> = {
 };
 
 /**
+ * Per-mobile impact SFX. `soundExplode` is currently only set for the Armor
+ * family ("11blast"), Mage S2 helix ("22blast") and Turtle S2 timebomb
+ * ("121blast"), all inline in BallisticsEngine.ts. Every other mobile falls
+ * back to "11blast" in CombatArena.
+ *
+ * The shipped /public/audio catalog does carry `<n>s1blast` / `<n>s2blast`
+ * files, but the audio `<n>` prefix does not track mobiles.ts ids (mobiles.ts
+ * id 12 and id 19 both use "71move", id 24 uses "28move"), and no doc in this
+ * repo records the mobile -> `<n>` table. Guessing would play the wrong
+ * mobile's impact, so no mapping is added here. Populate it from the
+ * reference GameServer audio catalog (AUDIT_REPORT.md §7) when that data is
+ * available.
+ */
+
+/**
  * Authentic mobility walk speeds per mobile based on DragonBound/GunBound statmov stats.
  * Values indicate the accumulator advance per 60fps frame:
  * 0.85 = ~51 px/s (Solid tread vehicles like Armor)

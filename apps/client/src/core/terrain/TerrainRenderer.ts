@@ -15,6 +15,9 @@ export class TerrainRenderer extends Container {
   public isMapLoaded: boolean = false;
   public onLoadedCallback?: () => void;
 
+  /** Mean terrain color sampled at load time, used to tint the crater's inner wall. */
+  private avgTerrainRGB: [number, number, number] = [89, 58, 29];
+
   constructor(mapWidth: number = 1409, mapHeight: number = 1210) {
     super();
     this.mapWidth = mapWidth;
@@ -79,6 +82,8 @@ export class TerrainRenderer extends Container {
 
       this.collisionMask.maskData.set(imgData.data);
 
+      this.sampleAverageTerrainColor(imgData.data);
+
       this.texture.source.update();
       this.isMapLoaded = true;
 
@@ -88,6 +93,26 @@ export class TerrainRenderer extends Container {
     } catch (err) {
       console.error("[TerrainRenderer] Error loading map textures, generating fallback terrain:", err);
       this.generateFallbackTerrain();
+    }
+  }
+
+  /**
+   * Computes the mean RGB of solid terrain pixels so the crater wall tint
+   * follows whatever map is loaded instead of a hardcoded brown.
+   */
+  private sampleAverageTerrainColor(data: Uint8ClampedArray) {
+    let r = 0, g = 0, b = 0, n = 0;
+    // Sample sparsely: full scan is 1.7M px, plenty for a mean estimate
+    for (let i = 0; i < data.length; i += 4 * 97) {
+      if (data[i + 3] > 64) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        n++;
+      }
+    }
+    if (n > 0) {
+      this.avgTerrainRGB = [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
     }
   }
 
@@ -130,7 +155,20 @@ export class TerrainRenderer extends Container {
   }
 
   public carveCrater(cx: number, cy: number, rx: number, ry: number) {
-    // 1. Excavate visible crater on canvas
+    // 1. Paint inner crater wall (dark soil) BEFORE cutting. Without it the
+    // background shows through the hole and the crater reads as flat.
+    // Order matters: wall (source-atop) → cut (destination-out) → rim (source-atop).
+    const wallScale = 1.12;
+    const [wr, wg, wb] = this.avgTerrainRGB;
+    this.ctx.save();
+    this.ctx.globalCompositeOperation = "source-atop";
+    this.ctx.beginPath();
+    this.ctx.ellipse(cx, cy, rx * wallScale, ry * wallScale, 0, 0, Math.PI * 2);
+    this.ctx.fillStyle = `rgb(${Math.round(wr * 0.55)}, ${Math.round(wg * 0.55)}, ${Math.round(wb * 0.55)})`;
+    this.ctx.fill();
+    this.ctx.restore();
+
+    // 2. Excavate visible crater on canvas
     this.ctx.save();
     this.ctx.globalCompositeOperation = "destination-out";
     this.ctx.beginPath();
@@ -138,7 +176,7 @@ export class TerrainRenderer extends Container {
     this.ctx.fill();
     this.ctx.restore();
 
-    // 2. Add realistic dark burn rim around crater
+    // 3. Add realistic dark burn rim around crater
     this.ctx.save();
     this.ctx.globalCompositeOperation = "source-atop";
     this.ctx.strokeStyle = "rgba(18, 12, 10, 0.55)";
@@ -148,10 +186,10 @@ export class TerrainRenderer extends Container {
     this.ctx.stroke();
     this.ctx.restore();
 
-    // 3. Update collision mask
+    // 4. Update collision mask
     this.collisionMask.carveHole(cx, cy, rx, ry);
 
-    // 4. Update GPU texture
+    // 5. Update GPU texture
     this.texture.source.update();
   }
 
@@ -169,6 +207,10 @@ export class TerrainRenderer extends Container {
 
   public findSurfaceY(x: number, startY: number): number {
     return this.collisionMask.findSurfaceY(x, startY);
+  }
+
+  public findFloorBelow(x: number, startY: number): number {
+    return this.collisionMask.findFloorBelow(x, startY);
   }
 
   public walk(x: number, y: number, dir: number): WalkResult {

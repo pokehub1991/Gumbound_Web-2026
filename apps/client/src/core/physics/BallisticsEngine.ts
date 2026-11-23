@@ -1,5 +1,5 @@
 import { MOBILES_DATA, MobileDef } from "../constants/mobiles.js";
-import { computeAccelerations } from "@gumbound/shared";
+import { computeAccelerations, computeLaunchSpeed } from "@gumbound/shared";
 
 export interface Point2D {
   x: number;
@@ -111,9 +111,10 @@ export class BallisticsEngine {
     let effectiveAngle = params.look === 0 ? 180 - params.rawAngle : params.rawAngle;
     effectiveAngle -= params.bodyAngle;
 
-    // Power scale conversion (0-100% maps to GunBound 0-400 power units, scaling v0 up to 936 px/sec)
-    const scaledPower = (params.power / 100) * 400;
-    const v0 = Math.floor((scaledPower * 234) / 100);
+    // Power scale conversion: shared canonical formula (0-100% → 0-400 power
+    // units → up to 936 px/sec, floored at 234 px/sec for power=0 so a
+    // zero-power shot still leaves the muzzle).
+    const v0 = computeLaunchSpeed(params.power);
 
     // Accelerations
     const { ax, ay } = this.computeAccelerations(mobile, params.windPower, params.windAngle);
@@ -351,6 +352,13 @@ export class BallisticsEngine {
         const segDist = Math.hypot(x - prevX, y - prevY);
         const subSteps = Math.max(1, Math.ceil(segDist / 2));
         let hitTerrain = false;
+        // Last tested AIR pixel along this segment. On a ground hit the original
+        // centers the crater on the trajectory CONTACT point (last air pixel the
+        // shell passed through before touching solid), which is orientation
+        // agnostic — so the ellipse bites sideways into a wall face exactly as
+        // deep as it digs down into a floor.
+        let lastAirX = prevX;
+        let lastAirY = prevY;
 
         for (let s = 1; s <= subSteps; s++) {
           const factor = s / subSteps;
@@ -399,33 +407,41 @@ export class BallisticsEngine {
 
           // 2. Clear tiny 5px radius right at the muzzle aperture, then collide with any solid terrain
           // Guarantees bullets never pass through thin overhangs, ledges or sharp terrain tips
-          if (distFromMuzzle >= 5 && params.isPixelSolid(Math.round(cx), Math.round(cy))) {
-            const isInsideTornado = tornadoPhase === 1;
-            const activeWeatherEffect = isSunBuffed
-              ? "sun"
-              : isLightningCharged
-              ? "lightning"
-              : hasMirrored
-              ? "mirror"
-              : isInsideTornado
-              ? "tornado"
-              : isBlackDamped
-              ? "black"
-              : undefined;
+          if (distFromMuzzle >= 5) {
+            if (!params.isPixelSolid(Math.round(cx), Math.round(cy))) {
+              lastAirX = cx;
+              lastAirY = cy;
+            } else {
+              const isInsideTornado = tornadoPhase === 1;
+              const activeWeatherEffect = isSunBuffed
+                ? "sun"
+                : isLightningCharged
+                ? "lightning"
+                : hasMirrored
+                ? "mirror"
+                : isInsideTornado
+                ? "tornado"
+                : isBlackDamped
+                ? "black"
+                : undefined;
 
-            hitType = "ground";
-            finalPos = { x: Math.round(cx), y: Math.round(cy) };
-            points.push({
-              x: cx,
-              y: cy,
-              timeMs: tMs - stepMs + stepMs * factor,
-              tangentAngle: tang,
-              isSpecialPhase,
-              weatherEffect: activeWeatherEffect,
-              isInsideTornado,
-            });
-            hitTerrain = true;
-            break;
+              hitType = "ground";
+              // Snap back along the trajectory to the last air pixel (contact
+              // point), mirroring the server's back-off + upward snap in
+              // projectile.go but orientation-agnostic.
+              finalPos = { x: Math.round(lastAirX), y: Math.round(lastAirY) };
+              points.push({
+                x: lastAirX,
+                y: lastAirY,
+                timeMs: tMs - stepMs + stepMs * factor,
+                tangentAngle: tang,
+                isSpecialPhase,
+                weatherEffect: activeWeatherEffect,
+                isInsideTornado,
+              });
+              hitTerrain = true;
+              break;
+            }
           }
         }
 
@@ -543,7 +559,7 @@ export class BallisticsEngine {
     v0: number,
     ax: number,
     ay: number,
-    _mobile: MobileDef,
+    mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
     const rad = (angleDeg * Math.PI) / 180;
@@ -585,6 +601,7 @@ export class BallisticsEngine {
       }
     }
 
+    const bunge = mobile.palaBunge.shot2;
     return [
       {
         id: `mage_2a_${Date.now()}`,
@@ -593,7 +610,7 @@ export class BallisticsEngine {
         finalPos: hitPos,
         hitType: "ground",
         flightDurationMs: pointsA[pointsA.length - 1]?.timeMs || 0,
-        bungeRadius: 36,
+        bungeRadius: bunge,
         damage: 100,
         weaponFile: "mage2a.png",
         explodeFile: "mage1.png",
@@ -608,7 +625,7 @@ export class BallisticsEngine {
         finalPos: hitPos,
         hitType: "ground",
         flightDurationMs: pointsB[pointsB.length - 1]?.timeMs || 0,
-        bungeRadius: 36,
+        bungeRadius: bunge,
         damage: 100,
         weaponFile: "mage2b.png",
         explodeFile: "mage1.png",
@@ -625,7 +642,7 @@ export class BallisticsEngine {
     v0: number,
     ax: number,
     ay: number,
-    _mobile: MobileDef,
+    mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
     const rad = (angleDeg * Math.PI) / 180;
@@ -676,6 +693,7 @@ export class BallisticsEngine {
       }
     }
 
+    const bunge = mobile.palaBunge.shot2;
     return [
       {
         id: `turtle_2a_${Date.now()}`,
@@ -684,7 +702,7 @@ export class BallisticsEngine {
         finalPos: hitPos,
         hitType: "ground",
         flightDurationMs: pointsA[pointsA.length - 1]?.timeMs || 0,
-        bungeRadius: 45,
+        bungeRadius: bunge,
         damage: 150,
         weaponFile: "turtle12a.png",
         explodeFile: "turtle12.png",
@@ -699,7 +717,7 @@ export class BallisticsEngine {
         finalPos: hitPos,
         hitType: "ground",
         flightDurationMs: pointsB[pointsB.length - 1]?.timeMs || 0,
-        bungeRadius: 45,
+        bungeRadius: bunge,
         damage: 150,
         weaponFile: "turtle12a.png",
         explodeFile: "turtle12.png",
@@ -723,6 +741,14 @@ export class BallisticsEngine {
   ): ShotTrajectory[] {
     // Authentic GunBound / DragonBound: 4 missiles with staggered launch delays (0, 100, 200, 300 ms)
     const list: ShotTrajectory[] = [];
+    // Bigfoot salvo: each rocket digs the mobile's per-shot table entry
+    // (Bigfoot S1 table = 30, S2 = 29, SS = 28).
+    const perRocketBunge =
+      params.shotType === 2
+        ? mobile.palaBunge.ss
+        : params.shotType === 1
+        ? mobile.palaBunge.shot2
+        : mobile.palaBunge.shot1;
     const specs = [
       { ang: 0, pwr: 0, delay: 0 },
       { ang: 4, pwr: 10, delay: 100 },
@@ -742,7 +768,7 @@ export class BallisticsEngine {
         mobile,
         params,
         60,
-        28
+        perRocketBunge
       );
       traj.id = `bigfoot_shot1_${i}`;
       list.push(traj);
@@ -761,6 +787,8 @@ export class BallisticsEngine {
   ): ShotTrajectory[] {
     // Authentic GunBound: 6 rockets in 2 staggered salvos of 3 rockets each
     const list: ShotTrajectory[] = [];
+    // Bigfoot S2 table entry per rocket (mobiles.ts = 29).
+    const perRocketBunge = mobile.palaBunge.shot2;
     const specs = [
       // Wave 1: 3 spread rockets at delay 0ms
       { ang: 0, pwr: 0, delay: 0 },
@@ -784,7 +812,7 @@ export class BallisticsEngine {
         mobile,
         params,
         55,
-        25
+        perRocketBunge
       );
       traj.id = `bigfoot_shot2_${i}`;
       list.push(traj);
@@ -803,6 +831,8 @@ export class BallisticsEngine {
   ): ShotTrajectory[] {
     // Authentic GunBound SS: 8 concentrated missiles in rapid succession
     const list: ShotTrajectory[] = [];
+    // Bigfoot SS table entry per rocket (mobiles.ts = 28).
+    const perRocketBunge = mobile.palaBunge.ss;
     const specs = [
       { ang: 0, pwr: 0, delay: 0 },
       { ang: 4, pwr: 10, delay: 50 },
@@ -826,7 +856,7 @@ export class BallisticsEngine {
         mobile,
         params,
         65,
-        28
+        perRocketBunge
       );
       traj.id = `bigfoot_ss_${i}`;
       list.push(traj);
@@ -845,14 +875,15 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory {
-    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 150, 43);
+    const bunge = mobile.palaBunge.shot1;
+    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 150, bunge);
     traj.id = `armor_shot1_${Date.now()}`;
     traj.weaponFile = "armor1.png";
     traj.explodeFile = "armor1.png";
     traj.soundFire = "11fire";
     traj.soundExplode = "11blast";
     traj.damage = 150;
-    traj.bungeRadius = 43;
+    traj.bungeRadius = bunge;
     return traj;
   }
 
@@ -910,6 +941,10 @@ export class BallisticsEngine {
     const isOpen = lastPoint && lastPoint.timeMs >= 1540;
 
     if (isOpen) {
+      // Documented exception to the palaBunge table: Armor SS transforms at
+      // >= 1540 ms and its opened state adds a fixed bonus over the table
+      // base (50 -> 65 bunge, 400 -> 580 damage). Mobiles.ts:61 documents
+      // this delay threshold. Do NOT replace with mobile.palaBunge.ss here.
       traj.damage = 580; // Devastating hit
       traj.bungeRadius = 65; // Massive crater
       traj.extraMeta = { isOpen: true };
@@ -931,8 +966,12 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 130, 36);
-    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 2, v0 + 6, ax, ay, 110, mobile, params, 130, 36);
+    // Ice S2 / Grub S2 / Maya S2 twin-stream: each flake bunges the per-shot
+    // table entry (mobile.palaBunge.shot2), not a local literal — a hand-edited
+    // table value must reach the crater without a second edit here.
+    const perFlakeBunge = mobile.palaBunge.shot2;
+    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 130, perFlakeBunge);
+    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 2, v0 + 6, ax, ay, 110, mobile, params, 130, perFlakeBunge);
     traj1.id = `ice_2_a`;
     traj2.id = `ice_2_b`;
     return [traj1, traj2];
@@ -947,8 +986,9 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 120, 32);
-    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 3, v0 + 8, ax, ay, 110, mobile, params, 120, 32);
+    const perBallBunge = mobile.palaBunge.shot2;
+    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 120, perBallBunge);
+    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 3, v0 + 8, ax, ay, 110, mobile, params, 120, perBallBunge);
     traj1.id = `grub_2_a`;
     traj2.id = `grub_2_b`;
     return [traj1, traj2];
@@ -963,8 +1003,10 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 140, 35);
-    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 3, v0 + 8, ax, ay, 100, mobile, params, 140, 35);
+    // Fox S2 fireballs: each digs the shot2 table entry (mobiles.ts = 40).
+    const perBallBunge = mobile.palaBunge.shot2;
+    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 140, perBallBunge);
+    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 3, v0 + 8, ax, ay, 100, mobile, params, 140, perBallBunge);
     traj1.id = `fox_2_a`;
     traj2.id = `fox_2_b`;
     return [traj1, traj2];
@@ -979,6 +1021,8 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
+    // Dragon S2 comets: each digs the shot2 table entry (mobiles.ts = 40).
+    const perCometBunge = mobile.palaBunge.shot2;
     const list: ShotTrajectory[] = [];
     for (let i = 0; i < 4; i++) {
       const traj = this.simulateSingleTrajectory(
@@ -991,7 +1035,7 @@ export class BallisticsEngine {
         mobile,
         params,
         95,
-        35
+        perCometBunge
       );
       traj.id = `dragon_2_${i}`;
       list.push(traj);
@@ -1008,8 +1052,10 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 180, 42);
-    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 2, v0 + 6, ax, ay, 110, mobile, params, 180, 42);
+    // Maya S2 heavy shells: each digs the shot2 table entry (mobiles.ts = 45).
+    const perShellBunge = mobile.palaBunge.shot2;
+    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 180, perShellBunge);
+    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 2, v0 + 6, ax, ay, 110, mobile, params, 180, perShellBunge);
     traj1.id = `maya_2_a`;
     traj2.id = `maya_2_b`;
     return [traj1, traj2];
@@ -1026,6 +1072,11 @@ export class BallisticsEngine {
   ): ShotTrajectory[] {
     const count = params.shotType === 2 ? 6 : params.shotType === 1 ? 4 : 2;
     const list: ShotTrajectory[] = [];
+    // Per-missile crater: the original spreads the mobile's per-shot bunge over
+    // the salvo (Kalsiddon table = 32/30/45 for S1/S2/SS).
+    const perMissileBunge = mobile.palaBunge[
+      params.shotType === 2 ? "ss" : params.shotType === 1 ? "shot2" : "shot1"
+    ];
     for (let i = 0; i < count; i++) {
       const spreadAng = (i - (count - 1) / 2) * 2;
       const speedSpread = (i % 2) * 8;
@@ -1039,7 +1090,7 @@ export class BallisticsEngine {
         mobile,
         params,
         Math.round(260 / count),
-        28
+        perMissileBunge
       );
       traj.id = `kalsiddon_${params.shotType}_${i}`;
       list.push(traj);
@@ -1056,6 +1107,8 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
+    // Trico S2: each cabbage digs the mobile's shot2 table entry (mobiles.ts = 25).
+    const perHitBunge = mobile.palaBunge.shot2;
     const list: ShotTrajectory[] = [];
     for (let i = 0; i < 3; i++) {
       const radOffset = (i * 120 * Math.PI) / 180;
@@ -1069,7 +1122,7 @@ export class BallisticsEngine {
         mobile,
         params,
         100,
-        25
+        perHitBunge
       );
       // Orbit modulation around apex, smoothly blooming from muzzle
       for (let j = 0; j < traj.points.length; j++) {
@@ -1094,6 +1147,8 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
+    // Boomerang S2: each boomerang digs the shot2 table entry (mobiles.ts = 25).
+    const perHitBunge = mobile.palaBunge.shot2;
     const list: ShotTrajectory[] = [];
     for (let i = 0; i < 4; i++) {
       const traj = this.simulateSingleTrajectory(
@@ -1106,7 +1161,7 @@ export class BallisticsEngine {
         mobile,
         params,
         120,
-        25
+        perHitBunge
       );
       traj.id = `boomer_2_${i}`;
       list.push(traj);
@@ -1123,8 +1178,11 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 100, 10);
-    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 3, v0 + 8, ax, ay, 90, mobile, params, 100, 10);
+    // Raon S2 twin walking mines: each digs the shot2 table entry (mobiles.ts
+    // = 10). Authentic GunBound: tiny crater by design — do not "fix" upward.
+    const perMineBunge = mobile.palaBunge.shot2;
+    const traj1 = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 100, perMineBunge);
+    const traj2 = this.simulateSingleTrajectory(origin, angleDeg + 3, v0 + 8, ax, ay, 90, mobile, params, 100, perMineBunge);
     traj1.subType = "raon_walker_mine";
     traj2.subType = "raon_walker_mine";
     return [traj1, traj2];
@@ -1139,7 +1197,8 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 250, 48);
+    // Nak S2 subterranean shot digs the shot2 table entry (mobiles.ts = 48).
+    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 250, mobile.palaBunge.shot2);
     traj.subType = "nak_subterranean";
     return [traj];
   }
@@ -1153,6 +1212,8 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
+    // Aduka S2 trackers: each digs the shot2 table entry (mobiles.ts = 27).
+    const perTrackerBunge = mobile.palaBunge.shot2;
     const list: ShotTrajectory[] = [];
     for (let i = 0; i < 3; i++) {
       const traj = this.simulateSingleTrajectory(
@@ -1165,7 +1226,7 @@ export class BallisticsEngine {
         mobile,
         params,
         70,
-        20
+        perTrackerBunge
       );
       traj.subType = "aduka_thor_tracker";
       list.push(traj);
@@ -1182,7 +1243,9 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 330, 40);
+    // Ion beacon digs the mobile's per-shot table entry (A.Sate S1 = 40, S2 = 45).
+    const bunge = params.shotType === 1 ? mobile.palaBunge.shot2 : mobile.palaBunge.shot1;
+    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 330, bunge);
     traj.subType = "asate_ion_beacon";
     return [traj];
   }
@@ -1196,7 +1259,9 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 330, 42);
+    // Light sabers dig the per-shot table entry (Knight S1 = 42, S2 = 44).
+    const bunge = params.shotType === 1 ? mobile.palaBunge.shot2 : mobile.palaBunge.shot1;
+    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 330, bunge);
     traj.subType = "knight_ion_beacon";
     return [traj];
   }
@@ -1210,7 +1275,9 @@ export class BallisticsEngine {
     mobile: MobileDef,
     params: FireParams
   ): ShotTrajectory[] {
-    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 250, 38);
+    // Lightning bolt digs the per-shot table entry (Lightning S1 = 35, S2 = 38).
+    const bunge = params.shotType === 1 ? mobile.palaBunge.shot2 : mobile.palaBunge.shot1;
+    const traj = this.simulateSingleTrajectory(origin, angleDeg, v0, ax, ay, 0, mobile, params, 250, bunge);
     traj.subType = "lightning_strike";
     return [traj];
   }

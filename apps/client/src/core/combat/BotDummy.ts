@@ -230,7 +230,7 @@ export class BotDummy extends Container {
     // We roll the OUTCOME first (Bernoulli on hitThreshold, clamped to
     // [0.50, 0.75]) and then aim to match it. The previous three-band
     // dispersion could not guarantee a realized hit rate: the "precision"
-    // band could still miss (splash radius is `bungeRadius * 1.5 + 14` px)
+    // band could still miss (splash radius is `bungeRadius * 1.5` px)
     // and the "near miss" band frequently landed inside that same radius
     // and counted as a hit, so the measured rate drifted outside the band.
     const targetDist = Math.abs(dx);
@@ -278,7 +278,7 @@ export class BotDummy extends Container {
           if (!testFirst || !testFirst.finalPos) continue;
           // Treat "inside splash radius" as still hitting the target so the
           // realized miss is a genuine miss.
-          const splash = testFirst.bungeRadius * 1.5 + 14;
+          const splash = testFirst.bungeRadius * 1.5;
           const distToTarget = Math.hypot(testFirst.finalPos.x - target.x, testFirst.finalPos.y - targetY);
           if (testFirst.hitType !== "player" && distToTarget > splash) {
             finalPower = testPower;
