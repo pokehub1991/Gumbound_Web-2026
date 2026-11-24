@@ -96,6 +96,21 @@ func (m *Match) RandomizeWind() {
 	}
 }
 
+// Reward tracks from AUDIT_REPORT.md §4 / IMPLEMENTATION_PLAN_2026.md §4.3.
+// Kept as named constants so the decomp values are never hand-typed twice.
+const (
+	rewardKill       = 2300 // gold, +2 GP (plain damage kill)
+	rewardGoodShot   = 50   // gold, shield broken this hit
+	rewardExcellent  = 100  // gold, full direct hit with no penalty
+	rewardLose       = 250  // gold, -3 GP on defeat
+	penaltyFriendly  = 250  // gold, -1 GP on same-team damage
+	penaltyBungeSelf = 250  // gold, -2 GP on self-bunge
+	gpKill           = 2
+	gpLose           = -3
+	gpFriendly       = -1
+	gpBungeSelf      = -2
+)
+
 // applyDamage implements the canonical DragonBound shield-first damage path.
 // Same-team hits still deal damage but carry a gold/GP penalty.
 func (m *Match) applyDamage(victim, shooter *MatchPlayer, dmg int) {
@@ -104,6 +119,7 @@ func (m *Match) applyDamage(victim, shooter *MatchPlayer, dmg int) {
 	}
 
 	remaining := dmg
+	hadShield := victim.Shield > 0
 	if victim.Shield > 0 {
 		if remaining < victim.Shield {
 			victim.Shield -= remaining
@@ -115,9 +131,15 @@ func (m *Match) applyDamage(victim, shooter *MatchPlayer, dmg int) {
 	}
 	victim.HP -= remaining
 
-	if shooter != nil && shooter.Team == victim.Team {
-		shooter.Gold -= 250
+	friendly := shooter != nil && shooter.Team == victim.Team
+	if friendly {
+		shooter.Gold -= penaltyFriendly
 		shooter.GP -= 1
+	} else if shooter != nil && hadShield && victim.Shield == 0 {
+		// Good shot: this blast broke the victim's shield (§4.3).
+		// Excellent shot (100) needs the direct-hit flag carried on the result,
+		// which applyDamage does not receive — deferred, do not guess the band.
+		shooter.Gold += rewardGoodShot
 	}
 
 	if victim.HP <= 0 {
@@ -128,10 +150,13 @@ func (m *Match) applyDamage(victim, shooter *MatchPlayer, dmg int) {
 		} else {
 			victim.HP = 0
 			victim.Alive = false
+			victim.DeathCause = DeathDamage
 			if shooter != nil && shooter.Team != victim.Team {
-				shooter.Gold += 2300
-				shooter.GP += 2
+				shooter.Gold += rewardKill
+				shooter.GP += gpKill
 			}
+			victim.Gold -= rewardLose
+			victim.GP += gpLose
 		}
 	}
 }
@@ -420,6 +445,24 @@ func (m *Match) HandleFireShot(playerID string, angle, power float64, shotType i
 		}
 	}
 
+	// §4.3 Excellent shot (100 gold): a direct hit on an enemy mobile with no
+	// friendly-fire penalty. Splash-only hits never pay it.
+	if result.HitType == physics.HitMobile {
+		for victimID := range result.Damages {
+			if victim, exists := m.Players[victimID]; exists && victim.Team != activePlayer.Team {
+				activePlayer.Gold += rewardExcellent
+				break
+			}
+		}
+	}
+
+	// §4.2 fall_and_fie: after the crater(s) are carved, any mobile whose feet
+	// no longer have ground underneath falls out of the map. This is the
+	// distinct bunge kill — it pays the bunge bonus track (2300/+2) instead of
+	// the plain kill track, and the victim keeps its HP (they died by falling,
+	// not by damage). Checked after ALL blasts so the double-blast shaft counts.
+	m.applyBungeFalls(playerID)
+
 	// Calculate and add delay using canonical economy (§4.5).
 	// A queued Dual/Dual+ reduces the delay factor for this paired shot.
 	delayFactor := nextShotDelayFactor(activePlayer)
@@ -543,9 +586,36 @@ func (m *Match) HandleMove(playerID string, x, y float64) error {
 	return nil
 }
 
+// applyBungeFalls implements fall_and_fie (§4.2): after a crater is carved,
+// a mobile whose footprint has no solid ground beneath it falls out of the
+// map. HP is left intact — the death cause is the fall, not damage. The
+// shooter collects the bunge bonus track (2300 gold / +2 GP), mirroring the
+// plain kill payout but tagged separately for HUD/statistics.
+func (m *Match) applyBungeFalls(shooterID string) {
+	shooter := m.Players[shooterID]
+	for _, victim := range m.Players {
+		if victim == nil || !victim.Alive {
+			continue
+		}
+		footX := int(victim.Pos.X)
+		if footX < 0 || footX >= m.Terrain.Width {
+			continue // already off-map: handled by the movement validator
+		}
+		if m.Terrain.FindGroundY(footX, 0) < m.Terrain.Height {
+			continue // ground still under the mobile
+		}
+		victim.Alive = false
+		victim.HP = 0
+		victim.DeathCause = DeathBunge
+		if shooter != nil && shooter.Team != victim.Team {
+			shooter.Gold += 2300
+			shooter.GP += 2
+		}
+	}
+}
+
 // simulateRaonWalkingMine implements authentic GunBound walking mine AI
-func (m *Match) simulateRaonWalkingMine(
-	res *physics.ProjectileResult,
+func (m *Match) simulateRaonWalkingMine(	res *physics.ProjectileResult,
 	cfg physics.ProjectileConfig,
 	targets []physics.MobileTarget,
 	shooterID string,

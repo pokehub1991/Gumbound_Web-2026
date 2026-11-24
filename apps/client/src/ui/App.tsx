@@ -60,11 +60,15 @@ export const App: React.FC = () => {
     connection.handler.on(Opcode.MATCH_START, () => {
       setWinnerTeam(undefined);
       setScreen("match");
+      const arena = (window as unknown as { __arena?: CombatArena }).__arena;
+      if (arena) arena.serverAuthoritative = true;
     });
 
     // Server-authoritative crater (P0-2): the server sims its own terrain and
     // emits the exact ellipse it cleared. Carve it so networked terrain matches
     // the server instead of drifting from the local BallisticsEngine estimate.
+    // The arena is put in serverAuthoritative mode on MATCH_START so its own
+    // handleImpact does not carve the same crater a second time.
     connection.handler.on(Opcode.PROJECTILE_RESULT, (msg) => {
       const data = msg.json<ProjectileResultState>();
       const arena = (window as unknown as { __arena?: CombatArena }).__arena;

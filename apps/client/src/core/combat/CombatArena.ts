@@ -53,6 +53,14 @@ export class CombatArena {
   public isSimulating: boolean = false;
   public isTurnAdvancing: boolean = false;
 
+  /**
+   * Server-authoritative mode (P0-2): when true, the authoritative crater comes
+   * from the server's ProjectileResult.TerrainDelta and the locally simulated
+   * bunge is NOT carved (only VFX/damage run locally). Set by App.tsx when a
+   * networked match starts; never set on the vs-bots / offline path.
+   */
+  public serverAuthoritative: boolean = false;
+
   private activeProjectiles: ProjectileEntity[] = [];
   private orbitalEffectsContainer: Container;
 
@@ -1114,8 +1122,12 @@ export class CombatArena {
     // as deep as it digs down into a floor. No column projection here: a column
     // scan (findSurfaceY) is purely vertical and lifts the center up a cliff face,
     // carving the horizontal half of the crater in open air.
-    // 1. Excavate 3D crater on Metamine terrain
-    this.terrain.carveCrater(x, y, traj.bungeRadius, traj.bungeRadius * 0.85);
+    // 1. Excavate 3D crater on Metamine terrain — SKIPPED in server-authoritative
+    // mode; the server's ProjectileResult.TerrainDelta already cleared the exact
+    // ellipse and applying both would double-dig (see applyServerTerrainDelta).
+    if (!this.serverAuthoritative) {
+      this.terrain.carveCrater(x, y, traj.bungeRadius, traj.bungeRadius * 0.85);
+    }
 
     // Dynamic terrain destruction particle burst (rock debris, sparks, dust)
     this.destructionParticles.spawnExplosionDebris(x, y, traj.bungeRadius, traj.damage);

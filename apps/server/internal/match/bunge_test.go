@@ -89,3 +89,35 @@ func TestArmorS2DoubleBlast(t *testing.T) {
 		t.Fatal("second blast must be elliptical (radius_y > 0)")
 	}
 }
+
+// TestBungeKillFallAndFie locks §4.2: when the crater removes the ground under
+// a mobile, the victim dies by falling and the shooter collects the bunge bonus
+// track (2300 gold / +2 GP). A normal damage kill must NOT be tagged as bunge.
+func TestBungeKillFallAndFie(t *testing.T) {
+	m := newTwoPlayerMatch(t)
+	shooter := m.Players["p1"]
+	enemy := m.Players["p2"]
+
+	// Put the enemy standing on a thin pillar; carve the entire pillar away.
+	enemy.Pos = physicsV(500, 500)
+	for y := 500; y < m.Terrain.Height; y++ {
+		for x := 460; x <= 540; x++ {
+			m.Terrain.SetGround(x, y, false)
+		}
+	}
+
+	// Force a first-person-crater outcome by directly exercising the post-shot
+	// check: the helper is the authoritative path called after every shot.
+	shooter.Gold, shooter.GP = 0, 0
+	m.applyBungeFalls("p1")
+
+	if enemy.Alive {
+		t.Fatal("enemy with no ground under its feet must fall_and_fie")
+	}
+	if enemy.DeathCause != DeathBunge {
+		t.Fatalf("death cause = %q, want %q", enemy.DeathCause, DeathBunge)
+	}
+	if shooter.Gold != 2300 || shooter.GP != 2 {
+		t.Fatalf("bunge bonus = (%d gold, %d GP), want (2300, 2)", shooter.Gold, shooter.GP)
+	}
+}
